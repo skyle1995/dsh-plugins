@@ -34,18 +34,14 @@ var NS = "dsh-plugin-session-archive";
 var API = "/api/dsh-session-archive";
 var zh = {
   title: "\u4F1A\u8BDD\u5F52\u6863",
-  description: "\u7BA1\u7406\u4F1A\u8BDD\u5F52\u6863\uFF1A\u5F52\u6863\u4F1A\u8BDD\u5C06\u4ECE\u4F1A\u8BDD\u5217\u8868\u9690\u85CF\uFF0C\u53EF\u968F\u65F6\u8FD8\u539F\uFF1B\u5220\u9664\u5C06\u6C38\u4E45\u79FB\u9664\u4F1A\u8BDD\u8BB0\u5F55\u3002",
+  description: "\u7BA1\u7406\u5DF2\u5F52\u6863\u7684\u4F1A\u8BDD\uFF1A\u53EF\u968F\u65F6\u8FD8\u539F\u5230\u4F1A\u8BDD\u5217\u8868\uFF0C\u6216\u6C38\u4E45\u5220\u9664\u3002\u5F52\u6863\u64CD\u4F5C\u8BF7\u4F7F\u7528\u4F1A\u8BDD\u5217\u8868\u4E2D\u7684\u5F52\u6863\u5165\u53E3\u3002",
   refresh: "\u5237\u65B0",
   search: "\u641C\u7D22\u4F1A\u8BDD\u2026",
   loading: "\u6B63\u5728\u52A0\u8F7D\u4F1A\u8BDD\u5217\u8868\u2026",
-  empty: "\u6CA1\u6709\u4F1A\u8BDD\u8BB0\u5F55\u3002",
+  empty: "\u6CA1\u6709\u5DF2\u5F52\u6863\u7684\u4F1A\u8BDD\u3002",
   loadError: "\u8BFB\u53D6\u4F1A\u8BDD\u5217\u8868\u5931\u8D25\uFF1A{message}",
-  activeGroup: "\u6D3B\u8DC3\u4F1A\u8BDD",
-  archivedGroup: "\u5DF2\u5F52\u6863",
-  archive: "\u5F52\u6863",
   restore: "\u8FD8\u539F",
   delete: "\u5220\u9664",
-  archived: "\u5F52\u6863\u6210\u529F\uFF1A{title}",
   restored: "\u5DF2\u8FD8\u539F\uFF1A{title}",
   deleted: "\u5DF2\u5220\u9664\uFF1A{title}",
   actionFailed: "\u64CD\u4F5C\u5931\u8D25\uFF1A{message}",
@@ -54,18 +50,15 @@ var zh = {
 };
 var en = {
   title: "Session Archive",
-  description: "Manage session archiving: archived sessions are hidden from the session list and can be restored anytime; deletion removes them permanently.",
+  description: "Manage archived sessions: restore them to the session list anytime, or delete them permanently. Use the session list to archive sessions.",
   refresh: "Refresh",
   search: "Search sessions\u2026",
   loading: "Loading sessions\u2026",
-  empty: "No session records.",
+  empty: "No archived sessions.",
   loadError: "Failed to load sessions: {message}",
-  activeGroup: "Active sessions",
   archivedGroup: "Archived",
-  archive: "Archive",
   restore: "Restore",
   delete: "Delete",
-  archived: "Archived: {title}",
   restored: "Restored: {title}",
   deleted: "Deleted: {title}",
   actionFailed: "Operation failed: {message}",
@@ -136,8 +129,9 @@ function SessionArchiveSection({ t }) {
   }, []);
   const filtered = (0, import_react.useMemo)(() => {
     const q = query.trim().toLowerCase();
-    if (q === "") return sessions;
-    return sessions.filter((session) => session.title.toLowerCase().includes(q) || session.id.toLowerCase().includes(q) || (session.workspaceTitle ?? "").toLowerCase().includes(q));
+    const archivedOnly = sessions.filter((session) => session.archived);
+    if (q === "") return archivedOnly;
+    return archivedOnly.filter((session) => session.title.toLowerCase().includes(q) || session.id.toLowerCase().includes(q) || (session.workspaceTitle ?? "").toLowerCase().includes(q));
   }, [sessions, query]);
   async function run(session, operation, messageKey, confirmText) {
     if (confirmText !== void 0 && !globalThis.confirm(confirmText)) return;
@@ -158,11 +152,9 @@ function SessionArchiveSection({ t }) {
     return (0, import_react.createElement)("p", { className: `dsa-notice ${notice.kind === "error" ? "dsa-notice-err" : "dsa-notice-ok"}` }, notice.text);
   }
   function renderRow(session) {
-    const actions = session.archived ? [
+    const actions = [
       (0, import_react.createElement)("button", { key: "restore", className: "dsa-btn dsa-btn-primary", disabled: busy !== null, onClick: () => void run(session, "restore", "restored") }, t("restore")),
       (0, import_react.createElement)("button", { key: "delete", className: "dsa-btn dsa-btn-danger", disabled: busy !== null, onClick: () => void run(session, "delete", "deleted", format(t("deleteConfirm"), { title: session.title })) }, t("delete"))
-    ] : [
-      (0, import_react.createElement)("button", { key: "archive", className: "dsa-btn", disabled: busy !== null, onClick: () => void run(session, "archive", "archived") }, t("archive"))
     ];
     const meta = session.workspaceTitle ? `${session.workspaceTitle}\uFF08${session.workspacePath}\uFF09` : session.workspacePath || t("ungrouped");
     return (0, import_react.createElement)(
@@ -178,23 +170,12 @@ function SessionArchiveSection({ t }) {
       (0, import_react.createElement)("div", { className: "dsa-actions" }, actions)
     );
   }
-  const active = filtered.filter((session) => !session.archived);
   const archived = filtered.filter((session) => session.archived);
-  const body = status === "loading" ? (0, import_react.createElement)("p", { className: "dsa-subtitle" }, t("loading")) : status === "error" ? (0, import_react.createElement)("p", { className: "dsa-subtitle" }, format(t("loadError"), { message: "" })) : filtered.length === 0 ? (0, import_react.createElement)("p", { className: "dsa-subtitle" }, t("empty")) : (0, import_react.createElement)(
+  const body = status === "loading" ? (0, import_react.createElement)("p", { className: "dsa-subtitle" }, t("loading")) : status === "error" ? (0, import_react.createElement)("p", { className: "dsa-subtitle" }, format(t("loadError"), { message: "" })) : archived.length === 0 ? (0, import_react.createElement)("p", { className: "dsa-subtitle" }, t("empty")) : (0, import_react.createElement)(
     import_react.Fragment,
     null,
-    active.length > 0 ? (0, import_react.createElement)(
-      import_react.Fragment,
-      null,
-      (0, import_react.createElement)("p", { className: "dsa-group-title" }, `${t("activeGroup")}\uFF08${active.length}\uFF09`),
-      (0, import_react.createElement)("div", { className: "dsa-list" }, active.map(renderRow))
-    ) : null,
-    archived.length > 0 ? (0, import_react.createElement)(
-      import_react.Fragment,
-      null,
-      (0, import_react.createElement)("p", { className: "dsa-group-title" }, `${t("archivedGroup")}\uFF08${archived.length}\uFF09`),
-      (0, import_react.createElement)("div", { className: "dsa-list" }, archived.map(renderRow))
-    ) : null
+    (0, import_react.createElement)("p", { className: "dsa-group-title" }, `${t("archivedGroup")}\uFF08${archived.length}\uFF09`),
+    (0, import_react.createElement)("div", { className: "dsa-list" }, archived.map(renderRow))
   );
   return (0, import_react.createElement)(
     import_react.Fragment,

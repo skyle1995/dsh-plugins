@@ -14,18 +14,14 @@ const API = "/api/dsh-session-archive";
 
 const zh = {
 	title: "会话归档",
-	description: "管理会话归档：归档会话将从会话列表隐藏，可随时还原；删除将永久移除会话记录。",
+	description: "管理已归档的会话：可随时还原到会话列表，或永久删除。归档操作请使用会话列表中的归档入口。",
 	refresh: "刷新",
 	search: "搜索会话…",
 	loading: "正在加载会话列表…",
-	empty: "没有会话记录。",
+	empty: "没有已归档的会话。",
 	loadError: "读取会话列表失败：{message}",
-	activeGroup: "活跃会话",
-	archivedGroup: "已归档",
-	archive: "归档",
 	restore: "还原",
 	delete: "删除",
-	archived: "归档成功：{title}",
 	restored: "已还原：{title}",
 	deleted: "已删除：{title}",
 	actionFailed: "操作失败：{message}",
@@ -35,18 +31,15 @@ const zh = {
 
 const en = {
 	title: "Session Archive",
-	description: "Manage session archiving: archived sessions are hidden from the session list and can be restored anytime; deletion removes them permanently.",
+	description: "Manage archived sessions: restore them to the session list anytime, or delete them permanently. Use the session list to archive sessions.",
 	refresh: "Refresh",
 	search: "Search sessions…",
 	loading: "Loading sessions…",
-	empty: "No session records.",
+	empty: "No archived sessions.",
 	loadError: "Failed to load sessions: {message}",
-	activeGroup: "Active sessions",
 	archivedGroup: "Archived",
-	archive: "Archive",
 	restore: "Restore",
 	delete: "Delete",
-	archived: "Archived: {title}",
 	restored: "Restored: {title}",
 	deleted: "Deleted: {title}",
 	actionFailed: "Operation failed: {message}",
@@ -127,8 +120,9 @@ function SessionArchiveSection({ t }) {
 
 	const filtered = useMemo(() => {
 		const q = query.trim().toLowerCase();
-		if (q === "") return sessions;
-		return sessions.filter((session) => session.title.toLowerCase().includes(q) || session.id.toLowerCase().includes(q) || (session.workspaceTitle ?? "").toLowerCase().includes(q));
+		const archivedOnly = sessions.filter((session) => session.archived);
+		if (q === "") return archivedOnly;
+		return archivedOnly.filter((session) => session.title.toLowerCase().includes(q) || session.id.toLowerCase().includes(q) || (session.workspaceTitle ?? "").toLowerCase().includes(q));
 	}, [sessions, query]);
 
 	async function run(session, operation, messageKey, confirmText) {
@@ -152,14 +146,10 @@ function SessionArchiveSection({ t }) {
 	}
 
 	function renderRow(session) {
-		const actions = session.archived
-			? [
-				h("button", { key: "restore", className: "dsa-btn dsa-btn-primary", disabled: busy !== null, onClick: () => void run(session, "restore", "restored") }, t("restore")),
-				h("button", { key: "delete", className: "dsa-btn dsa-btn-danger", disabled: busy !== null, onClick: () => void run(session, "delete", "deleted", format(t("deleteConfirm"), { title: session.title })) }, t("delete")),
-			]
-			: [
-				h("button", { key: "archive", className: "dsa-btn", disabled: busy !== null, onClick: () => void run(session, "archive", "archived") }, t("archive")),
-			];
+		const actions = [
+			h("button", { key: "restore", className: "dsa-btn dsa-btn-primary", disabled: busy !== null, onClick: () => void run(session, "restore", "restored") }, t("restore")),
+			h("button", { key: "delete", className: "dsa-btn dsa-btn-danger", disabled: busy !== null, onClick: () => void run(session, "delete", "deleted", format(t("deleteConfirm"), { title: session.title })) }, t("delete")),
+		];
 		const meta = session.workspaceTitle
 			? `${session.workspaceTitle}（${session.workspacePath}）`
 			: session.workspacePath || t("ungrouped");
@@ -171,22 +161,17 @@ function SessionArchiveSection({ t }) {
 			h("div", { className: "dsa-actions" }, actions));
 	}
 
-	const active = filtered.filter((session) => !session.archived);
 	const archived = filtered.filter((session) => session.archived);
 
 	const body = status === "loading"
 		? h("p", { className: "dsa-subtitle" }, t("loading"))
 		: status === "error"
 			? h("p", { className: "dsa-subtitle" }, format(t("loadError"), { message: "" }))
-			: filtered.length === 0
+			: archived.length === 0
 				? h("p", { className: "dsa-subtitle" }, t("empty"))
 				: h(Fragment, null,
-					active.length > 0 ? h(Fragment, null,
-						h("p", { className: "dsa-group-title" }, `${t("activeGroup")}（${active.length}）`),
-						h("div", { className: "dsa-list" }, active.map(renderRow))) : null,
-					archived.length > 0 ? h(Fragment, null,
-						h("p", { className: "dsa-group-title" }, `${t("archivedGroup")}（${archived.length}）`),
-						h("div", { className: "dsa-list" }, archived.map(renderRow))) : null);
+					h("p", { className: "dsa-group-title" }, `${t("archivedGroup")}（${archived.length}）`),
+					h("div", { className: "dsa-list" }, archived.map(renderRow)));
 
 	return h(Fragment, null,
 		h("style", null, css),
