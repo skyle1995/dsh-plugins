@@ -83,10 +83,10 @@ try {
 	const { events: stored } = await verify.read();
 	await verify.close();
 	const placeholder = stored.at(-1);
-	check("占位节点已落盘", placeholder.type === "user/message" && placeholder.surfaceOp?.op === "replace");
-	check("占位覆盖整轮（含用户消息 seq 1）", Array.isArray(placeholder.sourceEventSeqs) && placeholder.sourceEventSeqs.includes(1) && placeholder.sourceEventSeqs.includes(3));
-	check("占位 seq 连续", placeholder.seq === 6 && stored.length === 7);
-	check("占位文案正确", String(placeholder.data?.content?.[0]?.text ?? "").includes("消息已撤回"));
+	check("提示消息已落盘（append，不折叠）", placeholder.type === "user/message" && placeholder.surfaceOp === "append");
+	check("原始消息保留", stored.some((event) => event.seq === 1) && stored.some((event) => event.seq === 3));
+	check("提示 seq 连续", placeholder.seq === 6 && stored.length === 7);
+	check("提示文案正确", String(placeholder.data?.content?.[0]?.text ?? "").includes("已撤回第 1 轮的编辑"));
 
 	// 原始 JSONL 文件可读且含占位（compression none 的物理形态）。
 	// 布局：<root>/<projectKey(cwd)>/<encodedId>/session.v4.jsonl
@@ -96,8 +96,8 @@ try {
 	const files = (await readdir(logDir)).filter((name) => name.endsWith(".jsonl"));
 	check("纯文本 JSONL 存在", files.length === 1);
 	const raw = await readFile(join(logDir, files[0]), "utf8");
-	check("原始日志含占位", raw.includes("消息已撤回") && raw.includes('"surfaceOp"'));
-	check("重复撤回被拒绝", (await engine.recall({ sessionId, messageId: "m-1" })).ok === false);
+	check("原始日志含提示", raw.includes("已撤回第 1 轮的编辑"));
+	check("重复撤回幂等成功", (await engine.recall({ sessionId, messageId: "m-1" })).ok === true);
 
 	root.dispose?.();
 } finally {

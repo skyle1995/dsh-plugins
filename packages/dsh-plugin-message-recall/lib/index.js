@@ -35,7 +35,7 @@ import {
 	mergeTurnCaptures,
 	mutationPath,
 } from "./capture.js";
-import { placeholderContent, planRecall, planRollback } from "./recall.js";
+import { noticeContent, planRollback, planTurn } from "./recall.js";
 
 /** 浏览器半区调用撤回的 HTTP 路由。 */
 export const RECALL_ROUTE = "/api/dsh-message-recall/recall";
@@ -330,7 +330,7 @@ export class RecallEngine {
 		if (target === "") return { ok: false, error: { code: "recall/session-not-found", message: "找不到包含该消息的会话。" } };
 		sessionId = target;
 		return this.enqueue(sessionId, () => this.withSessionEvents(sessionId, async (events, append) => {
-			const plan = planRecall(events, messageId, resolvedSeq);
+			const plan = planTurn(events, messageId, resolvedSeq);
 			if (!plan.ok) return { ok: false, error: { code: plan.code, message: plan.message } };
 			const captures = await this.loadCaptures(sessionId);
 			const { operations, skipped } = planRollback(captures, plan.turn);
@@ -341,16 +341,17 @@ export class RecallEngine {
 				skipped: skipped.length,
 				failed: failed.length,
 			};
-			const text = placeholderContent(summary);
-			const placeholder = createUserMessage({
+			const text = noticeContent(summary);
+			// 只撤回编辑：还原文件变更并追加一条提示消息（不折叠会话 surface，
+			// 界面无需重放即可看到提示；原消息保留在会话记录里）。
+			const notice = createUserMessage({
 				content: [{ type: "text", text }],
 				source: { kind: PLACEHOLDER_SOURCE_KIND },
 			});
 			const appended = await append({
 				type: "user/message",
-				data: placeholder,
-				surfaceOp: { op: "replace", startSeq: plan.start, endSeq: plan.end },
-				sourceEventSeqs: [...plan.shadowedSeqs],
+				data: notice,
+				surfaceOp: "append",
 			});
 			return {
 				ok: true,
@@ -361,7 +362,7 @@ export class RecallEngine {
 					deleted,
 					skipped: skipped.map((entry) => ({ ...entry })),
 					failed,
-					placeholder: text,
+					notice: text,
 				},
 			};
 		}));

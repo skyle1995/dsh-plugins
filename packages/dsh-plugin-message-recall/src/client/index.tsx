@@ -6,10 +6,9 @@
  *   消息气泡上渲染「撤回」按钮（悬停显示 Tooltip，另附复制按钮）；遮蔽
  *   崩溃时框架自动回退到官方视图；
  * - 点击后经 shell.overlay 弹出 RiskConfirmation 确认弹窗，确认后调用宿主
- *   半区的 POST /api/dsh-message-recall/recall（{ sessionId, messageId }），
- *   宿主按「轮」撤回：删除该轮用户消息与助手回复、还原该轮文件变更；
- * - 活跃会话由 session 事件流实时更新界面；冷会话成功后刷新页面；失败用
- *   alert 提示。
+ *   半区的 POST /api/dsh-message-recall/recall（{ sessionId, messageId, seq }），
+ *   宿主按「轮」撤回编辑：还原该轮文件变更，并追加一条「已撤回第 N 轮的
+ *   编辑…」提示消息（普通消息，界面即时可见；原对话消息保留）。
  */
 import { createElement as h, useEffect, useState } from "react";
 import {
@@ -24,13 +23,11 @@ const zh = {
 	"action.title": "撤回这轮对话并还原该轮文件变更",
 	"action.copy": "复制",
 	recallConfirmTitle: "撤回消息",
-	recallConfirm: "将删除这条消息及该轮对话（助手回复与工具调用），并还原该轮对工作区文件所做的修改。撤回后这些内容不再显示在会话记录中，也不再进入模型上下文。",
-	recallAcknowledge: "我已知晓撤回会删除该轮对话并还原文件变更",
+	recallConfirm: "将还原该轮对工作区文件所做的修改，并在会话中插入一条撤回提示。对话消息保留在会话记录中。",
+	recallAcknowledge: "我已知晓撤回会还原该轮文件变更",
 	recallCancel: "取消",
 	recallConfirmAction: "撤回",
 	recallFailed: "撤回失败：{message}",
-	recalledNotice: "撤回成功：{message}",
-	recalledShort: "撤回成功，页面已刷新。",
 };
 
 const en = {
@@ -38,13 +35,11 @@ const en = {
 	"action.title": "Recall this turn and revert its file changes",
 	"action.copy": "Copy",
 	recallConfirmTitle: "Recall message",
-	recallConfirm: "This message and its turn (the assistant reply and tool calls) will be deleted, and the turn's workspace file changes will be reverted. The recalled content will no longer appear in the transcript or the model context.",
-	recallAcknowledge: "I understand the turn will be deleted and file changes reverted",
+	recallConfirm: "The turn's workspace file changes will be reverted, and a recall notice will be inserted into the conversation. The conversation messages remain in the transcript.",
+	recallAcknowledge: "I understand the file changes will be reverted",
 	recallCancel: "Cancel",
 	recallConfirmAction: "Recall",
 	recallFailed: "Recall failed: {message}",
-	recalledNotice: "Recalled: {message}",
-	recalledShort: "Recall succeeded; the page has been refreshed.",
 };
 
 function format(text, params) {
@@ -84,9 +79,7 @@ const css = `
 .mru-actions{display:flex;gap:2px;align-items:center;opacity:0;transition:opacity .12s ease}
 .mru:hover .mru-actions{opacity:1}
 .mru-btn{appearance:none;border:none;background:0 0;color:var(--dsw-alias-label-tertiary,#8a919c);cursor:pointer;width:28px;height:28px;border-radius:var(--dsw-radius-sm,6px);justify-content:center;align-items:center;padding:5px;display:inline-flex}
-.mru-btn:hover{background:var(--dsw-alias-interactive-bg-hover,#f0f2f5);color:var(--dsw-alias-label-secondary,#4b5563)}
-.mrt-toast{position:fixed;left:50%;bottom:36px;transform:translateX(-50%);z-index:9999;background:var(--dsw-alias-bg-layer-2,#fff);color:var(--dsw-alias-label-primary,#1f2329);border:1px solid var(--dsw-alias-border-l2,#d9dde3);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:10px 16px;font-size:13px;line-height:1.6;max-width:min(560px,calc(100vw - 48px));overflow-wrap:anywhere}
-`;
+.mru-btn:hover{background:var(--dsw-alias-interactive-bg-hover,#f0f2f5);color:var(--dsw-alias-label-secondary,#4b5563)}`;
 
 /**
  * 用户消息节点视图（遮蔽官方 key:"user" 条目，priority -1）：重渲染气泡
@@ -122,30 +115,15 @@ function RecallUserNodeView(props) {
 			h(Tooltip, { label: t("action.copy"), side: "bottom", align: "end", delayMs: 400, children: h("button", { className: "mru-btn", type: "button", "aria-label": t("action.copy"), onClick: copy }, copied ? h(IconCheckOutlineRegular, { size: 14 }) : h(IconCopyOutlineRegular, { size: 14 })) })) : null);
 }
 
-const RECALL_NOTICE_KEY = "dsh-message-recall-notice";
-
-/** 撤回确认弹窗（RiskConfirmation，需勾选确认）+ 成功 toast（刷新后读取 sessionStorage）。 */
+/** 撤回确认弹窗（RiskConfirmation，需勾选确认）。 */
 function RecallConfirmDialog({ t, usePendingRecall: usePending, settleRecall: settle, confirmRecall }) {
 	const request = usePending();
 	const [acknowledged, setAcknowledged] = useState(false);
-	const [toast, setToast] = useState(null);
 	useEffect(() => {
 		if (request !== null) setAcknowledged(false);
 	}, [request]);
-	// 刷新后展示成功提示：sessionStorage 一次性读取，自动消失。
-	useEffect(() => {
-		if (typeof sessionStorage === "undefined") return;
-		const notice = sessionStorage.getItem(RECALL_NOTICE_KEY);
-		if (notice === null) return;
-		sessionStorage.removeItem(RECALL_NOTICE_KEY);
-		setToast(notice);
-		const timer = setTimeout(() => setToast(null), 4500);
-		return () => clearTimeout(timer);
-	}, []);
-	return h("div", null,
-		toast !== null ? h("div", { className: "mrt-toast", role: "status" }, format(t("recalledNotice"), { message: toast })) : null,
-		h(RiskConfirmation, {
-			open: request !== null,
+	return h(RiskConfirmation, {
+		open: request !== null,
 		title: t("recallConfirmTitle"),
 		description: t("recallConfirm"),
 		acknowledgeLabel: t("recallAcknowledge"),
@@ -154,12 +132,12 @@ function RecallConfirmDialog({ t, usePendingRecall: usePending, settleRecall: se
 		acknowledged,
 		onAcknowledgedChange: setAcknowledged,
 		onCancel: settle,
-			onConfirm: () => {
-				const target = request;
-				settle();
-				if (target !== null) confirmRecall(target.sessionId, target.messageId, target.seq);
-			},
-		}));
+		onConfirm: () => {
+			const target = request;
+			settle();
+			if (target !== null) confirmRecall(target.sessionId, target.messageId, target.seq);
+		},
+	});
 }
 
 /** 浏览器插件入口：注册词典、按钮与确认弹窗。 */
@@ -186,12 +164,9 @@ export function register(ctx) {
 			const payload = await response.json().catch(() => ({}));
 			if (!response.ok || payload.ok !== true) {
 				globalThis.alert(format(t("recallFailed"), { message: payload.message ?? `HTTP ${response.status}` }));
-				return;
 			}
-			// 界面折叠需要重放日志：成功后在刷新后的页面上弹出提示。
-			const notice = typeof payload.value?.placeholder === "string" && payload.value.placeholder !== "" ? payload.value.placeholder : t("recalledShort");
-			if (typeof sessionStorage !== "undefined") sessionStorage.setItem(RECALL_NOTICE_KEY, notice);
-			globalThis.location.reload();
+			// 成功无需额外提示：宿主会追加一条「已撤回第 N 轮的编辑…」消息，
+			// 作为普通消息出现在会话里（原消息保留）。
 		}).catch((error) => {
 			globalThis.alert(format(t("recallFailed"), { message: error.message }));
 		});

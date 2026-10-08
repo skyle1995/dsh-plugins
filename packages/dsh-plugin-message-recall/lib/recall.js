@@ -88,6 +88,35 @@ export function turnAtSeqMap(events) {
 }
 
 /**
+ * 轻量定位撤回目标轮次（不做范围/完整性校验）：撤回编辑只还原该轮文件
+ * 变更并插入提示消息，不折叠会话。
+ *
+ * @param {Array<object>} events - 会话事件（含 type/data/seq/surfaceOp）。
+ * @param {string} messageId - 消息 id（可选；用户消息视图节点没有 id）。
+ * @param {number | undefined} seq - 目标 surface 事件的序号（优先）。
+ * @returns {{ ok: true, turn: number } | { ok: false, code: string, message: string }}
+ */
+export function planTurn(events, messageId, seq) {
+	let target;
+	if (Number.isSafeInteger(seq)) {
+		target = events.find((event) => event.seq === seq && isAppendSurfaceEvent(event) && (event.type === "user/message" || event.type === "assistant/message"));
+	} else {
+		target = [...events].reverse().find((event) => {
+			if (!isAppendSurfaceEvent(event)) return false;
+			if (event.type === "assistant/message") return event.data?.message?.id === messageId && (event.data?.message?.content?.length ?? 0) > 0;
+			if (event.type === "user/message") return event.data?.id === messageId;
+			return false;
+		});
+	}
+	if (target === undefined) {
+		return { ok: false, code: "recall/target-not-found", message: `没有找到撤回目标${Number.isSafeInteger(seq) ? `（seq ${seq}）` : `消息 ${messageId}`}：它可能不是已定稿的会话消息，或已被压缩。` };
+	}
+	const turn = turnAtSeqMap(events).get(target.seq);
+	if (typeof turn !== "number") return { ok: false, code: "recall/target-turn", message: "目标消息缺少轮次信息，无法撤回。" };
+	return { ok: true, turn };
+}
+
+/**
  * 定位撤回目标并计算被遮蔽范围。
  *
  * 撤回以「轮」为单位：目标是该轮内的任意一条消息（用户提问或助手消息），
@@ -185,16 +214,21 @@ export function planRollback(captures, targetTurn) {
 }
 
 /**
- * 生成替换节点的占位文案（模型与用户都可见）。
+ * 生成撤回编辑的提示文案（作为普通消息追加进会话，模型与用户都可见）。
  *
  * @param {{ turn: number, restored: number, skipped: number, failed: number }} summary - 回滚结果摘要。
  * @returns {string}
  */
-export function placeholderContent(summary) {
+export function noticeContent(summary) {
 	const { turn, restored, skipped, failed } = summary;
-	const parts = [`消息已撤回：第 ${turn} 轮对话（用户消息与助手回复及其工具调用）已从会话移除。`];
-	if (restored > 0) parts.push(`该轮的 ${restored} 个文件变更已还原。`);
+	const parts = [`已撤回第 ${turn} 轮的编辑：该轮对工作区文件的修改已还原。`];
+	if (restored > 0) parts.push(`${restored} 个文件已还原或删除。`);
 	if (skipped > 0) parts.push(`${skipped} 个文件因之后被再次修改或内容过大而未还原。`);
 	if (failed > 0) parts.push(`${failed} 个文件还原失败（见操作结果）。`);
 	return parts.join(" ");
+}
+
+/** @deprecated 旧版整轮折叠占位文案；保留导出以兼容旧调用。 */
+export function placeholderContent(summary) {
+	return noticeContent(summary);
 }

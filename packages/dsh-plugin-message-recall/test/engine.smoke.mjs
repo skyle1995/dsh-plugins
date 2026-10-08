@@ -106,22 +106,17 @@ try {
 	check("删除清单含 created.txt", result.value.deleted.includes(createdPath));
 	check("轮次正确", result.value.turn === 2);
 
-	const userSeq = events.find((event) => event.type === "user/message" && event.data.id === "u-2").seq;
-	const nodes = [...session.surface.nodes];
-	check("助手消息已移出 surface", !nodes.includes(firstAssistantSeq) && !nodes.includes(target.seq));
-	check("工具结果已移出 surface", !nodes.includes(toolSeq));
-	check("用户消息已移出 surface", !nodes.includes(userSeq));
-	const placeholderSeq = session.snapshotEvents().length - 1;
-	check("占位节点进入 surface", nodes.includes(placeholderSeq));
+	const lastEvent = session.snapshotEvents().at(-1);
+	check("追加的是普通消息（append，不折叠）", lastEvent.type === "user/message" && lastEvent.surfaceOp === "append");
 	const messages = session.deriveMessages();
-	check("派生历史无助手回复", !messages.some((message) => message.id === "m-3"));
-	check("派生历史无工具结果", !messages.some((message) => message.id === "t-1"));
-	check("派生历史无原用户消息", !messages.some((message) => message.id === "u-2"));
-	check("派生历史含占位消息", messages.some((message) => message.role === "user" && String(message.content?.[0]?.text ?? "").includes("消息已撤回")));
+	check("原助手回复保留", messages.some((message) => message.id === "m-3"));
+	check("原工具结果保留", messages.some((message) => message.id === "t-1"));
+	check("原用户消息保留", messages.some((message) => message.id === "u-2"));
+	check("提示消息进入历史", messages.some((message) => message.role === "user" && String(message.content?.[0]?.text ?? "").includes("已撤回第 2 轮的编辑")));
 
-	// 再次撤回同一消息应失败（范围已被遮蔽）。
+	// 再次撤回同一消息成功（幂等：还原已还原的文件）。
 	const second = await engine.recall({ sessionId, messageId: "m-3" });
-	check("重复撤回被拒绝", second.ok === false && (second.error.code === "recall/target-not-found" || second.error.code === "recall/range-not-intact"));
+	check("重复撤回幂等成功", second.ok === true);
 
 
 	// ---- 冷会话路径：live 不存在时直接写持久化句柄 ----
@@ -155,10 +150,8 @@ try {
 	check("冷会话写入完整信封", appendedEntry !== null
 		&& appendedEntry.type === "user/message"
 		&& appendedEntry.seq === SessionSeq(stored.length - 1)
-		&& appendedEntry.surfaceOp?.op === "replace"
-		&& Array.isArray(appendedEntry.sourceEventSeqs)
-		&& appendedEntry.sourceEventSeqs.includes(events.find((event) => event.type === "assistant/message" && event.data.message.id === "m-1").seq)
-		&& appendedEntry.sourceEventSeqs.includes(events.find((event) => event.type === "user/message" && event.data.id === "u-1").seq));
+		&& appendedEntry.surfaceOp === "append"
+		&& String(appendedEntry.data?.content?.[0]?.text ?? "").includes("已撤回第 1 轮的编辑"));
 	check("冷会话 seq 连续", appendedEntry.seq === stored.length - 1);
 
 	// 不存在的消息：业务失败而非崩溃。

@@ -15,7 +15,7 @@ import {
 	canonicalPath, captureFileAt, encodeSessionSegment, mergeTurnCaptures, mutationPath,
 } from "../lib/capture.js";
 import {
-	foldSurfaceNodes, placeholderContent, planRecall, planRollback, turnAtSeqMap,
+	foldSurfaceNodes, noticeContent, planRecall, planRollback, planTurn, turnAtSeqMap,
 } from "../lib/recall.js";
 
 let failed = 0;
@@ -150,13 +150,21 @@ const turn3 = [
 		check("超大跳过", skipped.find((s) => s.path.endsWith("huge.bin"))?.reason === "oversized");
 	}
 
-	// 10) placeholderContent
+	// 10) noticeContent（撤回编辑提示文案）
 	{
-		const text = placeholderContent({ turn: 3, restored: 2, skipped: 1, failed: 1 });
-		check("占位文案含轮次", text.includes("第 3 轮"));
-		check("占位文案含整轮措辞", text.includes("用户消息与助手回复"));
-		check("占位文案含还原数", text.includes("2 个文件变更已还原"));
-		check("占位文案含跳过/失败", text.includes("未还原") && text.includes("还原失败"));
+		const text = noticeContent({ turn: 3, restored: 2, skipped: 1, failed: 1 });
+		check("提示文案含轮次", text.includes("已撤回第 3 轮的编辑"));
+		check("提示文案含还原数", text.includes("2 个文件已还原或删除"));
+		check("提示文案含跳过/失败", text.includes("未还原") && text.includes("还原失败"));
+	}
+
+	// 10b) planTurn：轻量定位轮次（不做范围校验）
+	{
+		const bySeq = planTurn(events, "", turn3[1].seq);
+		check("planTurn 按 seq 定位", bySeq.ok === true && bySeq.turn === 3);
+		const byMessage = planTurn(events, "m-32");
+		check("planTurn 按消息定位", byMessage.ok === true && byMessage.turn === 3);
+		check("planTurn 未知目标失败", planTurn(events, "", 9999).code === "recall/target-not-found");
 	}
 
 	// 11) 撤回中间轮：前一轮用户提问保留、后一轮不受影响
