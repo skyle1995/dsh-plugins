@@ -1,7 +1,7 @@
 # dsh-plugin-repo
 
-DSH 插件仓库**主插件**（基础能力合集）。设置面板左侧导航提供三个独立分区，
-另在会话右键菜单底部贡献「删除会话」项：
+**DSH 基础插件**（dsh-plugins 仓库的基础能力合集）。设置面板左侧导航提供
+三个独立分区，另在会话右键菜单底部贡献「删除会话」项：
 
 | 分区 / 入口 | 能力 |
 |---|---|
@@ -26,8 +26,10 @@ pnpm 安装，而 pnpm 11 支持 `git+https://host/owner/repo.git#<分支>&path:
   构建脚本批准等全部流程；
 - **设置分区页（浏览器半区）** —— 设置面板左侧导航里的独立「插件仓库」
   分区（与「内置插件」等分区并列，不混入其中）：读取宿主半区注册的
-  `/api/dsh-plugin-repo/catalog` 路由渲染在线目录；安装/更新/卸载走现成的
-  `ctx.remote.pluginManager` 远程能力，更新即按分支 spec 重装最新提交。
+  `/api/dsh-plugin-repo/catalog` 路由（目录已合并已安装/启用状态）渲染
+  在线目录；安装/更新/卸载走宿主半区的 `/install`、`/remove`、`/cancel`
+  路由（转发 profile 的 pluginManager 服务），更新即按分支 spec 重装
+  最新提交。
 
 ## 配置
 
@@ -40,6 +42,8 @@ pnpm 安装，而 pnpm 11 支持 `git+https://host/owner/repo.git#<分支>&path:
 | `catalogDir` | `packages` | monorepo 内插件目录 |
 | `token` | `""`（secret） | Gitea Access Token；公开仓库可留空 |
 | `requestTimeoutMs` | `15000` | 单次 API 请求超时 |
+| `skillsDir` | `""`（自动） | 技能能力子服务的技能根目录；留空用 `$DSH_HOME/skills` |
+| `sessionsDir` | `""`（自动） | 会话删除子服务的会话根目录；留空用 `$DSH_HOME/sessions` |
 
 在 profile 的 `cordis.patch.yml` 里覆盖：
 
@@ -51,10 +55,10 @@ pnpm 安装，而 pnpm 11 支持 `git+https://host/owner/repo.git#<分支>&path:
     repo: my-dsh-plugins
 ```
 
-## 安装本插件
+## 安装基础插件
 
 本插件本身就是本仓库的一个子目录包，同样可以用 git spec 直接安装
-（第一个插件无需任何引导依赖）：
+（基础插件无需任何引导依赖）：
 
 ```bash
 dsh plugin --profile web add \
