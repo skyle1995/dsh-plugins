@@ -282,9 +282,10 @@ export class RecallEngine {
 	 * 定位所属会话（撤回按钮的界面动作通常就在当前会话里，活跃会话优先）。
 	 * @returns 会话 id，找不到返回空字符串。
 	 */
-	async resolveSessionId(messageId) {
+	async resolveSessionId(messageId, seq) {
 		const { sessions, sessionPersistence } = this.ctx;
 		const matches = (event) => {
+			if (Number.isSafeInteger(seq)) return event.seq === seq && (event.type === "user/message" || event.type === "assistant/message");
 			if (event.type === "assistant/message") return event.data?.message?.id === messageId;
 			if (event.type === "user/message") return event.data?.id === messageId;
 			return false;
@@ -323,12 +324,13 @@ export class RecallEngine {
 	 *
 	 * @returns `{ ok: true, value }` 或 `{ ok: false, error: { code, message } }`。
 	 */
-	async recall({ sessionId, messageId }) {
-		const target = typeof sessionId === "string" && sessionId.trim() !== "" ? sessionId.trim() : await this.resolveSessionId(messageId);
+	async recall({ sessionId, messageId, seq }) {
+		const resolvedSeq = Number.isSafeInteger(seq) ? seq : undefined;
+		const target = typeof sessionId === "string" && sessionId.trim() !== "" ? sessionId.trim() : await this.resolveSessionId(messageId, resolvedSeq);
 		if (target === "") return { ok: false, error: { code: "recall/session-not-found", message: "找不到包含该消息的会话。" } };
 		sessionId = target;
 		return this.enqueue(sessionId, () => this.withSessionEvents(sessionId, async (events, append) => {
-			const plan = planRecall(events, messageId);
+			const plan = planRecall(events, messageId, resolvedSeq);
 			if (!plan.ok) return { ok: false, error: { code: plan.code, message: plan.message } };
 			const captures = await this.loadCaptures(sessionId);
 			const { operations, skipped } = planRollback(captures, plan.turn);
@@ -493,15 +495,16 @@ export class MessageRecallService extends Service {
 			}
 			const sessionId = String(body.sessionId ?? "").trim();
 			const messageId = String(body.messageId ?? "").trim();
-			if (messageId === "") {
-				payload(400, { ok: false, code: "recall/invalid-request", message: "缺少 messageId" });
+			const seq = body.seq === undefined ? undefined : Number(body.seq);
+			if (messageId === "" && !Number.isSafeInteger(seq)) {
+				payload(400, { ok: false, code: "recall/invalid-request", message: "缺少 messageId 或 seq" });
 				return;
 			}
 			if (this.engine === undefined) {
 				payload(503, { ok: false, code: "recall/unavailable", message: "撤回引擎不可用：当前 profile 缺少 sessions / sessionPersistence 服务" });
 				return;
 			}
-			const result = await this.engine.recall({ sessionId, messageId });
+			const result = await this.engine.recall({ sessionId, messageId, ...(seq === undefined ? {} : { seq }) });
 			payload(result.ok ? 200 : 422, result.ok ? result : { ok: false, code: result.error.code, message: result.error.message });
 		} catch (error) {
 			payload(500, { ok: false, code: error.code ?? "recall/failure", message: error.message });

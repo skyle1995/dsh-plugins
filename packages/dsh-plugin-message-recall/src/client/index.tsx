@@ -50,8 +50,8 @@ function format(text, params) {
 /** 模块级待确认撤回 store（单实例 bundle，供按钮与确认弹窗共享）。 */
 let pendingRecall = null;
 const listeners = new Set();
-function requestRecall(sessionId, messageId) {
-	pendingRecall = { sessionId, messageId };
+function requestRecall(sessionId, messageId, seq) {
+	pendingRecall = { sessionId, messageId, ...(seq === undefined ? {} : { seq }) };
 	for (const listener of listeners) listener();
 }
 function settleRecall() {
@@ -113,7 +113,7 @@ function RecallUserNodeView(props) {
 			images.length > 0 ? h("div", { className: "mru-images" }, images.map((block, index) => h("img", { key: index, src: block.image.preview.url, alt: block.image.name ?? "" }))) : null,
 			labels.length > 0 ? h("div", { className: "mru-refs" }, labels.join(" · ")) : null),
 		hover || copied ? h("div", { className: "mru-actions" },
-			h(Tooltip, { label: t("action.title"), side: "bottom", align: "end", delayMs: 400, children: h("button", { className: "mru-btn", type: "button", "aria-label": t("action.recall"), onClick: () => requestRecall(data.id) }, h(IconRefreshOutlineRegular, { size: 14 })) }),
+			h(Tooltip, { label: t("action.title"), side: "bottom", align: "end", delayMs: 400, children: h("button", { className: "mru-btn", type: "button", "aria-label": t("action.recall"), onClick: () => requestRecall(data.id ?? "", data.seq) }, h(IconRefreshOutlineRegular, { size: 14 })) }),
 			h(Tooltip, { label: t("action.copy"), side: "bottom", align: "end", delayMs: 400, children: h("button", { className: "mru-btn", type: "button", "aria-label": t("action.copy"), onClick: copy }, copied ? h(IconCheckOutlineRegular, { size: 14 }) : h(IconCopyOutlineRegular, { size: 14 })) })) : null);
 }
 
@@ -137,7 +137,7 @@ function RecallConfirmDialog({ t, usePendingRecall: usePending, settleRecall: se
 		onConfirm: () => {
 			const target = request;
 			settle();
-			if (target !== null) confirmRecall(target.sessionId, target.messageId);
+			if (target !== null) confirmRecall(target.sessionId, target.messageId, target.seq);
 		},
 	});
 }
@@ -157,11 +157,11 @@ export const inject = [
 export function register(ctx) {
 	ctx.effect(() => ctx.locale.register(NS, { zh, en }), "message-recall: dictionaries");
 	const t = ctx.locale.bind(NS);
-	const confirmRecall = (sessionId, messageId) => {
+	const confirmRecall = (sessionId, messageId, seq) => {
 		void fetch(`${API}/recall`, {
 			method: "POST",
 			headers: { "content-type": "application/json", accept: "application/json" },
-			body: JSON.stringify({ sessionId, messageId }),
+			body: JSON.stringify({ sessionId, messageId, ...(seq === undefined ? {} : { seq }) }),
 		}).then(async (response) => {
 			const payload = await response.json().catch(() => ({}));
 			if (!response.ok || payload.ok !== true) {
@@ -186,7 +186,7 @@ export function register(ctx) {
 		inject: (scopeKey) => {
 			const sessionId = typeof scopeKey === "string" ? scopeKey : "";
 			return {
-				requestRecall: (messageId) => requestRecall(sessionId, messageId),
+				requestRecall: (messageId, seq) => requestRecall(sessionId, messageId, seq),
 			};
 		},
 	}, (props) => h(RecallUserNodeView, props)));

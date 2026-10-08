@@ -95,19 +95,26 @@ export function turnAtSeqMap(events) {
  * 用户消息内容与助手回复、工具调用一起从会话中移除。
  *
  * @param {Array<object>} events - 会话事件（含 type/data/seq/surfaceOp）。
- * @param {string} messageId - 界面动作行的消息 id（用户或助手消息均可）。
+ * @param {string} messageId - 消息 id（用户或助手消息均可）；用户消息的视图
+ *   节点没有 id 字段，可传空串并改用 seq 定位。
+ * @param {number | undefined} seq - 目标 surface 事件的序号；与 messageId 二选一，
+ *   seq 优先（用户消息气泡的撤回按钮只携带 seq）。
  * @returns {{ ok: true, turn: number, start: number, end: number, shadowedSeqs: number[] } | { ok: false, code: string, message: string }}
  */
-export function planRecall(events, messageId) {
-	// 目标：以追加方式进入 surface、消息 id 匹配的 user/message 或 assistant/message。
-	const target = [...events].reverse().find((event) => {
-		if (!isAppendSurfaceEvent(event)) return false;
-		if (event.type === "assistant/message") return event.data?.message?.id === messageId && (event.data?.message?.content?.length ?? 0) > 0;
-		if (event.type === "user/message") return event.data?.id === messageId;
-		return false;
-	});
+export function planRecall(events, messageId, seq) {
+	let target;
+	if (Number.isSafeInteger(seq)) {
+		target = events.find((event) => event.seq === seq && isAppendSurfaceEvent(event) && (event.type === "user/message" || event.type === "assistant/message"));
+	} else {
+		target = [...events].reverse().find((event) => {
+			if (!isAppendSurfaceEvent(event)) return false;
+			if (event.type === "assistant/message") return event.data?.message?.id === messageId && (event.data?.message?.content?.length ?? 0) > 0;
+			if (event.type === "user/message") return event.data?.id === messageId;
+			return false;
+		});
+	}
 	if (target === undefined) {
-		return { ok: false, code: "recall/target-not-found", message: `没有找到消息 ${messageId}：它可能不是已定稿的会话消息，或已被压缩/撤回。` };
+		return { ok: false, code: "recall/target-not-found", message: `没有找到撤回目标${Number.isSafeInteger(seq) ? `（seq ${seq}）` : `消息 ${messageId}`}：它可能不是已定稿的会话消息，或已被压缩/撤回。` };
 	}
 	const turnAt = turnAtSeqMap(events);
 	const turn = turnAt.get(target.seq);

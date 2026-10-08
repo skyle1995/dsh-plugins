@@ -185,9 +185,10 @@ try {
 		},
 		logger: { warn: () => {} },
 	}, { capturesDir, maxFileBytes: 1024 * 1024 }, () => undefined);
-	const fallback = await resolved.recall({ sessionId: "", messageId: "m-1" });
-	check("空会话 id 按消息定位会话", fallback.ok === true && fallback.value.live === true);
-	const ghost = await resolved.recall({ sessionId: "", messageId: "m-nope" });
+	const turn1UserSeq = events.find((event) => event.type === "user/message" && event.data.id === "u-1").seq;
+	const fallback = await resolved.recall({ sessionId: "", messageId: "", seq: turn1UserSeq });
+	check("空会话 id 按 seq 定位会话并撤回", fallback.ok === true && fallback.value.live === true);
+	const ghost = await resolved.recall({ sessionId: "", seq: 99999 });
 	check("定位失败给出业务错误", ghost.ok === false && ghost.error.code === "recall/session-not-found");
 
 	root.dispose?.();

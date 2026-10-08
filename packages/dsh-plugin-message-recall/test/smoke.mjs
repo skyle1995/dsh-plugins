@@ -105,6 +105,10 @@ const turn3 = [
 		check("遮蔽序列完整", JSON.stringify(plan.shadowedSeqs) === JSON.stringify([turn3[1].seq, turn3[2].seq, turn3[3].seq, turn3[4].seq]));
 		const byUser = planRecall(events, "u-3");
 		check("用户消息也可作为撤回目标", byUser.ok === true && byUser.start === turn3[1].seq && byUser.end === turn3[4].seq);
+		const bySeq = planRecall(events, "", turn3[1].seq);
+		check("按 seq 定位用户消息", bySeq.ok === true && bySeq.turn === 3 && bySeq.start === turn3[1].seq);
+		check("seq 优先于 messageId", JSON.stringify(planRecall(events, "m-32", turn3[1].seq).shadowedSeqs) === JSON.stringify(bySeq.shadowedSeqs));
+		check("无效 seq 失败", planRecall(events, "", 9999).code === "recall/target-not-found");
 	}
 	check("未知消息失败", planRecall(events, "m-nope").code === "recall/target-not-found");
 

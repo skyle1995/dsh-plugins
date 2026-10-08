@@ -61,8 +61,8 @@ function format(text, params) {
 }
 var pendingRecall = null;
 var listeners = /* @__PURE__ */ new Set();
-function requestRecall(sessionId, messageId) {
-  pendingRecall = { sessionId, messageId };
+function requestRecall(sessionId, messageId, seq) {
+  pendingRecall = { sessionId, messageId, ...seq === void 0 ? {} : { seq } };
   for (const listener of listeners) listener();
 }
 function settleRecall() {
@@ -125,7 +125,7 @@ function RecallUserNodeView(props) {
     hover || copied ? (0, import_react.createElement)(
       "div",
       { className: "mru-actions" },
-      (0, import_react.createElement)(import_dsh_client_ui_primitives.Tooltip, { label: t("action.title"), side: "bottom", align: "end", delayMs: 400, children: (0, import_react.createElement)("button", { className: "mru-btn", type: "button", "aria-label": t("action.recall"), onClick: () => requestRecall2(data.id) }, (0, import_react.createElement)(import_dsh_client_ui_primitives.IconRefreshOutlineRegular, { size: 14 })) }),
+      (0, import_react.createElement)(import_dsh_client_ui_primitives.Tooltip, { label: t("action.title"), side: "bottom", align: "end", delayMs: 400, children: (0, import_react.createElement)("button", { className: "mru-btn", type: "button", "aria-label": t("action.recall"), onClick: () => requestRecall2(data.id ?? "", data.seq) }, (0, import_react.createElement)(import_dsh_client_ui_primitives.IconRefreshOutlineRegular, { size: 14 })) }),
       (0, import_react.createElement)(import_dsh_client_ui_primitives.Tooltip, { label: t("action.copy"), side: "bottom", align: "end", delayMs: 400, children: (0, import_react.createElement)("button", { className: "mru-btn", type: "button", "aria-label": t("action.copy"), onClick: copy }, copied ? (0, import_react.createElement)(import_dsh_client_ui_primitives.IconCheckOutlineRegular, { size: 14 }) : (0, import_react.createElement)(import_dsh_client_ui_primitives.IconCopyOutlineRegular, { size: 14 })) })
     ) : null
   );
@@ -149,7 +149,7 @@ function RecallConfirmDialog({ t, usePendingRecall: usePending, settleRecall: se
     onConfirm: () => {
       const target = request;
       settle();
-      if (target !== null) confirmRecall(target.sessionId, target.messageId);
+      if (target !== null) confirmRecall(target.sessionId, target.messageId, target.seq);
     }
   });
 }
@@ -163,11 +163,11 @@ var inject = [
 function register(ctx) {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), "message-recall: dictionaries");
   const t = ctx.locale.bind(NS);
-  const confirmRecall = (sessionId, messageId) => {
+  const confirmRecall = (sessionId, messageId, seq) => {
     void fetch(`${API}/recall`, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ sessionId, messageId })
+      body: JSON.stringify({ sessionId, messageId, ...seq === void 0 ? {} : { seq } })
     }).then(async (response) => {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload.ok !== true) {
@@ -187,7 +187,7 @@ function register(ctx) {
     inject: (scopeKey) => {
       const sessionId = typeof scopeKey === "string" ? scopeKey : "";
       return {
-        requestRecall: (messageId) => requestRecall(sessionId, messageId)
+        requestRecall: (messageId, seq) => requestRecall(sessionId, messageId, seq)
       };
     }
   }, (props) => (0, import_react.createElement)(RecallUserNodeView, props)));

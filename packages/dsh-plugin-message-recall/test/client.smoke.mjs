@@ -99,15 +99,15 @@ check("作用域缺失降级为空串", typeof degraded.requestRecall === "funct
 const overlay = overlaySlot.registration.options.inject();
 check("overlay 注入提供确认入口", typeof overlay.confirmRecall === "function" && typeof overlay.usePendingRecall === "function");
 
-injected.requestRecall("message-1");
-check("点击后进入待确认状态", overlay.usePendingRecall()?.messageId === "message-1" && overlay.usePendingRecall()?.sessionId === "session-1");
-degraded.requestRecall("message-2");
-check("降级注入会话 id 为空串", overlay.usePendingRecall()?.sessionId === "");
+injected.requestRecall("", 7);
+check("点击后进入待确认状态", overlay.usePendingRecall()?.seq === 7 && overlay.usePendingRecall()?.sessionId === "session-1");
+degraded.requestRecall("", 9);
+check("降级注入会话 id 为空串", overlay.usePendingRecall()?.sessionId === "" && overlay.usePendingRecall()?.seq === 9);
 // 弹窗 onConfirm 的流程：先清空待确认状态，再发请求。
 overlay.settleRecall();
-await overlay.confirmRecall("session-1", "message-1");
+await overlay.confirmRecall("session-1", "", 7);
 check("确认后请求宿主路由", lastFetch?.url === "/api/dsh-message-recall/recall");
-check("请求载荷为 sessionId+messageId", JSON.parse(lastFetch.init.body).sessionId === "session-1" && JSON.parse(lastFetch.init.body).messageId === "message-1");
+check("请求载荷为 sessionId+seq", JSON.parse(lastFetch.init.body).sessionId === "session-1" && JSON.parse(lastFetch.init.body).seq === 7 && JSON.parse(lastFetch.init.body).messageId === "");
 check("确认后状态清空", overlay.usePendingRecall() === null);
 
 if (failed > 0) {
