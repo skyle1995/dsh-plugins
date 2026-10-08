@@ -30,10 +30,13 @@ __export(index_exports, {
 });
 module.exports = __toCommonJS(index_exports);
 var import_react = require("react");
+var import_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 var NS = "dsh-plugin-repo";
+var PANEL_ID = "plugin-repo";
 var CATALOG_ROUTE = "/api/dsh-plugin-repo/catalog";
 var zh = {
   title: "\u63D2\u4EF6\u4ED3\u5E93",
+  panel: "\u63D2\u4EF6\u4ED3\u5E93",
   description: "\u7BA1\u7406\u4ED3\u5E93\u4E2D\u7684\u63D2\u4EF6\uFF1A\u67E5\u770B\u5728\u7EBF\u76EE\u5F55\u3001\u5B89\u88C5\u3001\u66F4\u65B0\u4E0E\u5378\u8F7D\u3002",
   source: "\u4ED3\u5E93\u6E90",
   refresh: "\u5237\u65B0",
@@ -56,6 +59,7 @@ var zh = {
 };
 var en = {
   title: "Plugin Repository",
+  panel: "Plugin Repository",
   description: "Manage plugins from the repository: browse the online catalog, install, update, and uninstall.",
   source: "Source",
   refresh: "Refresh",
@@ -247,14 +251,22 @@ function RepoSection(props) {
     )
   );
 }
+function RepoPanelIcon({ size }) {
+  return (0, import_react.createElement)(import_dsh_client_ui_primitives.IconCordisPluginOutlineRegular, { size });
+}
 function apply(ctx) {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), "plugin-repo: dictionaries");
   const t = ctx.locale.bind(NS);
-  ctx.slots.inject("settings.plugins.tab", () => ctx.slots.register({
-    name: "settings.plugins.tab",
-    id: "plugin-repo",
-    order: 30,
-    label: () => t("title"),
+  ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({
+    name: "sidebar.panellist",
+    id: PANEL_ID,
+    order: 20,
+    locale: NS,
+    label: () => t("panel")
+  }, RepoPanelIcon));
+  ctx.slots.inject("main", () => ctx.slots.register({
+    name: "main",
+    key: PANEL_ID,
     locale: NS,
     inject: () => ({ ctx })
   }, RepoSection));
