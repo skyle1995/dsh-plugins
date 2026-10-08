@@ -120,8 +120,8 @@ var css = `
 .dsk-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .dsk-title{margin:0;font-size:16px;font-weight:600}
 .dsk-subtitle{margin:0;color:var(--dsw-alias-label-tertiary,#888);font-size:13px;line-height:1.6}
-.dsk-actions{display:flex;gap:8px;flex-shrink:0;align-items:center}
-.dsk-btn{appearance:none;border:1px solid var(--dsw-alias-border-l3,#ddd);background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#222);border-radius:8px;padding:4px 12px;font:inherit;font-size:13px;cursor:pointer}
+.dsk-actions{flex-shrink:0;display:flex;gap:8px;flex-shrink:0;align-items:center}
+.dsk-btn{white-space:nowrap;appearance:none;border:1px solid var(--dsw-alias-border-l3,#ddd);background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#222);border-radius:8px;padding:4px 12px;font:inherit;font-size:13px;cursor:pointer}
 .dsk-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,#f2f2f2)}
 .dsk-btn:disabled{opacity:.5;cursor:default}
 .dsk-btn-primary{background:var(--dsw-alias-state-business-primary,#3b6ef5);border-color:transparent;color:#fff}

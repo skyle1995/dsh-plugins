@@ -87,10 +87,10 @@ const css = `
 .dpr-title{margin:0;font-size:16px;font-weight:600}
 .dpr-subtitle{margin:0;color:var(--dsw-alias-label-tertiary,#888);font-size:13px;line-height:1.6}
 .dpr-source{margin:0;color:var(--dsw-alias-label-tertiary,#888);font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}
-.dpr-toolbar{display:flex;align-items:center;gap:8px}
+.dpr-toolbar{flex-shrink:0;display:flex;align-items:center;gap:8px}
 .dpr-search{box-sizing:border-box;border:.5px solid var(--dsw-alias-border-l2,#ccc);background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#222);font:inherit;border-radius:8px;outline:none;padding:4px 10px;font-size:13px;line-height:20px;min-width:180px}
 .dpr-search:focus{border-color:var(--dsw-alias-state-business-primary,#3b6ef5)}
-.dpr-btn{appearance:none;border:1px solid var(--dsw-alias-border-l3,#ddd);background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#222);border-radius:8px;padding:4px 12px;font:inherit;font-size:13px;cursor:pointer}
+.dpr-btn{white-space:nowrap;appearance:none;border:1px solid var(--dsw-alias-border-l3,#ddd);background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#222);border-radius:8px;padding:4px 12px;font:inherit;font-size:13px;cursor:pointer}
 .dpr-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,#f2f2f2)}
 .dpr-btn:disabled{opacity:.5;cursor:default}
 .dpr-btn-primary{background:var(--dsw-alias-state-business-primary,#3b6ef5);border-color:transparent;color:#fff}
@@ -104,7 +104,7 @@ const css = `
 .dpr-badge{font-size:11px;line-height:1.5;padding:1px 8px;border-radius:999px;border:1px solid var(--dsw-alias-border-l3,#ddd);color:var(--dsw-alias-label-tertiary,#777)}
 .dpr-badge-on{color:var(--dsw-alias-state-success,#18864b);border-color:currentColor}
 .dpr-badge-warn{color:var(--dsw-alias-state-warning,#a06b00);border-color:currentColor}
-.dpr-actions{display:flex;gap:8px;flex-shrink:0;align-items:center}
+.dpr-actions{flex-shrink:0;display:flex;gap:8px;flex-shrink:0;align-items:center}
 .dpr-notice{margin:0;border-radius:8px;padding:10px 14px;font-size:13px;line-height:1.6}
 .dpr-notice-err{background:color-mix(in srgb,var(--dsw-alias-state-error-primary,#d33) 12%,transparent);color:var(--dsw-alias-state-error-primary,#d33)}
 .dpr-notice-ok{background:color-mix(in srgb,var(--dsw-alias-state-success,#18864b) 12%,transparent);color:var(--dsw-alias-state-success,#18864b)}
