@@ -27,14 +27,19 @@ const zh = {
 	entryInstall: "安装",
 	entryUpdate: "更新",
 	entryReinstall: "重装",
+	entryEnable: "启用",
+	entryDisable: "禁用",
 	entryRemove: "卸载",
 	entryBusy: "处理中…",
 	entryCancel: "取消",
 	notBundle: "非组合包",
+	notInstalledBadge: "未安装",
 	installedBadge: "已安装",
 	enabledBadge: "已启用",
-	catalogBadge: "在线版本 {version}",
-	installedVersionBadge: "已装版本 {version}",
+	disabledBadge: "已禁用",
+	basePluginBadge: "基础插件",
+	versionBadge: "版本 {version}",
+	repoVersionBadge: "仓库版本 {version}",
 	updateAvailableBadge: "可更新",
 	installOk: "「{name}」操作成功。",
 	installFailed: "「{name}」操作失败：{message}",
@@ -53,14 +58,19 @@ const en = {
 	entryInstall: "Install",
 	entryUpdate: "Update",
 	entryReinstall: "Reinstall",
+	entryEnable: "Enable",
+	entryDisable: "Disable",
 	entryRemove: "Uninstall",
 	entryBusy: "Working…",
 	entryCancel: "Cancel",
 	notBundle: "Not a bundle",
+	notInstalledBadge: "Not installed",
 	installedBadge: "Installed",
 	enabledBadge: "Enabled",
-	catalogBadge: "Online version {version}",
-	installedVersionBadge: "Installed version {version}",
+	disabledBadge: "Disabled",
+	basePluginBadge: "Base plugin",
+	versionBadge: "v{version}",
+	repoVersionBadge: "Repo v{version}",
 	updateAvailableBadge: "Update available",
 	installOk: "“{name}” succeeded.",
 	installFailed: "“{name}” operation failed: {message}",
@@ -186,6 +196,15 @@ function RepoSection({ t }) {
 		}
 	}
 
+	async function toggleEnabled(entry) {
+		await run(entry.name, "toggle", undefined, async () => {
+			await api("/enable", { method: "POST", body: JSON.stringify({ name: entry.name, enabled: !entry.enabled }) });
+			setNotice({ kind: "ok", text: format(t("installOk"), { name: entry.name }) });
+		}).catch((error) => {
+			setNotice({ kind: "error", text: format(t("installFailed"), { name: entry.name, message: error.message }) });
+		});
+	}
+
 	async function remove(entry) {
 		if (!globalThis.confirm(format(t("removeConfirm"), { name: entry.name }))) return;
 		await run(entry.name, "remove", undefined, async () => {
@@ -205,18 +224,20 @@ function RepoSection({ t }) {
 		} else if (entry.installed) {
 			const hasUpdate = entry.installedVersion !== null && entry.installedVersion !== undefined && entry.version !== null && entry.version !== undefined && entry.installedVersion !== entry.version;
 			actions.push(h("button", { key: hasUpdate ? "update" : "reinstall", className: hasUpdate ? "dpr-btn dpr-btn-primary" : "dpr-btn", onClick: () => void install(entry) }, hasUpdate ? t("entryUpdate") : t("entryReinstall")));
+			if (!entry.self) actions.push(h("button", { key: "toggle", className: "dpr-btn", onClick: () => void toggleEnabled(entry) }, entry.enabled ? t("entryDisable") : t("entryEnable")));
 			if (entry.removable !== false) actions.push(h("button", { key: "remove", className: "dpr-btn dpr-btn-danger", onClick: () => void remove(entry) }, t("entryRemove")));
 		} else {
 			actions.push(h("button", { key: "install", className: "dpr-btn dpr-btn-primary", onClick: () => void install(entry) }, t("entryInstall")));
 		}
 		const badges = [];
 		const hasUpdate = entry.installedVersion !== null && entry.installedVersion !== undefined && entry.version !== null && entry.version !== undefined && entry.installedVersion !== entry.version;
-		if (entry.installed) badges.push(h("span", { key: "installed", className: "dpr-badge dpr-badge-on" }, t("installedBadge")));
+		if (entry.installedVersion !== null && entry.installedVersion !== undefined) badges.push(h("span", { key: "iv", className: "dpr-badge" }, format(t("versionBadge"), { version: entry.installedVersion })));
+		badges.push(h("span", { key: "installed", className: entry.installed ? "dpr-badge dpr-badge-on" : "dpr-badge" }, entry.installed ? t("installedBadge") : t("notInstalledBadge")));
+		if (entry.installed) badges.push(h("span", { key: "enabled", className: entry.enabled ? "dpr-badge dpr-badge-on" : "dpr-badge dpr-badge-warn" }, entry.enabled ? t("enabledBadge") : t("disabledBadge")));
+		if (entry.version !== null && entry.version !== undefined) badges.push(h("span", { key: "v", className: "dpr-badge" }, format(t("repoVersionBadge"), { version: entry.version })));
 		if (hasUpdate) badges.push(h("span", { key: "update", className: "dpr-badge dpr-badge-warn" }, t("updateAvailableBadge")));
-		if (entry.installedVersion !== null && entry.installedVersion !== undefined) badges.push(h("span", { key: "iv", className: "dpr-badge" }, format(t("installedVersionBadge"), { version: entry.installedVersion })));
-		if (entry.enabled) badges.push(h("span", { key: "enabled", className: "dpr-badge dpr-badge-on" }, t("enabledBadge")));
+		if (entry.self) badges.push(h("span", { key: "base", className: "dpr-badge" }, t("basePluginBadge")));
 		if (!entry.isBundle) badges.push(h("span", { key: "nb", className: "dpr-badge dpr-badge-warn" }, t("notBundle")));
-		if (entry.version !== null && entry.version !== undefined) badges.push(h("span", { key: "v", className: "dpr-badge" }, format(t("catalogBadge"), { version: entry.version })));
 		return h("div", { key: entry.name, className: "dpr-row" },
 			h("div", { className: "dpr-info" },
 				h("div", { className: "dpr-name" },

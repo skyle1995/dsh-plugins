@@ -46,14 +46,19 @@ var zh = {
   entryInstall: "\u5B89\u88C5",
   entryUpdate: "\u66F4\u65B0",
   entryReinstall: "\u91CD\u88C5",
+  entryEnable: "\u542F\u7528",
+  entryDisable: "\u7981\u7528",
   entryRemove: "\u5378\u8F7D",
   entryBusy: "\u5904\u7406\u4E2D\u2026",
   entryCancel: "\u53D6\u6D88",
   notBundle: "\u975E\u7EC4\u5408\u5305",
+  notInstalledBadge: "\u672A\u5B89\u88C5",
   installedBadge: "\u5DF2\u5B89\u88C5",
   enabledBadge: "\u5DF2\u542F\u7528",
-  catalogBadge: "\u5728\u7EBF\u7248\u672C {version}",
-  installedVersionBadge: "\u5DF2\u88C5\u7248\u672C {version}",
+  disabledBadge: "\u5DF2\u7981\u7528",
+  basePluginBadge: "\u57FA\u7840\u63D2\u4EF6",
+  versionBadge: "\u7248\u672C {version}",
+  repoVersionBadge: "\u4ED3\u5E93\u7248\u672C {version}",
   updateAvailableBadge: "\u53EF\u66F4\u65B0",
   installOk: "\u300C{name}\u300D\u64CD\u4F5C\u6210\u529F\u3002",
   installFailed: "\u300C{name}\u300D\u64CD\u4F5C\u5931\u8D25\uFF1A{message}",
@@ -71,14 +76,19 @@ var en = {
   entryInstall: "Install",
   entryUpdate: "Update",
   entryReinstall: "Reinstall",
+  entryEnable: "Enable",
+  entryDisable: "Disable",
   entryRemove: "Uninstall",
   entryBusy: "Working\u2026",
   entryCancel: "Cancel",
   notBundle: "Not a bundle",
+  notInstalledBadge: "Not installed",
   installedBadge: "Installed",
   enabledBadge: "Enabled",
-  catalogBadge: "Online version {version}",
-  installedVersionBadge: "Installed version {version}",
+  disabledBadge: "Disabled",
+  basePluginBadge: "Base plugin",
+  versionBadge: "v{version}",
+  repoVersionBadge: "Repo v{version}",
   updateAvailableBadge: "Update available",
   installOk: "\u201C{name}\u201D succeeded.",
   installFailed: "\u201C{name}\u201D operation failed: {message}",
@@ -188,6 +198,14 @@ function RepoSection({ t }) {
     } catch {
     }
   }
+  async function toggleEnabled(entry) {
+    await run(entry.name, "toggle", void 0, async () => {
+      await api("/enable", { method: "POST", body: JSON.stringify({ name: entry.name, enabled: !entry.enabled }) });
+      setNotice({ kind: "ok", text: format(t("installOk"), { name: entry.name }) });
+    }).catch((error) => {
+      setNotice({ kind: "error", text: format(t("installFailed"), { name: entry.name, message: error.message }) });
+    });
+  }
   async function remove(entry) {
     if (!globalThis.confirm(format(t("removeConfirm"), { name: entry.name }))) return;
     await run(entry.name, "remove", void 0, async () => {
@@ -206,18 +224,20 @@ function RepoSection({ t }) {
     } else if (entry.installed) {
       const hasUpdate2 = entry.installedVersion !== null && entry.installedVersion !== void 0 && entry.version !== null && entry.version !== void 0 && entry.installedVersion !== entry.version;
       actions.push((0, import_react.createElement)("button", { key: hasUpdate2 ? "update" : "reinstall", className: hasUpdate2 ? "dpr-btn dpr-btn-primary" : "dpr-btn", onClick: () => void install(entry) }, hasUpdate2 ? t("entryUpdate") : t("entryReinstall")));
+      if (!entry.self) actions.push((0, import_react.createElement)("button", { key: "toggle", className: "dpr-btn", onClick: () => void toggleEnabled(entry) }, entry.enabled ? t("entryDisable") : t("entryEnable")));
       if (entry.removable !== false) actions.push((0, import_react.createElement)("button", { key: "remove", className: "dpr-btn dpr-btn-danger", onClick: () => void remove(entry) }, t("entryRemove")));
     } else {
       actions.push((0, import_react.createElement)("button", { key: "install", className: "dpr-btn dpr-btn-primary", onClick: () => void install(entry) }, t("entryInstall")));
     }
     const badges = [];
     const hasUpdate = entry.installedVersion !== null && entry.installedVersion !== void 0 && entry.version !== null && entry.version !== void 0 && entry.installedVersion !== entry.version;
-    if (entry.installed) badges.push((0, import_react.createElement)("span", { key: "installed", className: "dpr-badge dpr-badge-on" }, t("installedBadge")));
+    if (entry.installedVersion !== null && entry.installedVersion !== void 0) badges.push((0, import_react.createElement)("span", { key: "iv", className: "dpr-badge" }, format(t("versionBadge"), { version: entry.installedVersion })));
+    badges.push((0, import_react.createElement)("span", { key: "installed", className: entry.installed ? "dpr-badge dpr-badge-on" : "dpr-badge" }, entry.installed ? t("installedBadge") : t("notInstalledBadge")));
+    if (entry.installed) badges.push((0, import_react.createElement)("span", { key: "enabled", className: entry.enabled ? "dpr-badge dpr-badge-on" : "dpr-badge dpr-badge-warn" }, entry.enabled ? t("enabledBadge") : t("disabledBadge")));
+    if (entry.version !== null && entry.version !== void 0) badges.push((0, import_react.createElement)("span", { key: "v", className: "dpr-badge" }, format(t("repoVersionBadge"), { version: entry.version })));
     if (hasUpdate) badges.push((0, import_react.createElement)("span", { key: "update", className: "dpr-badge dpr-badge-warn" }, t("updateAvailableBadge")));
-    if (entry.installedVersion !== null && entry.installedVersion !== void 0) badges.push((0, import_react.createElement)("span", { key: "iv", className: "dpr-badge" }, format(t("installedVersionBadge"), { version: entry.installedVersion })));
-    if (entry.enabled) badges.push((0, import_react.createElement)("span", { key: "enabled", className: "dpr-badge dpr-badge-on" }, t("enabledBadge")));
+    if (entry.self) badges.push((0, import_react.createElement)("span", { key: "base", className: "dpr-badge" }, t("basePluginBadge")));
     if (!entry.isBundle) badges.push((0, import_react.createElement)("span", { key: "nb", className: "dpr-badge dpr-badge-warn" }, t("notBundle")));
-    if (entry.version !== null && entry.version !== void 0) badges.push((0, import_react.createElement)("span", { key: "v", className: "dpr-badge" }, format(t("catalogBadge"), { version: entry.version })));
     return (0, import_react.createElement)(
       "div",
       { key: entry.name, className: "dpr-row" },

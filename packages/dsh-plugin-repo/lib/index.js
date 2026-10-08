@@ -32,10 +32,14 @@ export const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
 /** 浏览器半区读取仓库目录的 HTTP 路由（注册在 web profile 的 webServer 上）。 */
 export const CATALOG_ROUTE = "/api/dsh-plugin-repo/catalog";
 
-/** 浏览器半区的管理路由：安装 / 卸载 / 取消（转发 pluginManager 服务）。 */
+/** 浏览器半区的管理路由：安装 / 卸载 / 取消 / 启停（转发 pluginManager 服务）。 */
 export const INSTALL_ROUTE = "/api/dsh-plugin-repo/install";
 export const REMOVE_ROUTE = "/api/dsh-plugin-repo/remove";
 export const CANCEL_ROUTE = "/api/dsh-plugin-repo/cancel";
+export const ENABLE_ROUTE = "/api/dsh-plugin-repo/enable";
+
+/** 基础插件自身包名：禁止被禁用（否则设置页与全部管理路由会随组合包一起失效）。 */
+export const BASE_PLUGIN_NAME = "dsh-plugin-repo";
 
 /**
  * 带错误码的仓库操作失败，code 形如 `plugin-repo/<kind>`。
@@ -201,6 +205,11 @@ export class PluginRepoService extends Service {
 						path: CANCEL_ROUTE,
 						handler: (req, res) => this.handleManagementRequest(req, res, "cancel"),
 					}),
+					webCtx.webServer.register({
+						kind: "exact",
+						path: ENABLE_ROUTE,
+						handler: (req, res) => this.handleManagementRequest(req, res, "enable"),
+					}),
 				];
 				return () => {
 					for (const dispose of disposers) dispose();
@@ -233,6 +242,7 @@ export class PluginRepoService extends Service {
 					enabled: bundle?.enabled === true,
 					removable: bundle?.removable === true,
 					installedVersion: typeof bundle?.version === "string" ? bundle.version : null,
+					self: entry.name === BASE_PLUGIN_NAME,
 				};
 			}),
 		};
@@ -301,6 +311,20 @@ export class PluginRepoService extends Service {
 			}
 			if (operation === "cancel") {
 				const result = await manager.cancelInstall(String(body.requestId ?? ""));
+				payload(200, { ok: true, result });
+				return;
+			}
+			if (operation === "enable") {
+				const name = String(body.name ?? "").trim();
+				if (name === "") {
+					payload(400, { ok: false, code: "plugin-repo/invalid-name", message: "缺少插件名" });
+					return;
+				}
+				if (name === BASE_PLUGIN_NAME && body.enabled !== true) {
+					payload(400, { ok: false, code: "plugin-repo/base-plugin-protected", message: "基础插件禁止禁用，否则插件将无法管理自身。" });
+					return;
+				}
+				const result = await manager.setBundleEnabled(name, body.enabled === true);
 				payload(200, { ok: true, result });
 				return;
 			}
