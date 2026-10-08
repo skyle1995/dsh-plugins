@@ -746,33 +746,85 @@ var NS3 = "dsh-plugin-session-archive";
 var API3 = "/api/dsh-session-archive";
 var zh3 = {
   "menu.deleteSession": "\u5220\u9664\u4F1A\u8BDD",
-  deleteConfirm: "\u786E\u5B9A\u6C38\u4E45\u5220\u9664\u8BE5\u4F1A\u8BDD\u5417\uFF1F\u5176\u4F1A\u8BDD\u8BB0\u5F55\u4E0E\u78C1\u76D8\u6587\u4EF6\u5C06\u88AB\u79FB\u9664\uFF0C\u4E0D\u53EF\u6062\u590D\u3002",
+  deleteConfirmTitle: "\u5220\u9664\u4F1A\u8BDD",
+  deleteConfirm: "\u8BE5\u4F1A\u8BDD\u7684\u4F1A\u8BDD\u8BB0\u5F55\u4E0E\u78C1\u76D8\u6587\u4EF6\u5C06\u88AB\u6C38\u4E45\u79FB\u9664\uFF0C\u6B64\u64CD\u4F5C\u4E0D\u53EF\u6062\u590D\u3002",
+  deleteAcknowledge: "\u6211\u5DF2\u77E5\u6653\u5220\u9664\u4E0D\u53EF\u6062\u590D",
+  deleteCancel: "\u53D6\u6D88",
+  deleteConfirmAction: "\u5220\u9664",
   deleteFailed: "\u5220\u9664\u5931\u8D25\uFF1A{message}"
 };
 var en3 = {
   "menu.deleteSession": "Delete session",
-  deleteConfirm: "Permanently delete this session? Its records and on-disk files will be removed and cannot be recovered.",
+  deleteConfirmTitle: "Delete session",
+  deleteConfirm: "This session's records and on-disk files will be permanently removed. This cannot be undone.",
+  deleteAcknowledge: "I understand this cannot be undone",
+  deleteCancel: "Cancel",
+  deleteConfirmAction: "Delete",
   deleteFailed: "Delete failed: {message}"
 };
 function format3(text, params) {
   return text.replace(/\{(\w+)\}/g, (_, key) => String(params[key] ?? ""));
 }
-function DeleteSessionMenuItem({ sessionId, useMenuOpenState, t, deleteSession }) {
+var pendingDelete = null;
+var listeners = /* @__PURE__ */ new Set();
+function requestDelete(sessionId) {
+  pendingDelete = { sessionId };
+  for (const listener of listeners) listener();
+}
+function settleDelete() {
+  pendingDelete = null;
+  for (const listener of listeners) listener();
+}
+function usePendingDelete() {
+  const [state, setState] = (0, import_react3.useState)(pendingDelete);
+  (0, import_react3.useEffect)(() => {
+    const listener = () => setState(pendingDelete);
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
+  }, []);
+  return state;
+}
+function DeleteSessionMenuItem({ sessionId, useMenuOpenState, t, requestDelete: requestDelete2 }) {
   const [, setMenuOpen] = useMenuOpenState();
   return (0, import_react3.createElement)(import_dsh_client_ui_primitives.MenuItemButton, {
+    danger: true,
     icon: (0, import_react3.createElement)(import_dsh_client_ui_primitives.IconTrashOutlineRegular, { size: 14 }),
     onSelect: () => {
       setMenuOpen(false);
-      deleteSession(sessionId);
+      requestDelete2(sessionId);
     },
     children: t("menu.deleteSession")
+  });
+}
+function DeleteConfirmDialog({ t, usePendingDelete: usePendingDelete2, settleDelete: settleDelete2, confirmDelete }) {
+  const request = usePendingDelete2();
+  const [acknowledged, setAcknowledged] = (0, import_react3.useState)(false);
+  (0, import_react3.useEffect)(() => {
+    if (request !== null) setAcknowledged(false);
+  }, [request]);
+  return (0, import_react3.createElement)(import_dsh_client_ui_primitives.RiskConfirmation, {
+    open: request !== null,
+    title: t("deleteConfirmTitle"),
+    description: t("deleteConfirm"),
+    acknowledgeLabel: t("deleteAcknowledge"),
+    cancelLabel: t("deleteCancel"),
+    confirmLabel: t("deleteConfirmAction"),
+    acknowledged,
+    onAcknowledgedChange: setAcknowledged,
+    onCancel: settleDelete2,
+    onConfirm: () => {
+      const sessionId = request?.sessionId;
+      settleDelete2();
+      if (sessionId !== void 0) confirmDelete(sessionId);
+    }
   });
 }
 function register3(ctx) {
   ctx.effect(() => ctx.locale.register(NS3, { zh: zh3, en: en3 }), "plugin-session-archive: dictionaries");
   const t = ctx.locale.bind(NS3);
-  const deleteSession = (sessionId) => {
-    if (!globalThis.confirm(t("deleteConfirm"))) return;
+  const confirmDelete = (sessionId) => {
     void fetch(`${API3}/delete`, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
@@ -788,12 +840,18 @@ function register3(ctx) {
       globalThis.alert(format3(t("deleteFailed"), { message: error.message }));
     });
   };
+  ctx.slots.inject("shell.overlay", () => ctx.slots.register({
+    name: "shell.overlay",
+    id: "session-delete-confirm",
+    locale: NS3,
+    inject: () => ({ usePendingDelete, settleDelete, confirmDelete })
+  }, DeleteConfirmDialog));
   ctx.slots.inject("sidebar.workspaces.session.menu.item", () => ctx.slots.register({
     name: "sidebar.workspaces.session.menu.item",
     id: "delete-session",
     order: 900,
     locale: NS3,
-    inject: () => ({ deleteSession })
+    inject: () => ({ requestDelete })
   }, DeleteSessionMenuItem));
 }
 
