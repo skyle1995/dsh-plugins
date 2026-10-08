@@ -24,7 +24,7 @@ function check(label, condition) {
 	}
 }
 
-const userMessage = (text) => ({ role: "user", content: [{ type: "text", text }], source: { kind: "user" } });
+const userMessage = (id, text) => ({ id, role: "user", content: [{ type: "text", text }], source: { kind: "user" } });
 const assistantMessage = (id, text) => ({
 	id, role: "assistant",
 	content: [{ type: "text", text }],
@@ -64,11 +64,11 @@ try {
 	check("sessions 服务就绪", root.sessions !== undefined);
 	const session = root.sessions.create(SessionId(sessionId), { meta: { cwd: workspace } });
 	session.append("turn/start", { turn: 1 });
-	session.append("user/message", userMessage("你好"), { surfaceOp: "append" });
+	session.append("user/message", userMessage("u-1", "你好"), { surfaceOp: "append" });
 	session.append("assistant/message", { turn: 1, step: 1, message: assistantMessage("m-1", "你好！"), stream: [] }, { surfaceOp: "append" });
 	session.append("turn/end", { turn: 1, reason: "success" });
 	session.append("turn/start", { turn: 2 });
-	session.append("user/message", userMessage("改一下 a.txt 并新建 created.txt"), { surfaceOp: "append" });
+	session.append("user/message", userMessage("u-2", "改一下 a.txt 并新建 created.txt"), { surfaceOp: "append" });
 	session.append("assistant/message", { turn: 2, step: 1, message: assistantMessage("m-2", "好的，我来改"), stream: [] }, { surfaceOp: "append" });
 	session.append("tool/result", { turn: 2, step: 1, message: toolMessage("t-1") }, { surfaceOp: "append" });
 	session.append("assistant/message", { turn: 2, step: 2, message: assistantMessage("m-3", "已完成修改"), stream: [] }, { surfaceOp: "append" });
@@ -105,14 +105,17 @@ try {
 	check("删除清单含 created.txt", result.value.deleted.includes(createdPath));
 	check("轮次正确", result.value.turn === 2);
 
+	const userSeq = events.find((event) => event.type === "user/message" && event.data.id === "u-2").seq;
 	const nodes = [...session.surface.nodes];
 	check("助手消息已移出 surface", !nodes.includes(firstAssistantSeq) && !nodes.includes(target.seq));
 	check("工具结果已移出 surface", !nodes.includes(toolSeq));
+	check("用户消息已移出 surface", !nodes.includes(userSeq));
 	const placeholderSeq = session.snapshotEvents().length - 1;
 	check("占位节点进入 surface", nodes.includes(placeholderSeq));
 	const messages = session.deriveMessages();
 	check("派生历史无助手回复", !messages.some((message) => message.id === "m-3"));
 	check("派生历史无工具结果", !messages.some((message) => message.id === "t-1"));
+	check("派生历史无原用户消息", !messages.some((message) => message.id === "u-2"));
 	check("派生历史含占位消息", messages.some((message) => message.role === "user" && String(message.content?.[0]?.text ?? "").includes("消息已撤回")));
 
 	// 再次撤回同一消息应失败（范围已被遮蔽）。
@@ -152,7 +155,8 @@ try {
 		&& appendedEntry.seq === SessionSeq(stored.length - 1)
 		&& appendedEntry.surfaceOp?.op === "replace"
 		&& Array.isArray(appendedEntry.sourceEventSeqs)
-		&& appendedEntry.sourceEventSeqs.includes(events.find((event) => event.type === "assistant/message" && event.data.message.id === "m-1").seq));
+		&& appendedEntry.sourceEventSeqs.includes(events.find((event) => event.type === "assistant/message" && event.data.message.id === "m-1").seq)
+		&& appendedEntry.sourceEventSeqs.includes(events.find((event) => event.type === "user/message" && event.data.id === "u-1").seq));
 	check("冷会话 seq 连续", appendedEntry.seq === stored.length - 1);
 
 	// 不存在的消息：业务失败而非崩溃。

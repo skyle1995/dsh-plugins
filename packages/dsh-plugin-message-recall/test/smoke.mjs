@@ -34,8 +34,8 @@ function event(type, data, surfaceOp = undefined) {
 	if (surfaceOp !== undefined) envelope.surfaceOp = surfaceOp;
 	return envelope;
 }
-function user(content) {
-	return event("user/message", { role: "user", content: [{ type: "text", text: content }], source: { kind: "user" } }, "append");
+function user(id, content) {
+	return event("user/message", { id, role: "user", content: [{ type: "text", text: content }], source: { kind: "user" } }, "append");
 }
 function assistant(id, content, turn, step) {
 	return event("assistant/message", { turn, step, message: { id, role: "assistant", content: [{ type: "text", text: content }], source: { kind: "model" } } }, "append");
@@ -47,7 +47,7 @@ function toolResult(turn, step) {
 // 典型第 3 轮：用户提问 + 助手（工具调用）+ 工具结果 + 定稿助手消息
 const turn3 = [
 	event("turn/start", { turn: 3 }),
-	user("把 README 改一下"),
+	user("u-3", "把 README 改一下"),
 	assistant("m-31", "先读文件", 3, 1),
 	toolResult(3, 1),
 	assistant("m-32", "已完成修改", 3, 2),
@@ -101,11 +101,12 @@ const turn3 = [
 	{
 		const plan = planRecall(events, "m-32");
 		check("定位定稿消息", plan.ok === true && plan.turn === 3);
-		check("范围为助手首条到轮末", plan.start === turn3[2].seq && plan.end === turn3[4].seq);
-		check("遮蔽序列完整", JSON.stringify(plan.shadowedSeqs) === JSON.stringify([turn3[2].seq, turn3[3].seq, turn3[4].seq]));
+		check("范围为整轮（用户提问到轮末）", plan.start === turn3[1].seq && plan.end === turn3[4].seq);
+		check("遮蔽序列完整", JSON.stringify(plan.shadowedSeqs) === JSON.stringify([turn3[1].seq, turn3[2].seq, turn3[3].seq, turn3[4].seq]));
+		const byUser = planRecall(events, "u-3");
+		check("用户消息也可作为撤回目标", byUser.ok === true && byUser.start === turn3[1].seq && byUser.end === turn3[4].seq);
 	}
 	check("未知消息失败", planRecall(events, "m-nope").code === "recall/target-not-found");
-	check("用户消息不是撤回目标", planRecall(events, turn3[1].data.id).ok === false);
 
 	// 7) turnAtSeqMap：user/message 无 data.turn，靠括号归属
 	{
@@ -118,10 +119,10 @@ const turn3 = [
 	{
 		const after = [
 			...events,
-			event("user/message", { role: "user", content: [{ type: "text", text: "已撤回" }], source: { kind: "user" } }, { op: "replace", startSeq: turn3[2].seq, endSeq: turn3[4].seq }),
+			event("user/message", { id: "placeholder", role: "user", content: [{ type: "text", text: "已撤回" }], source: { kind: "user" } }, { op: "replace", startSeq: turn3[1].seq, endSeq: turn3[4].seq }),
 		];
 		check("替换后范围不再完整", planRecall(after, "m-32").code === "recall/range-not-intact");
-		check("折叠后节点数", foldSurfaceNodes(after).length === events.filter((e) => e.surfaceOp === "append").length - 2);
+		check("折叠后节点数", foldSurfaceNodes(after).length === events.filter((e) => e.surfaceOp === "append").length - 3);
 	}
 
 	// 9) planRollback：后轮触碰跳过 / oversized 跳过 / absent 删除 / content 还原
@@ -149,6 +150,7 @@ const turn3 = [
 	{
 		const text = placeholderContent({ turn: 3, restored: 2, skipped: 1, failed: 1 });
 		check("占位文案含轮次", text.includes("第 3 轮"));
+		check("占位文案含整轮措辞", text.includes("用户消息与助手回复"));
 		check("占位文案含还原数", text.includes("2 个文件变更已还原"));
 		check("占位文案含跳过/失败", text.includes("未还原") && text.includes("还原失败"));
 	}
@@ -157,13 +159,14 @@ const turn3 = [
 	{
 		const turn4 = [
 			event("turn/start", { turn: 4 }),
-			user("继续"),
+			user("u-4", "继续"),
 			assistant("m-41", "好", 4, 1),
 			event("turn/end", { turn: 4, reason: "success" }),
 		];
 		const all = [...turn3, ...turn4];
 		const plan = planRecall(all, "m-32");
 		check("中间轮范围不含后轮", plan.ok === true && plan.end === turn3[4].seq && !plan.shadowedSeqs.includes(turn4[1].seq));
+		check("中间轮范围含本轮用户消息", plan.shadowedSeqs.includes(turn3[1].seq));
 	}
 }
 

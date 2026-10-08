@@ -90,29 +90,32 @@ export function turnAtSeqMap(events) {
 /**
  * 定位撤回目标并计算被遮蔽范围。
  *
+ * 撤回以「轮」为单位：目标是该轮内的任意一条消息（用户提问或助手消息），
+ * 遮蔽范围是从该轮第一条 surface 节点（用户提问）到最后一条的闭区间——
+ * 用户消息内容与助手回复、工具调用一起从会话中移除。
+ *
  * @param {Array<object>} events - 会话事件（含 type/data/seq/surfaceOp）。
- * @param {string} messageId - 界面动作行的助手消息 id。
+ * @param {string} messageId - 界面动作行的消息 id（用户或助手消息均可）。
  * @returns {{ ok: true, turn: number, start: number, end: number, shadowedSeqs: number[] } | { ok: false, code: string, message: string }}
  */
 export function planRecall(events, messageId) {
-	// 目标：以追加方式进入 surface、内容非空、消息 id 匹配的 assistant/message。
-	const target = [...events].reverse().find((event) =>
-		event.type === "assistant/message"
-		&& isAppendSurfaceEvent(event)
-		&& event.data?.message?.id === messageId
-		&& (event.data?.message?.content?.length ?? 0) > 0
-	);
+	// 目标：以追加方式进入 surface、消息 id 匹配的 user/message 或 assistant/message。
+	const target = [...events].reverse().find((event) => {
+		if (!isAppendSurfaceEvent(event)) return false;
+		if (event.type === "assistant/message") return event.data?.message?.id === messageId && (event.data?.message?.content?.length ?? 0) > 0;
+		if (event.type === "user/message") return event.data?.id === messageId;
+		return false;
+	});
 	if (target === undefined) {
-		return { ok: false, code: "recall/target-not-found", message: `没有找到消息 ${messageId}：它可能不是已定稿的助手消息，或已被压缩/撤回。` };
+		return { ok: false, code: "recall/target-not-found", message: `没有找到消息 ${messageId}：它可能不是已定稿的会话消息，或已被压缩/撤回。` };
 	}
-	const turn = target.data.turn;
-	if (typeof turn !== "number") return { ok: false, code: "recall/target-turn", message: "目标消息缺少轮次信息，无法撤回。" };
 	const turnAt = turnAtSeqMap(events);
-	// 该轮全部 surface 节点（按括号归属）。
+	const turn = turnAt.get(target.seq);
+	if (typeof turn !== "number") return { ok: false, code: "recall/target-turn", message: "目标消息缺少轮次信息，无法撤回。" };
+	// 该轮全部 surface 节点（按括号归属）：从用户提问到轮末。
 	const turnNodes = events.filter((event) => isSurfaceEvent(event) && turnAt.get(event.seq) === turn);
-	const assistantNodes = turnNodes.filter((event) => event.type === "assistant/message");
-	if (assistantNodes.length === 0) return { ok: false, code: "recall/range-empty", message: "该轮没有助手消息，无法撤回。" };
-	const start = Math.min(...assistantNodes.map((event) => event.seq));
+	if (turnNodes.length === 0) return { ok: false, code: "recall/range-empty", message: "该轮没有会话消息，无法撤回。" };
+	const start = Math.min(...turnNodes.map((event) => event.seq));
 	const end = Math.max(...turnNodes.map((event) => event.seq));
 	if (start > target.seq || end < target.seq) {
 		return { ok: false, code: "recall/range-outside", message: "目标消息不在该轮 surface 范围内。" };
@@ -182,7 +185,7 @@ export function planRollback(captures, targetTurn) {
  */
 export function placeholderContent(summary) {
 	const { turn, restored, skipped, failed } = summary;
-	const parts = [`消息已撤回：第 ${turn} 轮助手回复及其工具调用已从会话移除。`];
+	const parts = [`消息已撤回：第 ${turn} 轮对话（用户消息与助手回复及其工具调用）已从会话移除。`];
 	if (restored > 0) parts.push(`该轮的 ${restored} 个文件变更已还原。`);
 	if (skipped > 0) parts.push(`${skipped} 个文件因之后被再次修改或内容过大而未还原。`);
 	if (failed > 0) parts.push(`${failed} 个文件还原失败（见操作结果）。`);

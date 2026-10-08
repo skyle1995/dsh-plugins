@@ -84,6 +84,7 @@ try {
 	await verify.close();
 	const placeholder = stored.at(-1);
 	check("占位节点已落盘", placeholder.type === "user/message" && placeholder.surfaceOp?.op === "replace");
+	check("占位覆盖整轮（含用户消息 seq 1）", Array.isArray(placeholder.sourceEventSeqs) && placeholder.sourceEventSeqs.includes(1) && placeholder.sourceEventSeqs.includes(3));
 	check("占位 seq 连续", placeholder.seq === 6 && stored.length === 7);
 	check("占位文案正确", String(placeholder.data?.content?.[0]?.text ?? "").includes("消息已撤回"));
 

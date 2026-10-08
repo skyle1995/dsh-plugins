@@ -84,6 +84,7 @@ globalThis.alert = () => {};
 entry.module.apply(ctx);
 
 check("注册助手动作行 slot", slotRegistrations.some((s) => s.name === "conversation.chat.assistant-actions" && s.registration.options.id === "recall"));
+check("注册用户节点遮蔽 slot", slotRegistrations.some((s) => s.name === "conversation.chat.node" && s.registration.options.key === "user" && s.registration.options.priority === -1));
 check("注册 shell.overlay slot", slotRegistrations.some((s) => s.name === "shell.overlay" && s.registration.options.id === "message-recall-confirm"));
 check("词典注册", dictionaries.some((d) => d.ns === "dsh-plugin-message-recall" && d.dict.zh["action.recall"] === "撤回"));
 
