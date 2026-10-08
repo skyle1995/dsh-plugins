@@ -17,6 +17,8 @@
 import { Service } from "@deepseek-ai/cordis";
 import Schema from "@deepseek-ai/schemastery";
 import { basename } from "node:path";
+import { SessionArchiveService } from "./session-archive.js";
+import { SkillManagerService } from "./skills.js";
 
 /** 本插件默认对接的 Gitea 主机。 */
 export const DEFAULT_GIT_HOST = "https://hub.ifunx.com";
@@ -157,12 +159,21 @@ export class PluginRepoService extends Service {
 		catalogDir: Schema.string().default(DEFAULT_CATALOG_DIR),
 		token: Schema.string().role("secret").default(""),
 		requestTimeoutMs: Schema.number().default(DEFAULT_REQUEST_TIMEOUT_MS),
+		/** 技能能力子服务的技能根目录；留空自动 $DSH_HOME/skills */
+		skillsDir: Schema.string().default(""),
+		/** 会话归档子服务的会话根目录；留空自动 $DSH_HOME/sessions */
+		sessionsDir: Schema.string().default(""),
 	});
 
 	constructor(ctx, config) {
 		super(ctx, "pluginRepo");
 		this.config = config;
 		ctx.logger.info(`dsh-plugin-repo 已激活：${gitUrlOf(config)}（分支 ${config.branch}，目录 ${config.catalogDir}/）`);
+		// 基础能力子服务：技能能力（含规则提示词）与会话归档。作为子插件挂载，
+		// 各自持有独立的依赖注入面（会话归档需要 workspaceRegistry，缺失时仅
+		// 该子服务保持未激活，不影响主服务与技能能力）。
+		ctx.plugin(SkillManagerService, { skillsDir: config.skillsDir ?? "" });
+		ctx.plugin(SessionArchiveService, { sessionsDir: config.sessionsDir ?? "" });
 		// Web profile 中注册浏览器半区使用的目录路由。webServer 属于 Web 组合的
 		// 作用域，不能从本行的注入面直接读取（ctx.get 拿不到），因此用
 		// ctx.inject 建一个以 webServer 为依赖的作用域子插件：Web 存在时注册

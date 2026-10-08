@@ -188,8 +188,8 @@ function SessionArchiveSection({ t }) {
 			body));
 }
 
-/** 浏览器插件入口：注册 locale 词典与设置面板里的独立「会话归档」分区。 */
-export function apply(ctx) {
+/** 注册会话归档设置分区（由主包 apply 调用）。 */
+export function register(ctx) {
 	ctx.effect(() => ctx.locale.register(NS, { zh, en }), "plugin-session-archive: dictionaries");
 	const t = ctx.locale.bind(NS);
 	ctx.slots.inject("settings.section", () => ctx.slots.register({
@@ -200,9 +200,3 @@ export function apply(ctx) {
 		locale: NS,
 	}, SessionArchiveSection));
 }
-
-/** 浏览器依赖注入面（服务名；包级依赖见 package.json 的 dsh.client.inject）。 */
-export const inject = [
-	"slots",
-	"locale",
-];

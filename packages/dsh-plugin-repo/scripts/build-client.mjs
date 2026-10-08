@@ -22,7 +22,7 @@ const result = await build({
 	format: "cjs",
 	platform: "browser",
 	jsx: "automatic",
-	external: ["*"],
+	external: ["react*", "@deepseek-ai/*"],
 	minify: false,
 	sourcemap: false,
 	write: false,

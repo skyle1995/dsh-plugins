@@ -23,9 +23,7 @@ dsh plugin --profile web add \
 
 | 插件 | 目录 | 说明 |
 |---|---|---|
-| [`dsh-plugin-repo`](packages/dsh-plugin-repo) | `packages/dsh-plugin-repo` | 把本仓库注册为 DSH 插件安装源：目录查询（Gitea API）、安装 spec 生成、一键安装（`ctx.pluginRepo`）+ 设置里的「插件仓库」独立分区（在线列表/安装/更新/卸载） |
-| [`dsh-plugin-skills`](packages/dsh-plugin-skills) | `packages/dsh-plugin-skills` | 技能能力 + 规则（提示词）：设置里的两个分区——本地 skills 管理（列表/新建/编辑/删除/导入/模型可见开关）与全局提示词编辑（home patch 的 system-prompt persona，热加载生效） |
-| [`dsh-plugin-session-archive`](packages/dsh-plugin-session-archive) | `packages/dsh-plugin-session-archive` | 会话归档：设置里的「会话归档」分区，基于官方 `ctx.workspaceRegistry` 归档集实现归档/还原/删除（`ctx.sessionArchive`） |
+| [`dsh-plugin-repo`](packages/dsh-plugin-repo) | `packages/dsh-plugin-repo` | **主插件（基础能力合集）**：设置面板四个分区——插件仓库（在线目录/安装/更新/卸载）、技能能力（skills 管理+导入）、会话归档（还原/删除）、规则提示词（system-prompt persona 编辑，热加载） |
 
 ## 为什么需要「仓库插件」
 

@@ -1,7 +1,16 @@
 # dsh-plugin-repo
 
-把 Gitea 上的插件 monorepo 注册为 DSH 的插件安装源，并在
-**设置**面板里提供独立的「插件仓库」分区：在线目录的查看、安装、更新与卸载。
+DSH 插件仓库**主插件**（基础能力合集）。设置面板左侧导航提供四个独立分区：
+
+| 分区 | 能力 |
+|---|---|
+| **插件仓库** | 把 Gitea 上的插件 monorepo 注册为安装源：在线目录、安装、更新、卸载 |
+| **技能能力** | 本地 skills 管理：列表、新建、编辑、删除、导入、模型可见开关 |
+| **会话归档** | 已归档会话的还原 / 删除（官方 workspaceRegistry 归档集） |
+| **规则（提示词）** | 全局 system-prompt persona 查看 / 编辑（热加载生效） |
+
+宿主半区为主服务（`ctx.pluginRepo`）挂载两个子服务（`ctx.skillManager`、
+`ctx.sessionArchive`），各子服务持有独立的依赖注入面。
 
 DSH 的插件安装（`dsh plugin --profile <name> add <spec>` / Web 插件页）本质是
 pnpm 安装，而 pnpm 11 支持 `git+https://host/owner/repo.git#<分支>&path:<子目录>`

@@ -1,7 +1,7 @@
 {
   "name": "dsh-plugin-repo",
-  "version": "0.2.0",
-  "description": "把 Gitea 上的插件 monorepo 注册为 DSH 插件安装源：目录查询、安装 spec 生成、一键安装（ctx.pluginRepo）与设置中的仓库管理页",
+  "version": "0.3.0",
+  "description": "DSH 插件仓库主插件（基础能力合集）：在线插件目录/安装/更新/卸载 + 技能能力（skills 管理）+ 规则（提示词）+ 会话归档",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -25,7 +25,7 @@
   ],
   "scripts": {
     "build:client": "node scripts/build-client.mjs",
-    "smoke": "node test/smoke.mjs"
+    "smoke": "node test/smoke.mjs && node test/skills.smoke.mjs && node test/session-archive.smoke.mjs"
   },
   "dsh": {
     "bundle": {

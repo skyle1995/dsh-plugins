@@ -11,7 +11,7 @@ import {
 	buildFrontmatter, buildPromptBlock, deleteSkill, extractPersona, findSkill, importSkills,
 	listSkills, parseFrontmatter, sanitizeSkillName, saveSkill, setFrontmatterField,
 	setPromptInPatch, setSkillModelEnabled,
-} from "../lib/index.js";
+} from "../lib/skills.js";
 
 const execFileAsync = promisify(execFile);
 

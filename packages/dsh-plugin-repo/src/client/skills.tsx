@@ -426,8 +426,8 @@ function PromptSection({ t }) {
 			body));
 }
 
-/** 浏览器插件入口：注册 locale 词典与设置面板里的两个独立分区（技能能力 / 规则提示词）。 */
-export function apply(ctx) {
+/** 注册技能能力 + 规则（提示词）两个设置分区（由主包 apply 调用）。 */
+export function register(ctx) {
 	ctx.effect(() => ctx.locale.register(NS, { zh, en }), "plugin-skills: dictionaries");
 	const t = ctx.locale.bind(NS);
 	ctx.slots.inject("settings.section", () => ctx.slots.register({
@@ -446,8 +446,4 @@ export function apply(ctx) {
 	}, PromptSection));
 }
 
-/** 浏览器依赖注入面（服务名；包级依赖见 package.json 的 dsh.client.inject）。 */
-export const inject = [
-	"slots",
-	"locale",
-];
+

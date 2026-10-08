@@ -18,6 +18,10 @@ export interface PluginRepoConfig {
 	token: string;
 	/** API 请求超时毫秒数，默认 15000 */
 	requestTimeoutMs: number;
+	/** 技能能力子服务的技能根目录；留空自动 $DSH_HOME/skills */
+	skillsDir: string;
+	/** 会话归档子服务的会话根目录；留空自动 $DSH_HOME/sessions */
+	sessionsDir: string;
 }
 
 export interface RepoSource {

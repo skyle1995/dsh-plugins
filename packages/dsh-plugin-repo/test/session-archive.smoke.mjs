@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	buildSessionList, encodeSessionSegment, findSessionDirs, readSessionTitles,
-} from "../lib/index.js";
+} from "../lib/session-archive.js";
 
 let failed = 0;
 function check(label, condition) {
