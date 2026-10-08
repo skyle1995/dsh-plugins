@@ -1,23 +1,26 @@
 /**
  * dsh-plugin-repo 浏览器半区：设置面板里的「插件仓库」独立分区。
  *
- * 通过 settings.section 注册为设置面板左侧导航的一个独立分区（与
- * 「内置插件」等分区并列，不混入其中），提供仓库插件目录的在线列表查看、
- * 安装、更新（重装分支最新提交）与卸载。目录数据来自宿主半区注册的
- * HTTP 路由 /api/dsh-plugin-repo/catalog；安装/卸载/更新复用现成的
- * ctx.remote.pluginManager 远程能力。
+ * 在线列表与安装/更新/卸载全部通过宿主半区注册的同源 HTTP 路由完成
+ * （参考 dsh-plugin-market 的做法）：
+ * - GET  /api/dsh-plugin-repo/catalog  目录 + 已安装/启用状态
+ * - POST /api/dsh-plugin-repo/install  { spec, enabled, requestId }
+ * - POST /api/dsh-plugin-repo/remove   { name }
+ * - POST /api/dsh-plugin-repo/cancel   { requestId }
+ *
+ * 浏览器侧不依赖 ctx.remote，渲染只依赖框架注入的 t 与本地 fetch。
  */
 import { createElement as h, Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 const NS = "dsh-plugin-repo";
-const CATALOG_ROUTE = "/api/dsh-plugin-repo/catalog";
+const API = "/api/dsh-plugin-repo";
 
 const zh = {
 	title: "插件仓库",
 	description: "管理仓库中的插件：查看在线目录、安装、更新与卸载。",
 	source: "仓库源",
 	refresh: "刷新",
-	refreshCatalog: "刷新目录",
+	search: "搜索插件…",
 	loading: "正在加载仓库目录…",
 	empty: "仓库目录为空，稍后刷新重试。",
 	loadError: "读取仓库目录失败：{message}",
@@ -28,11 +31,11 @@ const zh = {
 	entryCancel: "取消",
 	notBundle: "非组合包",
 	installedBadge: "已安装",
+	enabledBadge: "已启用",
 	catalogBadge: "在线版本 {version}",
-	installOk: "「{name}」安装成功。",
+	installOk: "「{name}」操作成功。",
 	installFailed: "「{name}」操作失败：{message}",
 	removeConfirm: "确定卸载「{name}」吗？其配置覆盖会保留在 profile 中。",
-	unavailable: "当前 profile 没有插件管理服务，无法安装或卸载。",
 };
 
 const en = {
@@ -40,7 +43,7 @@ const en = {
 	description: "Manage plugins from the repository: browse the online catalog, install, update, and uninstall.",
 	source: "Source",
 	refresh: "Refresh",
-	refreshCatalog: "Refresh catalog",
+	search: "Search plugins…",
 	loading: "Loading the repository catalog…",
 	empty: "The repository catalog is empty; refresh to retry.",
 	loadError: "Failed to load the repository catalog: {message}",
@@ -51,11 +54,11 @@ const en = {
 	entryCancel: "Cancel",
 	notBundle: "Not a bundle",
 	installedBadge: "Installed",
+	enabledBadge: "Enabled",
 	catalogBadge: "Online version {version}",
-	installOk: "“{name}” installed successfully.",
+	installOk: "“{name}” succeeded.",
 	installFailed: "“{name}” operation failed: {message}",
 	removeConfirm: "Uninstall “{name}”? Its configuration overrides remain in the profile.",
-	unavailable: "This profile has no plugin management service; install and uninstall are unavailable.",
 };
 
 /** 极简文案翻译：{name} 占位替换。 */
@@ -63,12 +66,30 @@ function format(text, params) {
 	return text.replace(/\{(\w+)\}/g, (_, key) => String(params[key] ?? ""));
 }
 
+/** 与宿主路由通信的极简 JSON 客户端。 */
+async function api(path, options) {
+	const response = await fetch(`${API}${path}`, {
+		headers: { "content-type": "application/json", accept: "application/json" },
+		...options,
+	});
+	const payload = await response.json().catch(() => ({ ok: false, message: `HTTP ${response.status}` }));
+	if (!response.ok || payload.ok !== true) {
+		const error = new Error(payload.message ?? `HTTP ${response.status}`);
+		error.code = payload.code;
+		throw error;
+	}
+	return payload;
+}
+
 const css = `
 .dpr-page{display:flex;flex-direction:column;gap:16px;min-width:0;padding:4px 0}
 .dpr-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .dpr-title{margin:0;font-size:16px;font-weight:600}
-.dpr-subtitle{margin:0;color:var(--dsw-alias-label-tertiary, #888);font-size:13px;line-height:1.6}
-.dpr-source{margin:0;color:var(--dsw-alias-label-tertiary, #888);font-size:12px;font-family:ui-monospace, SFMono-Regular, Menlo, monospace;overflow-wrap:anywhere}
+.dpr-subtitle{margin:0;color:var(--dsw-alias-label-tertiary,#888);font-size:13px;line-height:1.6}
+.dpr-source{margin:0;color:var(--dsw-alias-label-tertiary,#888);font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}
+.dpr-toolbar{display:flex;align-items:center;gap:8px}
+.dpr-search{box-sizing:border-box;border:.5px solid var(--dsw-alias-border-l2,#ccc);background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#222);font:inherit;border-radius:8px;outline:none;padding:4px 10px;font-size:13px;line-height:20px;min-width:180px}
+.dpr-search:focus{border-color:var(--dsw-alias-state-business-primary,#3b6ef5)}
 .dpr-btn{appearance:none;border:1px solid var(--dsw-alias-border-l3,#ddd);background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#222);border-radius:8px;padding:4px 12px;font:inherit;font-size:13px;cursor:pointer}
 .dpr-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,#f2f2f2)}
 .dpr-btn:disabled{opacity:.5;cursor:default}
@@ -78,58 +99,44 @@ const css = `
 .dpr-row{display:flex;align-items:flex-start;gap:12px;border:1px solid var(--dsw-alias-border-l3,#ddd);border-radius:12px;padding:12px 14px}
 .dpr-info{flex:1;min-width:0}
 .dpr-name{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:14px;font-weight:600}
-.dpr-version{color:var(--dsw-alias-label-tertiary,#888);font-size:12px;font-weight:400}
-.dpr-desc{margin:4px 0 0;color:var(--dsw-alias-label-secondary,#555);font-size:13px;line-height:1.55;overflow-wrap:anywhere}
+.dpr-desc{margin:4px 0 0;color:var(--dsw-alias-label-secondary,#555);font-size:13px;line-height:1.55;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .dpr-badges{display:flex;gap:6px;flex-wrap:wrap}
 .dpr-badge{font-size:11px;line-height:1.5;padding:1px 8px;border-radius:999px;border:1px solid var(--dsw-alias-border-l3,#ddd);color:var(--dsw-alias-label-tertiary,#777)}
 .dpr-badge-on{color:var(--dsw-alias-state-success,#18864b);border-color:currentColor}
 .dpr-badge-warn{color:var(--dsw-alias-state-warning,#a06b00);border-color:currentColor}
 .dpr-actions{display:flex;gap:8px;flex-shrink:0;align-items:center}
 .dpr-notice{margin:0;border-radius:8px;padding:10px 14px;font-size:13px;line-height:1.6}
-.dpr-notice-err{background:color-mix(in srgb, var(--dsw-alias-state-error-primary,#d33) 12%, transparent);color:var(--dsw-alias-state-error-primary,#d33)}
-.dpr-notice-ok{background:color-mix(in srgb, var(--dsw-alias-state-success,#18864b) 12%, transparent);color:var(--dsw-alias-state-success,#18864b)}
+.dpr-notice-err{background:color-mix(in srgb,var(--dsw-alias-state-error-primary,#d33) 12%,transparent);color:var(--dsw-alias-state-error-primary,#d33)}
+.dpr-notice-ok{background:color-mix(in srgb,var(--dsw-alias-state-success,#18864b) 12%,transparent);color:var(--dsw-alias-state-success,#18864b)}
 `;
 
-/**
- * 设置分区组件：props 由 slot 框架提供 t（按 NS 绑定）、close，以及
- * 注册时 inject 的 ctx。
- */
-function RepoSection(props) {
-	const { t, ctx } = props;
+/** 设置分区组件：props 由 slot 框架提供 t（按 NS 绑定）。 */
+function RepoSection({ t }) {
 	const [catalog, setCatalog] = useState({ status: "loading", source: null, entries: [] });
-	const [bundles, setBundles] = useState([]);
 	const [busy, setBusy] = useState({});
 	const [notice, setNotice] = useState(null);
+	const [query, setQuery] = useState("");
 	const requests = useRef(new Map());
 
-	const manager = ctx.remote.pluginManager;
-	const installedByName = useMemo(() => new Map(bundles.map((bundle) => [bundle.name, bundle])), [bundles]);
-
-	async function refreshCatalog() {
+	async function refresh() {
 		setCatalog((previous) => ({ ...previous, status: "loading" }));
 		try {
-			const response = await fetch(CATALOG_ROUTE, { headers: { accept: "application/json" } });
-			const payload = await response.json();
-			if (!response.ok || !payload.ok) throw new Error(payload.message ?? `HTTP ${response.status}`);
-			setCatalog({ status: "ok", source: payload.source, entries: payload.entries });
+			const payload = await api("/catalog");
+			setCatalog({ status: "ok", source: payload.source, entries: payload.entries ?? [] });
 		} catch (error) {
 			setCatalog({ status: "error", source: null, entries: [], message: error.message });
 		}
 	}
 
-	async function refreshBundles() {
-		try {
-			const result = await manager.listBundles();
-			if (result?.ok) setBundles(result.value ?? []);
-		} catch (error) {
-			// 远程读取失败时保留上次快照；安装/卸载按钮会随操作结果报错。
-		}
-	}
-
 	useEffect(() => {
-		void refreshCatalog();
-		void refreshBundles();
+		void refresh();
 	}, []);
+
+	const filtered = useMemo(() => {
+		const q = query.trim().toLowerCase();
+		if (q === "") return catalog.entries;
+		return catalog.entries.filter((entry) => entry.name.toLowerCase().includes(q) || (entry.description ?? "").toLowerCase().includes(q));
+	}, [catalog.entries, query]);
 
 	function renderNotice() {
 		if (notice === null) return null;
@@ -139,11 +146,10 @@ function RepoSection(props) {
 	async function run(name, kind, requestId, work) {
 		setBusy((previous) => ({ ...previous, [name]: kind }));
 		setNotice(null);
-		requests.current.set(name, requestId);
+		if (requestId !== undefined) requests.current.set(name, requestId);
 		try {
 			await work();
-			await refreshBundles();
-			await refreshCatalog();
+			await refresh();
 		} finally {
 			requests.current.delete(name);
 			setBusy((previous) => {
@@ -157,8 +163,7 @@ function RepoSection(props) {
 	async function install(entry) {
 		const requestId = crypto.randomUUID();
 		await run(entry.name, "install", requestId, async () => {
-			const result = await manager.installBundle(entry.spec, { enabled: true, requestId });
-			if (!result?.ok) throw new Error(result?.error?.message ?? "unknown failure");
+			await api("/install", { method: "POST", body: JSON.stringify({ spec: entry.spec, enabled: true, requestId }) });
 			setNotice({ kind: "ok", text: format(t("installOk"), { name: entry.name }) });
 		}).catch((error) => {
 			setNotice({ kind: "error", text: format(t("installFailed"), { name: entry.name, message: error.message }) });
@@ -169,7 +174,7 @@ function RepoSection(props) {
 		const requestId = requests.current.get(name);
 		if (requestId === undefined) return;
 		try {
-			await manager.cancelInstall(requestId);
+			await api("/cancel", { method: "POST", body: JSON.stringify({ requestId }) });
 		} catch {
 			// 取消竞态失败忽略；原安装调用仍会结算。
 		}
@@ -178,8 +183,7 @@ function RepoSection(props) {
 	async function remove(entry) {
 		if (!globalThis.confirm(format(t("removeConfirm"), { name: entry.name }))) return;
 		await run(entry.name, "remove", undefined, async () => {
-			const result = await manager.removeBundle(entry.name);
-			if (!result?.ok) throw new Error(result?.error?.message ?? "unknown failure");
+			await api("/remove", { method: "POST", body: JSON.stringify({ name: entry.name }) });
 			setNotice({ kind: "ok", text: format(t("installOk"), { name: entry.name }) });
 		}).catch((error) => {
 			setNotice({ kind: "error", text: format(t("installFailed"), { name: entry.name, message: error.message }) });
@@ -187,22 +191,22 @@ function RepoSection(props) {
 	}
 
 	function renderRow(entry) {
-		const bundle = installedByName.get(entry.name);
 		const entryBusy = busy[entry.name];
 		const actions = [];
 		if (entryBusy !== undefined) {
 			actions.push(h("button", { key: "busy", className: "dpr-btn", disabled: true }, t("entryBusy")));
 			if (entryBusy === "install") actions.push(h("button", { key: "cancel", className: "dpr-btn", onClick: () => void cancel(entry.name) }, t("entryCancel")));
-		} else if (bundle) {
+		} else if (entry.installed) {
 			actions.push(h("button", { key: "update", className: "dpr-btn dpr-btn-primary", onClick: () => void install(entry) }, t("entryUpdate")));
-			actions.push(h("button", { key: "remove", className: "dpr-btn dpr-btn-danger", onClick: () => void remove(entry) }, t("entryRemove")));
+			if (entry.removable !== false) actions.push(h("button", { key: "remove", className: "dpr-btn dpr-btn-danger", onClick: () => void remove(entry) }, t("entryRemove")));
 		} else {
 			actions.push(h("button", { key: "install", className: "dpr-btn dpr-btn-primary", onClick: () => void install(entry) }, t("entryInstall")));
 		}
 		const badges = [];
-		if (bundle) badges.push(h("span", { key: "on", className: "dpr-badge dpr-badge-on" }, t("installedBadge")));
+		if (entry.installed) badges.push(h("span", { key: "installed", className: "dpr-badge dpr-badge-on" }, t("installedBadge")));
+		if (entry.enabled) badges.push(h("span", { key: "enabled", className: "dpr-badge dpr-badge-on" }, t("enabledBadge")));
 		if (!entry.isBundle) badges.push(h("span", { key: "nb", className: "dpr-badge dpr-badge-warn" }, t("notBundle")));
-		if (entry.version !== null) badges.push(h("span", { key: "v", className: "dpr-badge" }, format(t("catalogBadge"), { version: entry.version })));
+		if (entry.version !== null && entry.version !== undefined) badges.push(h("span", { key: "v", className: "dpr-badge" }, format(t("catalogBadge"), { version: entry.version })));
 		return h("div", { key: entry.name, className: "dpr-row" },
 			h("div", { className: "dpr-info" },
 				h("div", { className: "dpr-name" },
@@ -216,9 +220,9 @@ function RepoSection(props) {
 		? h("p", { className: "dpr-subtitle" }, t("loading"))
 		: catalog.status === "error"
 			? h("p", { className: "dpr-subtitle" }, format(t("loadError"), { message: catalog.message }))
-			: catalog.entries.length === 0
+			: filtered.length === 0
 				? h("p", { className: "dpr-subtitle" }, t("empty"))
-				: h("div", { className: "dpr-list" }, catalog.entries.map(renderRow));
+				: h("div", { className: "dpr-list" }, filtered.map(renderRow));
 
 	return h(Fragment, null,
 		h("style", null, css),
@@ -228,12 +232,15 @@ function RepoSection(props) {
 					h("h1", { className: "dpr-title" }, t("title")),
 					h("p", { className: "dpr-subtitle" }, t("description")),
 					catalog.source ? h("p", { className: "dpr-source" }, `${t("source")}：${catalog.source.gitUrl}（${catalog.source.branch}）`) : null),
-				h("button", { className: "dpr-btn", onClick: () => { void refreshCatalog(); void refreshBundles(); } }, t("refresh"))),
+				h("div", { className: "dpr-toolbar" },
+					h("button", { className: "dpr-btn", onClick: () => void refresh() }, t("refresh")))),
+			h("div", { className: "dpr-toolbar" },
+				h("input", { className: "dpr-search", placeholder: t("search"), value: query, onChange: (event) => setQuery(event.target.value) })),
 			renderNotice(),
 			body));
 }
 
-/** 浏览器插件入口：注册 locale 词典与设置面板左侧导航里的独立「插件仓库」分区。 */
+/** 浏览器插件入口：注册 locale 词典与设置面板里的独立「插件仓库」分区。 */
 export function apply(ctx) {
 	ctx.effect(() => ctx.locale.register(NS, { zh, en }), "plugin-repo: dictionaries");
 	const t = ctx.locale.bind(NS);
@@ -243,7 +250,6 @@ export function apply(ctx) {
 		order: 100,
 		label: () => t("title"),
 		locale: NS,
-		inject: () => ({ ctx }),
 	}, RepoSection));
 }
 
@@ -251,5 +257,4 @@ export function apply(ctx) {
 export const inject = [
 	"slots",
 	"locale",
-	"remote",
 ];

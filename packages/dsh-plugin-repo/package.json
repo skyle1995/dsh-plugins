@@ -34,7 +34,6 @@
     "client": {
       "platform": "web",
       "inject": [
-        "@deepseek-ai/dsh-api-remotes",
         "@deepseek-ai/dsh-client-locale"
       ]
     }

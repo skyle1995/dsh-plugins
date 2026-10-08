@@ -30,6 +30,11 @@ export const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
 /** 浏览器半区读取仓库目录的 HTTP 路由（注册在 web profile 的 webServer 上）。 */
 export const CATALOG_ROUTE = "/api/dsh-plugin-repo/catalog";
 
+/** 浏览器半区的管理路由：安装 / 卸载 / 取消（转发 pluginManager 服务）。 */
+export const INSTALL_ROUTE = "/api/dsh-plugin-repo/install";
+export const REMOVE_ROUTE = "/api/dsh-plugin-repo/remove";
+export const CANCEL_ROUTE = "/api/dsh-plugin-repo/cancel";
+
 /**
  * 带错误码的仓库操作失败，code 形如 `plugin-repo/<kind>`。
  * @extends Error
@@ -163,16 +168,65 @@ export class PluginRepoService extends Service {
 		// ctx.inject 建一个以 webServer 为依赖的作用域子插件：Web 存在时注册
 		// 路由，headless 等 profile 里保持休眠、不影响本服务。
 		ctx.inject(["webServer"], (webCtx) => {
-			webCtx.effect(() => webCtx.webServer.register({
-				kind: "exact",
-				path: CATALOG_ROUTE,
-				handler: (req, res) => this.handleCatalogRequest(req, res),
-			}), "plugin-repo: catalog HTTP route");
-			ctx.logger.info(`dsh-plugin-repo 目录路由已注册：${CATALOG_ROUTE}`);
+			webCtx.effect(() => {
+				const disposers = [
+					webCtx.webServer.register({
+						kind: "exact",
+						path: CATALOG_ROUTE,
+						handler: (req, res) => this.handleCatalogRequest(req, res),
+					}),
+					webCtx.webServer.register({
+						kind: "exact",
+						path: INSTALL_ROUTE,
+						handler: (req, res) => this.handleManagementRequest(req, res, "install"),
+					}),
+					webCtx.webServer.register({
+						kind: "exact",
+						path: REMOVE_ROUTE,
+						handler: (req, res) => this.handleManagementRequest(req, res, "remove"),
+					}),
+					webCtx.webServer.register({
+						kind: "exact",
+						path: CANCEL_ROUTE,
+						handler: (req, res) => this.handleManagementRequest(req, res, "cancel"),
+					}),
+				];
+				return () => {
+					for (const dispose of disposers) dispose();
+				};
+			}, "plugin-repo: HTTP routes");
+			ctx.logger.info(`dsh-plugin-repo 路由已注册：${CATALOG_ROUTE} 等`);
 		});
 	}
 
-	/** GET {CATALOG_ROUTE} —— 返回 `{ ok, source, entries }`，供浏览器半区读取。 */
+	/**
+	 * 目录 + 已安装状态（来自 pluginManager.listBundles），供浏览器半区
+	 * 一次性拿到渲染所需全部数据，无需浏览器侧再调 Remote。
+	 */
+	async catalogForBrowser() {
+		const base = await this.catalog();
+		let bundles = [];
+		try {
+			bundles = await this.ctx.pluginManager.listBundles();
+		} catch {
+			// 管理器不可用时仍返回纯目录；安装类操作会各自报错。
+		}
+		const byName = new Map((Array.isArray(bundles) ? bundles : []).map((bundle) => [bundle.name, bundle]));
+		return {
+			...base,
+			entries: base.entries.map((entry) => {
+				const bundle = byName.get(entry.name);
+				return {
+					...entry,
+					installed: bundle?.installed === true,
+					enabled: bundle?.enabled === true,
+					removable: bundle?.removable === true,
+				};
+			}),
+		};
+	}
+
+	/** GET {CATALOG_ROUTE} —— 返回 `{ ok, source, entries }`（含已安装/启用状态）。 */
 	async handleCatalogRequest(req, res) {
 		const payload = (status, value) => {
 			res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
@@ -183,10 +237,59 @@ export class PluginRepoService extends Service {
 				payload(405, { ok: false, code: "plugin-repo/method", message: "method not allowed" });
 				return;
 			}
-			const catalog = await this.catalog();
-			payload(200, { ok: true, ...catalog });
+			payload(200, { ok: true, ...(await this.catalogForBrowser()) });
 		} catch (error) {
 			payload(502, { ok: false, code: error.code ?? "plugin-repo/catalog", message: error.message });
+		}
+	}
+
+	/** POST 管理路由：install / remove / cancel，转发给 pluginManager 服务。 */
+	async handleManagementRequest(req, res, operation) {
+		const payload = (status, value) => {
+			res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
+			res.end(JSON.stringify(value));
+		};
+		try {
+			if (req.method !== "POST") {
+				payload(405, { ok: false, code: "plugin-repo/method", message: "method not allowed" });
+				return;
+			}
+			let body = {};
+			try {
+				const chunks = [];
+				for await (const chunk of req) chunks.push(chunk);
+				body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+			} catch {
+				payload(400, { ok: false, code: "plugin-repo/invalid-json", message: "请求体不是合法 JSON" });
+				return;
+			}
+			const manager = this.ctx.pluginManager;
+			if (operation === "install") {
+				const spec = String(body.spec ?? "").trim();
+				if (spec === "") {
+					payload(400, { ok: false, code: "plugin-repo/invalid-spec", message: "缺少安装 spec" });
+					return;
+				}
+				const result = await manager.installBundle(spec, {
+					enabled: body.enabled !== false,
+					...(body.requestId === undefined ? {} : { requestId: String(body.requestId) }),
+				});
+				payload(200, { ok: true, result });
+				return;
+			}
+			if (operation === "remove") {
+				const result = await manager.removeBundle(String(body.name ?? ""));
+				payload(200, { ok: true, result });
+				return;
+			}
+			if (operation === "cancel") {
+				const result = await manager.cancelInstall(String(body.requestId ?? ""));
+				payload(200, { ok: true, result });
+				return;
+			}
+			payload(404, { ok: false, code: "plugin-repo/unknown", message: "unknown operation" });
+		} catch (error) {
+			payload(400, { ok: false, code: error.code ?? "plugin-repo/failure", message: error.message });
 		}
 	}
 

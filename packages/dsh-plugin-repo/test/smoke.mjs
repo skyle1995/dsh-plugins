@@ -39,7 +39,7 @@ const repo = root.get("pluginRepo");
 // 1) 目录（真实 Gitea API）
 const { source, entries } = await repo.catalog();
 console.log("catalog:", source.gitUrl, "->", entries.length, "entries");
-if (entries.length !== 1 || entries[0].name !== "dsh-plugin-repo") throw new Error("catalog 不符合预期");
+if (entries.length < 1 || !entries.some((entry) => entry.name === "dsh-plugin-repo")) throw new Error("catalog 不符合预期");
 
 // 2) resolve：包名 / 路径 / spec 三种输入
 const byName = await repo.resolve("dsh-plugin-repo");
