@@ -152,10 +152,19 @@ const turn3 = [
 
 	// 10) noticeContent（撤回编辑提示文案）
 	{
-		const text = noticeContent({ turn: 3, restored: 2, skipped: 1, failed: 1 });
+		const text = noticeContent({
+			turn: 3,
+			restored: 2,
+			skipped: 1,
+			failed: 1,
+			restoredPaths: ["/workspace/a.md", "/workspace/new.txt"],
+			skippedPaths: ["/workspace/huge.bin"],
+			failedPaths: ["/workspace/bad.txt"],
+		});
 		check("提示文案含轮次", text.includes("已撤回第 3 轮的编辑"));
 		check("提示文案含还原数", text.includes("2 个文件已还原或删除"));
-		check("提示文案含跳过/失败", text.includes("未还原") && text.includes("还原失败"));
+		check("提示文案含文件名清单", text.includes("a.md") && text.includes("new.txt"));
+		check("提示文案含跳过/失败", text.includes("未还原") && text.includes("还原失败") && text.includes("bad.txt"));
 	}
 
 	// 10b) planTurn：轻量定位轮次（不做范围校验）

@@ -340,6 +340,9 @@ export class RecallEngine {
 				restored: restored.length + deleted.length,
 				skipped: skipped.length,
 				failed: failed.length,
+				restoredPaths: [...restored, ...deleted],
+				skippedPaths: skipped.map((entry) => entry.path),
+				failedPaths: failed,
 			};
 			const text = noticeContent(summary);
 			// 只撤回编辑：还原文件变更并追加一条提示消息（不折叠会话 surface，

@@ -226,12 +226,31 @@ export function planRollback(captures, targetTurn) {
  * @param {{ turn: number, restored: number, skipped: number, failed: number }} summary - 回滚结果摘要。
  * @returns {string}
  */
+/** 路径的显示名（文件名），并截断过长的清单。 */
+function displayPath(path, limit = 320) {
+	const name = String(path ?? "").split("/").filter(Boolean).at(-1) ?? String(path ?? "");
+	return name.length > 80 ? `${name.slice(0, 80)}…` : name;
+}
+
+/**
+ * 生成撤回编辑的提示文案（作为普通消息追加进会话，模型与用户都可见）。
+ * 附上具体文件清单，便于核对。
+ */
 export function noticeContent(summary) {
 	const { turn, restored, skipped, failed } = summary;
 	const parts = [`↩️ 已撤回第 ${turn} 轮的编辑：该轮对工作区文件的修改已还原。`];
-	if (restored > 0) parts.push(`${restored} 个文件已还原或删除。`);
-	if (skipped > 0) parts.push(`${skipped} 个文件因之后被再次修改或内容过大而未还原。`);
-	if (failed > 0) parts.push(`${failed} 个文件还原失败（见操作结果）。`);
+	if (restored > 0) {
+		const names = (summary.restoredPaths ?? []).map((path) => displayPath(path)).join("、");
+		parts.push(`${restored} 个文件已还原或删除${names === "" ? "。" : `：${names}。`}`);
+	}
+	if (skipped > 0) {
+		const names = (summary.skippedPaths ?? []).map((path) => displayPath(path)).join("、");
+		parts.push(`${skipped} 个文件因之后被再次修改或内容过大而未还原${names === "" ? "。" : `：${names}。`}`);
+	}
+	if (failed > 0) {
+		const names = (summary.failedPaths ?? []).map((path) => displayPath(path)).join("、");
+		parts.push(`${failed} 个文件还原失败${names === "" ? "。" : `：${names}。`}`);
+	}
 	return parts.join(" ");
 }
 
