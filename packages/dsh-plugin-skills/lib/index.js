@@ -50,10 +50,11 @@ export function resolveSkillsDir(config) {
 	return join(resolveDshHome(), "skills");
 }
 
-/** 技能名净化：仅保留字母数字与 `-_`，连续非法字符折叠为一个 `-`，首尾去除。 */
+/** 技能名净化：剔除文件名非法字符与控制字符，空白折叠为 `-`，首尾去除；保留中文等 Unicode 字母。 */
 export function sanitizeSkillName(name) {
 	return String(name ?? "")
-		.replace(/[^a-zA-Z0-9_-]+/g, "-")
+		.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "-")
+		.replace(/\s+/g, "-")
 		.replace(/^-+|-+$/g, "");
 }
 

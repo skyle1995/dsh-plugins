@@ -26,10 +26,10 @@ try {
 
 	// 2) 新建平铺技能
 	const created = await saveSkill(dir, { name: "my skill! 测试", description: "测试技能", body: "# 用法\n\n随便写。" });
-	check("新建返回扁平布局", created.layout === "flat" && created.name === "my-skill" && created.file === "my-skill.md");
+	check("新建返回扁平布局", created.layout === "flat" && created.name === "my-skill!-测试" && created.file === "my-skill!-测试.md");
 	const content = await readFile(join(dir, created.file), "utf8");
 	const fm = parseFrontmatter(content);
-	check("新建 frontmatter 正确", fm.hasFrontmatter && fm.fields.name === "my-skill" && fm.fields.description === "测试技能");
+	check("新建 frontmatter 正确", fm.hasFrontmatter && fm.fields.name === "my-skill!-测试" && fm.fields.description === "测试技能");
 	check("新建正文保留", fm.body.includes("# 用法"));
 
 	// 3) 手工目录 bundle（含 references）被列出
@@ -43,7 +43,7 @@ try {
 	// 4) 编辑 + 改名（flat → 改名）
 	const renamed = await saveSkill(dir, { name: "renamed", description: "改名", body: "新正文", previous: created });
 	check("改名后文件移动", renamed.name === "renamed" && renamed.file === "renamed.md");
-	check("旧文件不存在", (await listSkills(dir)).every((skill) => skill.name !== "my-skill"));
+	check("旧文件不存在", (await listSkills(dir)).every((skill) => skill.name !== "my-skill!-测试"));
 
 	// 5) 编辑 + 改名（bundle → 目录改名）
 	const bundleRenamed = await saveSkill(dir, { name: "bundle-renamed", description: "目录技能", body: "新正文", previous: bundle });
@@ -73,7 +73,9 @@ try {
 
 	// 9) 工具函数
 	check("名称净化", sanitizeSkillName("A b/c") === "A-b-c");
-	check("名称净化折叠", sanitizeSkillName("my skill! 测试") === "my-skill");
+	check("名称剔除非法字符", sanitizeSkillName("a:b*c?") === "a-b-c");
+	check("名称净化折叠", sanitizeSkillName("my skill! 测试") === "my-skill!-测试");
+	check("名称保留中文", sanitizeSkillName("测试技能") === "测试技能");
 	check("frontmatter 序列化", buildFrontmatter({ name: "x", description: "含 空格", modelDisabled: true }).includes("disable-model-invocation: true"));
 	check("setFrontmatterField 保留其它字段", setFrontmatterField("---\nname: a\ndescription: d\n---\n\nB", "disable-model-invocation", "true").includes("description: d"));
 } finally {
