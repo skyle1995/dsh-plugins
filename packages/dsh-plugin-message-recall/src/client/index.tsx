@@ -29,6 +29,8 @@ const zh = {
 	recallCancel: "取消",
 	recallConfirmAction: "撤回",
 	recallFailed: "撤回失败：{message}",
+	recalledNotice: "撤回成功：{message}",
+	recalledShort: "撤回成功，页面已刷新。",
 };
 
 const en = {
@@ -41,6 +43,8 @@ const en = {
 	recallCancel: "Cancel",
 	recallConfirmAction: "Recall",
 	recallFailed: "Recall failed: {message}",
+	recalledNotice: "Recalled: {message}",
+	recalledShort: "Recall succeeded; the page has been refreshed.",
 };
 
 function format(text, params) {
@@ -81,6 +85,7 @@ const css = `
 .mru:hover .mru-actions{opacity:1}
 .mru-btn{appearance:none;border:none;background:0 0;color:var(--dsw-alias-label-tertiary,#8a919c);cursor:pointer;width:28px;height:28px;border-radius:var(--dsw-radius-sm,6px);justify-content:center;align-items:center;padding:5px;display:inline-flex}
 .mru-btn:hover{background:var(--dsw-alias-interactive-bg-hover,#f0f2f5);color:var(--dsw-alias-label-secondary,#4b5563)}
+.mrt-toast{position:fixed;left:50%;bottom:36px;transform:translateX(-50%);z-index:9999;background:var(--dsw-alias-bg-layer-2,#fff);color:var(--dsw-alias-label-primary,#1f2329);border:1px solid var(--dsw-alias-border-l2,#d9dde3);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:10px 16px;font-size:13px;line-height:1.6;max-width:min(560px,calc(100vw - 48px));overflow-wrap:anywhere}
 `;
 
 /**
@@ -117,15 +122,30 @@ function RecallUserNodeView(props) {
 			h(Tooltip, { label: t("action.copy"), side: "bottom", align: "end", delayMs: 400, children: h("button", { className: "mru-btn", type: "button", "aria-label": t("action.copy"), onClick: copy }, copied ? h(IconCheckOutlineRegular, { size: 14 }) : h(IconCopyOutlineRegular, { size: 14 })) })) : null);
 }
 
-/** 撤回确认弹窗（RiskConfirmation，需勾选确认）。 */
+const RECALL_NOTICE_KEY = "dsh-message-recall-notice";
+
+/** 撤回确认弹窗（RiskConfirmation，需勾选确认）+ 成功 toast（刷新后读取 sessionStorage）。 */
 function RecallConfirmDialog({ t, usePendingRecall: usePending, settleRecall: settle, confirmRecall }) {
 	const request = usePending();
 	const [acknowledged, setAcknowledged] = useState(false);
+	const [toast, setToast] = useState(null);
 	useEffect(() => {
 		if (request !== null) setAcknowledged(false);
 	}, [request]);
-	return h(RiskConfirmation, {
-		open: request !== null,
+	// 刷新后展示成功提示：sessionStorage 一次性读取，自动消失。
+	useEffect(() => {
+		if (typeof sessionStorage === "undefined") return;
+		const notice = sessionStorage.getItem(RECALL_NOTICE_KEY);
+		if (notice === null) return;
+		sessionStorage.removeItem(RECALL_NOTICE_KEY);
+		setToast(notice);
+		const timer = setTimeout(() => setToast(null), 4500);
+		return () => clearTimeout(timer);
+	}, []);
+	return h("div", null,
+		toast !== null ? h("div", { className: "mrt-toast", role: "status" }, format(t("recalledNotice"), { message: toast })) : null,
+		h(RiskConfirmation, {
+			open: request !== null,
 		title: t("recallConfirmTitle"),
 		description: t("recallConfirm"),
 		acknowledgeLabel: t("recallAcknowledge"),
@@ -134,12 +154,12 @@ function RecallConfirmDialog({ t, usePendingRecall: usePending, settleRecall: se
 		acknowledged,
 		onAcknowledgedChange: setAcknowledged,
 		onCancel: settle,
-		onConfirm: () => {
-			const target = request;
-			settle();
-			if (target !== null) confirmRecall(target.sessionId, target.messageId, target.seq);
-		},
-	});
+			onConfirm: () => {
+				const target = request;
+				settle();
+				if (target !== null) confirmRecall(target.sessionId, target.messageId, target.seq);
+			},
+		}));
 }
 
 /** 浏览器插件入口：注册词典、按钮与确认弹窗。 */
@@ -168,9 +188,10 @@ export function register(ctx) {
 				globalThis.alert(format(t("recallFailed"), { message: payload.message ?? `HTTP ${response.status}` }));
 				return;
 			}
-			// 活跃会话：surface 替换经 session 事件流实时更新界面；
-			// 冷会话：刷新以加载最新日志。
-			if (payload.value?.live !== true) globalThis.location.reload();
+			// 界面折叠需要重放日志：成功后在刷新后的页面上弹出提示。
+			const notice = typeof payload.value?.placeholder === "string" && payload.value.placeholder !== "" ? payload.value.placeholder : t("recalledShort");
+			if (typeof sessionStorage !== "undefined") sessionStorage.setItem(RECALL_NOTICE_KEY, notice);
+			globalThis.location.reload();
 		}).catch((error) => {
 			globalThis.alert(format(t("recallFailed"), { message: error.message }));
 		});

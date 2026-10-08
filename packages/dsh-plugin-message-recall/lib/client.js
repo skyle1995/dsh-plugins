@@ -43,7 +43,9 @@ var zh = {
   recallAcknowledge: "\u6211\u5DF2\u77E5\u6653\u64A4\u56DE\u4F1A\u5220\u9664\u8BE5\u8F6E\u5BF9\u8BDD\u5E76\u8FD8\u539F\u6587\u4EF6\u53D8\u66F4",
   recallCancel: "\u53D6\u6D88",
   recallConfirmAction: "\u64A4\u56DE",
-  recallFailed: "\u64A4\u56DE\u5931\u8D25\uFF1A{message}"
+  recallFailed: "\u64A4\u56DE\u5931\u8D25\uFF1A{message}",
+  recalledNotice: "\u64A4\u56DE\u6210\u529F\uFF1A{message}",
+  recalledShort: "\u64A4\u56DE\u6210\u529F\uFF0C\u9875\u9762\u5DF2\u5237\u65B0\u3002"
 };
 var en = {
   "action.recall": "Recall",
@@ -54,7 +56,9 @@ var en = {
   recallAcknowledge: "I understand the turn will be deleted and file changes reverted",
   recallCancel: "Cancel",
   recallConfirmAction: "Recall",
-  recallFailed: "Recall failed: {message}"
+  recallFailed: "Recall failed: {message}",
+  recalledNotice: "Recalled: {message}",
+  recalledShort: "Recall succeeded; the page has been refreshed."
 };
 function format(text, params) {
   return text.replace(/\{(\w+)\}/g, (_, key) => String(params[key] ?? ""));
@@ -91,6 +95,7 @@ var css = `
 .mru:hover .mru-actions{opacity:1}
 .mru-btn{appearance:none;border:none;background:0 0;color:var(--dsw-alias-label-tertiary,#8a919c);cursor:pointer;width:28px;height:28px;border-radius:var(--dsw-radius-sm,6px);justify-content:center;align-items:center;padding:5px;display:inline-flex}
 .mru-btn:hover{background:var(--dsw-alias-interactive-bg-hover,#f0f2f5);color:var(--dsw-alias-label-secondary,#4b5563)}
+.mrt-toast{position:fixed;left:50%;bottom:36px;transform:translateX(-50%);z-index:9999;background:var(--dsw-alias-bg-layer-2,#fff);color:var(--dsw-alias-label-primary,#1f2329);border:1px solid var(--dsw-alias-border-l2,#d9dde3);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:10px 16px;font-size:13px;line-height:1.6;max-width:min(560px,calc(100vw - 48px));overflow-wrap:anywhere}
 `;
 function RecallUserNodeView(props) {
   const { node, t, requestRecall: requestRecall2 } = props;
@@ -130,28 +135,44 @@ function RecallUserNodeView(props) {
     ) : null
   );
 }
+var RECALL_NOTICE_KEY = "dsh-message-recall-notice";
 function RecallConfirmDialog({ t, usePendingRecall: usePending, settleRecall: settle, confirmRecall }) {
   const request = usePending();
   const [acknowledged, setAcknowledged] = (0, import_react.useState)(false);
+  const [toast, setToast] = (0, import_react.useState)(null);
   (0, import_react.useEffect)(() => {
     if (request !== null) setAcknowledged(false);
   }, [request]);
-  return (0, import_react.createElement)(import_dsh_client_ui_primitives.RiskConfirmation, {
-    open: request !== null,
-    title: t("recallConfirmTitle"),
-    description: t("recallConfirm"),
-    acknowledgeLabel: t("recallAcknowledge"),
-    cancelLabel: t("recallCancel"),
-    confirmLabel: t("recallConfirmAction"),
-    acknowledged,
-    onAcknowledgedChange: setAcknowledged,
-    onCancel: settle,
-    onConfirm: () => {
-      const target = request;
-      settle();
-      if (target !== null) confirmRecall(target.sessionId, target.messageId, target.seq);
-    }
-  });
+  (0, import_react.useEffect)(() => {
+    if (typeof sessionStorage === "undefined") return;
+    const notice = sessionStorage.getItem(RECALL_NOTICE_KEY);
+    if (notice === null) return;
+    sessionStorage.removeItem(RECALL_NOTICE_KEY);
+    setToast(notice);
+    const timer = setTimeout(() => setToast(null), 4500);
+    return () => clearTimeout(timer);
+  }, []);
+  return (0, import_react.createElement)(
+    "div",
+    null,
+    toast !== null ? (0, import_react.createElement)("div", { className: "mrt-toast", role: "status" }, format(t("recalledNotice"), { message: toast })) : null,
+    (0, import_react.createElement)(import_dsh_client_ui_primitives.RiskConfirmation, {
+      open: request !== null,
+      title: t("recallConfirmTitle"),
+      description: t("recallConfirm"),
+      acknowledgeLabel: t("recallAcknowledge"),
+      cancelLabel: t("recallCancel"),
+      confirmLabel: t("recallConfirmAction"),
+      acknowledged,
+      onAcknowledgedChange: setAcknowledged,
+      onCancel: settle,
+      onConfirm: () => {
+        const target = request;
+        settle();
+        if (target !== null) confirmRecall(target.sessionId, target.messageId, target.seq);
+      }
+    })
+  );
 }
 function apply(ctx) {
   register(ctx);
@@ -174,7 +195,9 @@ function register(ctx) {
         globalThis.alert(format(t("recallFailed"), { message: payload.message ?? `HTTP ${response.status}` }));
         return;
       }
-      if (payload.value?.live !== true) globalThis.location.reload();
+      const notice = typeof payload.value?.placeholder === "string" && payload.value.placeholder !== "" ? payload.value.placeholder : t("recalledShort");
+      if (typeof sessionStorage !== "undefined") sessionStorage.setItem(RECALL_NOTICE_KEY, notice);
+      globalThis.location.reload();
     }).catch((error) => {
       globalThis.alert(format(t("recallFailed"), { message: error.message }));
     });
