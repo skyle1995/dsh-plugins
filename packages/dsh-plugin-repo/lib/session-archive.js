@@ -204,23 +204,41 @@ export class SessionArchiveService extends Service {
 			// 头部读取失败不影响列表主体。
 		}
 		const titles = await readSessionTitles(this.projcacheDir);
+		const liveSessions = this.ctx.get("sessions");
+		const agents = this.ctx.get("agents");
+		const liveIds = [];
+		if (liveSessions !== undefined) for (const session of liveSessions.list()) liveIds.push(session.id);
 		return {
 			workspaces,
 			archivedIds,
 			sessions: buildSessionList({ workspaces, archivedIds, titles, extraIds }),
+			liveIds,
+			serviceProbe: { hasSessions: liveSessions !== undefined, hasAgents: agents !== undefined },
 		};
 	}
 
 	/**
-	 * 永久删除：先删文件（校验存在），再清归档集与 workspace 记账。
-	 * 活跃（已实体化）会话直接拒绝：进程内仍持有该会话，删文件会被
-	 * 持久化句柄复活、记账 detach 又会让它掉进「未分组」，形成删不掉的
-	 * 僵尸条目——必须等会话关闭（重启 Web GUI）后再删。
+	 * 永久删除，立即生效：
+	 * 1. 已实体化（live）会话先处理：正在运行的直接拒绝；空闲的从 live
+	 *    存储摘除（发出 session/disposed，会话列表立即移除，无需重启）；
+	 * 2. 删文件（校验存在）与标题缓存；
+	 * 3. 清归档集与 workspace 记账。
 	 */
 	async deleteSession(sessionId) {
 		const liveSessions = this.ctx.get("sessions");
-		if (liveSessions?.get(sessionId) !== undefined) {
-			throw new SessionArchiveError("session-archive/session-live", "该会话已打开（正在使用），无法删除；请先关闭会话或重启 Web GUI 后再试。");
+		const agents = this.ctx.get("agents");
+		const live = liveSessions?.get(sessionId);
+		if (live !== undefined) {
+			const agent = agents?.get(sessionId);
+			if (agent !== undefined && agent.status === "running") {
+				throw new SessionArchiveError("session-archive/session-running", "该会话正在运行，无法删除；请先停止会话。");
+			}
+			try {
+				const entry = liveSessions.liveEntryFor(live);
+				liveSessions.detachEntered(entry);
+			} catch (error) {
+				throw new SessionArchiveError("session-archive/detach-failed", `无法关闭会话：${error.message}`);
+			}
 		}
 		const dirs = await findSessionDirs(this.sessionsDir, sessionId);
 		if (dirs.length === 0) {
