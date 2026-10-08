@@ -1,0 +1,22 @@
+# dsh-plugin-message-recall bundle patch: 注册消息撤回插件服务行。
+#
+# 该行加载本包默认导出的 Cordis 插件（服务键 messageRecall，即
+# ctx.messageRecall），提供两类能力：
+# - 变更捕获记录器：在 write/edit/str_replace_editor 等文件工具执行前
+#   复制目标文件的「变更前」内容（按轮次记录，随轮次结束落盘到
+#   $DSH_HOME/dsh-message-recall/），供撤回时还原；
+# - 撤回引擎 + Web 路由：POST /api/dsh-message-recall/recall 按
+#   { sessionId, messageId } 定位该轮助手消息，还原文件变更，并把该轮
+#   助手侧 surface 节点替换为一条「消息已撤回」占位记录（对模型可见）。
+#
+# 配置通过 profile 的 cordis.patch.yml 覆盖，例如：
+#
+# - id: message-recall
+#   name: 'dsh-plugin-message-recall'
+#   config:
+#     maxFileBytes: 2097152
+#     capturesDir: /custom/captures
+#
+- insert:
+    - id: message-recall
+      name: 'dsh-plugin-message-recall'

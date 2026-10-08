@@ -24,6 +24,7 @@ dsh plugin --profile web add \
 | 插件 | 目录 | 说明 |
 |---|---|---|
 | [`dsh-plugin-repo`](packages/dsh-plugin-repo) | `packages/dsh-plugin-repo` | **基础插件**：设置面板三个分区——插件仓库（在线目录/安装/更新/卸载）、技能能力（skills 管理+导入）、规则提示词（system-prompt persona 编辑，热加载）；另在会话右键菜单底部提供「删除会话」（红色警示+确认弹窗） |
+| [`dsh-plugin-message-recall`](packages/dsh-plugin-message-recall) | `packages/dsh-plugin-message-recall` | 消息撤回：助手消息动作行的「撤回」按钮，撤回消息并把该轮文件变更一起还原（捕获记录 + 撤回引擎 + 确认弹窗） |
 
 ## 为什么需要「仓库插件」
 
