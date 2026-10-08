@@ -70,10 +70,27 @@ function showDomToast(text) {
     el = document.createElement("div");
     el.className = "mrt-toast-host";
     el.setAttribute("role", "status");
+    Object.assign(el.style, {
+      position: "fixed",
+      left: "50%",
+      bottom: "36px",
+      transform: "translateX(-50%)",
+      zIndex: "2147483000",
+      background: "#ffffff",
+      color: "#1f2329",
+      border: "1px solid #d9dde3",
+      borderRadius: "10px",
+      boxShadow: "0 8px 24px rgba(0,0,0,.12)",
+      padding: "10px 16px",
+      fontSize: "13px",
+      lineHeight: "1.6",
+      maxWidth: "min(560px, calc(100vw - 48px))",
+      overflowWrap: "anywhere",
+      pointerEvents: "none"
+    });
     document.body.appendChild(el);
   }
   el.textContent = text;
-  el.classList.add("mrt-toast-show");
   clearTimeout(el.__mrtTimer);
   el.__mrtTimer = setTimeout(() => el.remove(), 4500);
 }
