@@ -1,0 +1,19 @@
+# dsh-plugin-repo bundle patch: 注册插件仓库服务行。
+#
+# 该行加载本包默认导出的 Cordis 插件（服务键 pluginRepo，即 ctx.pluginRepo）。
+# 激活由服务可用性驱动：插件注入了 pluginManager，因此在提供
+# plugin-manager 服务的 profile（如 Web profile）中随之一同激活；
+# 在无 plugin-manager 的环境里保持未激活，不影响其余组合。
+#
+# 配置（gitHost / owner / repo / branch / catalogDir / token）通过
+# profile 的 cordis.patch.yml 覆盖，例如：
+#
+# - id: plugin-repo
+#   name: 'dsh-plugin-repo'
+#   config:
+#     owner: your-org
+#     repo: your-plugins
+#
+- insert:
+    - id: plugin-repo
+      name: 'dsh-plugin-repo'

@@ -1,0 +1,15 @@
+{
+  "name": "dsh-plugins",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH 第三方插件仓库（monorepo），托管于 Gitea，由 dsh-plugin-repo 注册为插件安装源",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://hub.ifunx.com/skyle1995/dsh-plugins.git"
+  }
+}
