@@ -1,7 +1,7 @@
 {
   "name": "dsh-plugin-repo",
-  "version": "0.1.0",
-  "description": "把 Gitea 上的插件 monorepo 注册为 DSH 插件安装源：目录查询、安装 spec 生成与一键安装（ctx.pluginRepo）",
+  "version": "0.2.0",
+  "description": "把 Gitea 上的插件 monorepo 注册为 DSH 插件安装源：目录查询、安装 spec 生成、一键安装（ctx.pluginRepo）与设置中的仓库管理页",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -10,22 +10,43 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
+    "./client": {
+      "default": "./lib/client.js"
+    },
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
   "files": [
     "lib/index.js",
+    "lib/client.js",
     "lib/types/index.d.ts",
     "cordis.patch.yml",
     "README.md"
   ],
+  "scripts": {
+    "build:client": "node scripts/build-client.mjs",
+    "smoke": "node test/smoke.mjs"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-locale"
+      ]
     }
   },
   "peerDependencies": {
     "@deepseek-ai/dsh": "0.2.0-rc.2",
+    "@deepseek-ai/cordis": "~4.0.4",
+    "@deepseek-ai/schemastery": "~3.18.4"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "@types/react": "^19.0.0",
     "@deepseek-ai/cordis": "~4.0.4",
     "@deepseek-ai/schemastery": "~3.18.4"
   },

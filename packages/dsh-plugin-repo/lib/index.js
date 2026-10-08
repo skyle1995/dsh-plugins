@@ -27,6 +27,9 @@ export const DEFAULT_CATALOG_DIR = "packages";
 /** 一次 Gitea API 请求的超时（毫秒）。 */
 export const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
 
+/** 浏览器半区读取仓库目录的 HTTP 路由（注册在 web profile 的 webServer 上）。 */
+export const CATALOG_ROUTE = "/api/dsh-plugin-repo/catalog";
+
 /**
  * 带错误码的仓库操作失败，code 形如 `plugin-repo/<kind>`。
  * @extends Error
@@ -155,6 +158,35 @@ export class PluginRepoService extends Service {
 		super(ctx, "pluginRepo");
 		this.config = config;
 		ctx.logger.info(`dsh-plugin-repo 已激活：${gitUrlOf(config)}（分支 ${config.branch}，目录 ${config.catalogDir}/）`);
+		// Web profile 中注册浏览器半区使用的目录路由；webServer 不存在时（headless
+		// 等 profile）只保留服务本身。用 ctx.get 而非 inject，避免拖垮无 Web 的 profile。
+		const webServer = ctx.get("webServer");
+		if (webServer !== void 0) {
+			ctx.effect(() => webServer.register({
+				kind: "exact",
+				path: CATALOG_ROUTE,
+				handler: (req, res) => this.handleCatalogRequest(req, res),
+			}), "plugin-repo: catalog HTTP route");
+			ctx.logger.info(`dsh-plugin-repo 目录路由已注册：${CATALOG_ROUTE}`);
+		}
+	}
+
+	/** GET {CATALOG_ROUTE} —— 返回 `{ ok, source, entries }`，供浏览器半区读取。 */
+	async handleCatalogRequest(req, res) {
+		const payload = (status, value) => {
+			res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
+			res.end(JSON.stringify(value));
+		};
+		try {
+			if (req.method !== "GET" && req.method !== "HEAD") {
+				payload(405, { ok: false, code: "plugin-repo/method", message: "method not allowed" });
+				return;
+			}
+			const catalog = await this.catalog();
+			payload(200, { ok: true, ...catalog });
+		} catch (error) {
+			payload(502, { ok: false, code: error.code ?? "plugin-repo/catalog", message: error.message });
+		}
 	}
 
 	/** 仓库 git 地址。 */

@@ -1,6 +1,7 @@
 # dsh-plugin-repo
 
-把 Gitea 上的插件 monorepo 注册为 DSH 的插件安装源。
+把 Gitea 上的插件 monorepo 注册为 DSH 的插件安装源，并在 Web 设置的
+**插件仓库**页提供在线目录的查看、安装、更新与卸载。
 
 DSH 的插件安装（`dsh plugin --profile <name> add <spec>` / Web 插件页）本质是
 pnpm 安装，而 pnpm 11 支持 `git+https://host/owner/repo.git#<分支>&path:<子目录>`
@@ -12,7 +13,10 @@ pnpm 安装，而 pnpm 11 支持 `git+https://host/owner/repo.git#<分支>&path:
 - **spec 生成** `ctx.pluginRepo.specFor(name)` —— 拼出可直接安装的 git spec；
 - **一键安装** `ctx.pluginRepo.install(name, options)` —— 解析后转发给 profile
   的 `pluginManager.installBundle`，复用其 DSH 版本兼容预检、失败回滚、
-  构建脚本批准等全部流程。
+  构建脚本批准等全部流程；
+- **设置页（浏览器半区）** —— 设置 → 插件仓库：读取宿主半区注册的
+  `/api/dsh-plugin-repo/catalog` 路由渲染在线目录；安装/更新/卸载走现成的
+  `ctx.remote.pluginManager` 远程能力，更新即按分支 spec 重装最新提交。
 
 ## 配置
 
@@ -68,4 +72,8 @@ const { spec, result } = await ctx.pluginRepo.install("dsh-plugin-repo", { enabl
 - 仓库公开时无需 token；私有仓库需在配置中提供带读取权限的 token。
 - 目录读取使用 Gitea API（`contents` 与 `raw` 端点，raw 失败时回退 base64）。
 - 分支名含 `#` 或 `&` 的仓库无法生成正确 spec（pnpm fragment 语法限制）。
-- 本包**无构建步骤**（纯 ESM + 类型声明），避免触发 pnpm 的构建脚本批准流程。
+- 宿主半区**无构建步骤**（纯 ESM + 类型声明），避免触发 pnpm 的构建脚本
+  批准流程；浏览器半区是**预构建产物** `lib/client.js`（已提交），修改
+  `src/client/` 后本地运行 `pnpm --filter dsh-plugin-repo build:client` 再提交。
+- 更新安装包后需重启 Web GUI：进程内替换插件包不重新加载（DSH 的 HMR
+  只监视 profile manifest 与 patch 文件，不监视 node_modules 内容）。

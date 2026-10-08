@@ -23,7 +23,7 @@ dsh plugin --profile web add \
 
 | 插件 | 目录 | 说明 |
 |---|---|---|
-| [`dsh-plugin-repo`](packages/dsh-plugin-repo) | `packages/dsh-plugin-repo` | 把本仓库注册为 DSH 插件安装源：目录查询（Gitea API）、安装 spec 生成、一键安装（`ctx.pluginRepo`） |
+| [`dsh-plugin-repo`](packages/dsh-plugin-repo) | `packages/dsh-plugin-repo` | 把本仓库注册为 DSH 插件安装源：目录查询（Gitea API）、安装 spec 生成、一键安装（`ctx.pluginRepo`）+ 设置中的「插件仓库」管理页（在线列表/安装/更新/卸载） |
 
 ## 为什么需要「仓库插件」
 
@@ -36,8 +36,8 @@ monorepo 形态下有几件事裸 pnpm 做不了：
 - **一键安装**：把「解析 + 安装」转发给 profile 的 `pluginManager`，复用 DSH
   原生的版本兼容预检、失败回滚、构建脚本批准流程。
 
-`dsh-plugin-repo` 把这些能力收拢为服务（`ctx.pluginRepo`），后续插件、Web 目录页
-（v2）和 agent 工具都建立在这个服务上。
+`dsh-plugin-repo` 把这些能力收拢为服务（`ctx.pluginRepo`）和设置页，
+后续插件与 agent 工具都建立在这个服务上。
 
 ## 编写新插件的规范
 
@@ -56,12 +56,19 @@ monorepo 形态下有几件事裸 pnpm 做不了：
 3. `lib/index.js`：默认导出 Cordis 插件（`class extends Service`，含
    `static inject` 与可选 `static Config`（schemastery schema，loader 据此
    校验配置并套用默认值）。
-4. **无构建步骤**：直接提交构建产物（纯 ESM JS + `.d.ts`），避免 pnpm 的
-   构建脚本批准流程；确需构建时使用 `prepublishOnly` 并了解 profile 的
-   `allowBuilds` 机制。
+4. **无构建步骤（宿主半区）**：直接提交构建产物（纯 ESM JS + `.d.ts`），
+   避免 pnpm 的构建脚本批准流程；确需构建时使用 `prepublishOnly` 并了解
+   profile 的 `allowBuilds` 机制。
+5. **浏览器半区（可选）**：在 `package.json` 声明
+   `"dsh": { "client": { "platform": "web", "inject": [...] } }`、导出
+   `./client`（预构建的 `lib/client.js`），源码放 `src/client/`，用 esbuild
+   等工具产出 `window.__ModuleLoader__.load({ id, factory })` 格式的 CJS
+   外壳（React/平台模块保持外部化），参考 dsh-plugin-repo 的
+   `scripts/build-client.mjs`。浏览器半区是提交进仓库的构建产物，宿主半区
+   依旧零构建。
 
-> 开发约定：本仓库保持「发布即源码」——`lib/` 就是手写的 ESM 产物。需要
-> TypeScript/打包时再演进为构建工作流，不改变插件侧约定。
+> 开发约定：本仓库保持「发布即源码」——`lib/` 就是手写的 ESM 产物；唯一的
+> 例外是浏览器 bundle（`lib/client.js`），它必须预构建并提交。
 
 ## 版本兼容
 
@@ -73,6 +80,6 @@ DSH 版本」精确豁免后才可运行。
 ## 路线图
 
 - [x] `dsh-plugin-repo`：宿主服务（catalog / spec / install）
-- [ ] Web 插件页的仓库目录面板（客户端插件，`ctx.slots`，v2）
+- [x] 设置中的「插件仓库」页：在线列表查看、安装、更新、卸载（浏览器半区）
 - [ ] `plugin_repo` agent 工具（目录搜索 + 安装，需评估启用策略）
 - [ ] 更多业务插件（session-manager 等迁入）
