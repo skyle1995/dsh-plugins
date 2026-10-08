@@ -50,6 +50,13 @@ const zh = {
 	detailFile: "文件",
 	detailWhenToUse: "适用场景",
 	noWhenToUse: "（未填写）",
+	promptTitle: "规则（提示词）",
+	promptDescription: "全局系统提示词（persona）。保存后由 dsh 热加载，无需重启；留空使用默认。",
+	promptReload: "重新加载",
+	promptSave: "保存提示词",
+	promptSaved: "提示词已保存（热加载生效）。",
+	promptSaveFailed: "保存失败：{message}",
+	promptLoading: "正在加载提示词…",
 };
 
 const en = {
@@ -91,6 +98,13 @@ const en = {
 	detailFile: "File",
 	detailWhenToUse: "When to use",
 	noWhenToUse: "(not set)",
+	promptTitle: "Rules (Prompt)",
+	promptDescription: "Global system prompt (persona). Saved changes hot-apply without restart; leave empty for the default.",
+	promptReload: "Reload",
+	promptSave: "Save prompt",
+	promptSaved: "Prompt saved (hot-applied).",
+	promptSaveFailed: "Save failed: {message}",
+	promptLoading: "Loading prompt…",
 };
 
 /** 极简文案翻译：{name} 占位替换。 */
@@ -358,7 +372,61 @@ function SkillsSection({ t }) {
 			body));
 }
 
-/** 浏览器插件入口：注册 locale 词典与设置面板里的独立「技能能力」分区。 */
+/** 设置分区组件：全局规则（提示词）的查看与编辑。 */
+function PromptSection({ t }) {
+	const [persona, setPersona] = useState("");
+	const [status, setStatus] = useState("loading");
+	const [notice, setNotice] = useState(null);
+	const [busy, setBusy] = useState(false);
+
+	async function load() {
+		setStatus("loading");
+		try {
+			const payload = await api("/prompt");
+			setPersona(payload.persona ?? "");
+			setStatus("ok");
+		} catch (error) {
+			setStatus("error");
+			setNotice({ kind: "error", text: format(t("promptSaveFailed"), { message: error.message }) });
+		}
+	}
+
+	useEffect(() => {
+		void load();
+	}, []);
+
+	async function save() {
+		setBusy(true);
+		setNotice(null);
+		try {
+			await api("/prompt", { method: "POST", body: JSON.stringify({ persona }) });
+			setNotice({ kind: "ok", text: t("promptSaved") });
+		} catch (error) {
+			setNotice({ kind: "error", text: format(t("promptSaveFailed"), { message: error.message }) });
+		} finally {
+			setBusy(false);
+		}
+	}
+
+	const body = status === "loading"
+		? h("p", { className: "dsk-subtitle" }, t("promptLoading"))
+		: h("textarea", { className: "dsk-input dsk-textarea", style: { minHeight: 380 }, value: persona, onChange: (event) => setPersona(event.target.value), placeholder: "You are a coding agent..." });
+
+	return h(Fragment, null,
+		h("style", null, css),
+		h("div", { className: "dsk-page" },
+			h("div", { className: "dsk-head" },
+				h("div", null,
+					h("h1", { className: "dsk-title" }, t("promptTitle")),
+					h("p", { className: "dsk-subtitle" }, t("promptDescription"))),
+				h("div", { className: "dsk-actions" },
+					h("button", { className: "dsk-btn", onClick: () => void load() }, t("promptReload")),
+					h("button", { className: "dsk-btn dsk-btn-primary", disabled: busy || status !== "ok", onClick: () => void save() }, t("promptSave")))),
+			notice !== null ? h("p", { className: `dsk-notice ${notice.kind === "error" ? "dsk-notice-err" : "dsk-notice-ok"}` }, notice.text) : null,
+			body));
+}
+
+/** 浏览器插件入口：注册 locale 词典与设置面板里的两个独立分区（技能能力 / 规则提示词）。 */
 export function apply(ctx) {
 	ctx.effect(() => ctx.locale.register(NS, { zh, en }), "plugin-skills: dictionaries");
 	const t = ctx.locale.bind(NS);
@@ -369,6 +437,13 @@ export function apply(ctx) {
 		label: () => t("title"),
 		locale: NS,
 	}, SkillsSection));
+	ctx.slots.inject("settings.section", () => ctx.slots.register({
+		name: "settings.section",
+		id: "rules-prompt",
+		order: 130,
+		label: () => t("promptTitle"),
+		locale: NS,
+	}, PromptSection));
 }
 
 /** 浏览器依赖注入面（服务名；包级依赖见 package.json 的 dsh.client.inject）。 */

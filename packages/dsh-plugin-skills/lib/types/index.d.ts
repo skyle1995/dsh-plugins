@@ -42,6 +42,10 @@ export function saveSkill(dir: string, input: { name: string; description?: stri
 export function deleteSkill(dir: string, nameOrFile: string): Promise<SkillEntry>;
 export function setSkillModelEnabled(dir: string, nameOrFile: string, modelEnabled: boolean): Promise<SkillEntry>;
 export function importSkills(dir: string, input: { filename: string; data: Buffer }): Promise<{ imported: Array<{ name: string; layout: "bundle" | "flat" }>; skipped: string[] }>;
+export function extractPersona(content: string): string;
+export function buildPromptBlock(persona: string): string;
+export function setPromptInPatch(content: string, persona: string): string;
+export function promptPatchPath(home?: string): string;
 
 export class SkillManagerService extends Service {
 	constructor(ctx: Context, config: SkillManagerConfig);

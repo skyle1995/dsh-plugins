@@ -8,8 +8,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import {
-	buildFrontmatter, deleteSkill, findSkill, importSkills, listSkills, parseFrontmatter,
-	sanitizeSkillName, saveSkill, setFrontmatterField, setSkillModelEnabled,
+	buildFrontmatter, buildPromptBlock, deleteSkill, extractPersona, findSkill, importSkills,
+	listSkills, parseFrontmatter, sanitizeSkillName, saveSkill, setFrontmatterField,
+	setPromptInPatch, setSkillModelEnabled,
 } from "../lib/index.js";
 
 const execFileAsync = promisify(execFile);
@@ -112,7 +113,31 @@ try {
 		await rm(source, { recursive: true, force: true });
 	}
 
-	// 13) 工具函数
+	// 13) 规则（提示词）：提取 / 替换 / 保留其它条目 / 追加
+	const patchWithExtras = [
+		"- id: system-prompt",
+		"  config:",
+		"    persona: |-",
+		"      # 规则A",
+		"      ",
+		"      * 第一条",
+		"",
+		"- id: other-entry",
+		"  config:",
+		"    x: 1",
+		"",
+	].join("\n");
+	check("提取 persona", extractPersona(patchWithExtras) === "# 规则A\n\n* 第一条");
+	const replaced = setPromptInPatch(patchWithExtras, "# 新规则\n\n* 新条目");
+	check("替换后提取一致", extractPersona(replaced) === "# 新规则\n\n* 新条目");
+	check("其它条目保留", replaced.includes("- id: other-entry") && replaced.includes("x: 1"));
+	check("system-prompt 仍唯一", (replaced.match(/- id: system-prompt/g) ?? []).length === 1);
+	const appended = setPromptInPatch("- id: other-entry\n  config:\n    x: 1\n", "我的规则");
+	check("无块时追加", extractPersona(appended) === "我的规则" && appended.includes("- id: other-entry") && appended.indexOf("- id: other-entry") < appended.indexOf("- id: system-prompt"));
+	check("空块生成", buildPromptBlock("").trimEnd() === "- id: system-prompt\n  config:\n    persona: |");
+	check("空内容替换为空", extractPersona(setPromptInPatch(patchWithExtras, "")) === "");
+
+	// 14) 工具函数
 	check("名称净化", sanitizeSkillName("A b/c") === "A-b-c");
 	check("名称剔除非法字符", sanitizeSkillName("a:b*c?") === "a-b-c");
 	check("名称净化折叠", sanitizeSkillName("my skill! 测试") === "my-skill!-测试");

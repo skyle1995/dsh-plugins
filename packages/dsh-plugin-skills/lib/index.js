@@ -10,7 +10,10 @@
  *   改名时同步重命名文件/目录）、删除（文件或目录）、模型可见开关
  *   （改写 disable-model-invocation 字段，其余 frontmatter 保留）、
  *   导入（.md 单文件与 .zip/.tar.gz/.tgz 压缩包，解包扫描目录 bundle 与
- *   平铺技能，跳过 README 等非技能文件，重名覆盖）。
+ *   平铺技能，跳过 README 等非技能文件，重名覆盖）；
+ * - 规则（提示词）：读取/编辑 home 级 patch（$DSH_HOME/cordis.patch.yml）
+ *   里的 `- id: system-prompt` persona 块——手术式替换，保留文件内其它
+ *   条目；保存后由 dsh-hmr 热加载，无需重启。
  *
  * filesystem 提供方（dsh-skill-filesystem）会监视这些根目录，因此本插件
  * 的改动无需重启即可进入下一次会话目录。
@@ -341,8 +344,76 @@ export async function importSkills(dir, input) {
 	}
 }
 
+/** home 级 patch 文件名（位于 $DSH_HOME 下）。 */
+export const HOME_PATCH_FILENAME = "cordis.patch.yml";
+
 /**
- * dsh-plugin-skills 的 Cordis 服务：技能文件管理 + Web 路由。
+ * 从 patch 文本中提取 system-prompt 块的 persona（支持行内标量与 | / |- 块标量）。
+ * 找不到时返回空字符串。
+ */
+export function extractPersona(content) {
+	const lines = String(content).split(/\r?\n/);
+	const start = lines.findIndex((line) => /^- id: system-prompt\s*$/.test(line));
+	if (start < 0) return "";
+	for (let i = start + 1; i < lines.length; i++) {
+		const line = lines[i];
+		if (/^- id:/.test(line) || /^\S/.test(line)) break;
+		const block = /^    persona:\s*\|(-?)\s*$/.exec(line);
+		const inline = block === null ? /^    persona:\s*(.+)$/.exec(line) : null;
+		if (inline) return unquote(inline[1]);
+		if (!block) continue;
+		const value = [];
+		let baseIndent = -1;
+		for (let j = i + 1; j < lines.length; j++) {
+			const candidate = lines[j];
+			if (/^- id:/.test(candidate) || /^\S/.test(candidate)) break;
+			if (candidate.trim() === "") { value.push(""); continue; }
+			const indent = candidate.length - candidate.trimStart().length;
+			if (indent < 2) break;
+			if (baseIndent < 0) baseIndent = indent;
+			value.push(candidate.slice(Math.min(baseIndent, indent)));
+		}
+		while (value.length > 0 && value.at(-1) === "") value.pop();
+		return value.join("\n");
+	}
+	return "";
+}
+
+/**
+ * 生成 system-prompt 条目块（persona 用 | 块标量，内容统一缩进 6 空格）。
+ */
+export function buildPromptBlock(persona) {
+	const lines = String(persona ?? "").split(/\r?\n/);
+	return ["- id: system-prompt", "  config:", "    persona: |", ...lines.map((line) => (line === "" ? "" : `      ${line}`)), ""].join("\n");
+}
+
+/**
+ * 手术式替换：存在 system-prompt 条目则只替换该条目（到下一个顶层
+ * `- id:` 或文件末尾为止），保留文件内其它条目；不存在则追加到文件末尾。
+ */
+export function setPromptInPatch(content, persona) {
+	const lines = String(content ?? "").split(/\r?\n/);
+	const start = lines.findIndex((line) => /^- id: system-prompt\s*$/.test(line));
+	if (start < 0) {
+		const body = String(content ?? "").trim();
+		return (body === "" ? "" : `${body}\n\n`) + buildPromptBlock(persona);
+	}
+	let end = lines.length;
+	for (let i = start + 1; i < lines.length; i++) {
+		if (/^- id:/.test(lines[i])) { end = i; break; }
+	}
+	const before = lines.slice(0, start).join("\n").trim();
+	const after = lines.slice(end).join("\n").trim();
+	return [before, buildPromptBlock(persona).trimEnd(), after].filter((part) => part !== "").join("\n") + "\n";
+}
+
+/** home 级 patch 的绝对路径。 */
+export function promptPatchPath(home = resolveDshHome()) {
+	return join(home, HOME_PATCH_FILENAME);
+}
+
+/**
+ * dsh-plugin-skills 的 Cordis 服务：技能文件管理 + 规则（提示词）+ Web 路由。
  * 服务键 `skillManager`（ctx.skillManager）。
  */
 export class SkillManagerService extends Service {
@@ -383,6 +454,11 @@ export class SkillManagerService extends Service {
 						path: `${SKILLS_API_PREFIX}/import`,
 						handler: (req, res) => this.handleRequest(req, res, "import"),
 					}),
+					webCtx.webServer.register({
+						kind: "exact",
+						path: `${SKILLS_API_PREFIX}/prompt`,
+						handler: (req, res) => this.handleRequest(req, res, "prompt"),
+					}),
 				];
 				return () => {
 					for (const dispose of disposers) dispose();
@@ -402,6 +478,21 @@ export class SkillManagerService extends Service {
 			chunks.push(chunk);
 		}
 		return Buffer.concat(chunks);
+	}
+
+	/** 读取 home 级 patch 里的 system-prompt persona。 */
+	async getPrompt() {
+		const file = promptPatchPath();
+		if (!existsSync(file)) return "";
+		return extractPersona(await readFile(file, "utf8"));
+	}
+
+	/** 保存 persona（手术式替换，保留其它条目；home patch 由 dsh-hmr 热加载）。 */
+	async savePrompt(persona) {
+		const file = promptPatchPath();
+		const existing = existsSync(file) ? await readFile(file, "utf8") : "";
+		await writeFile(file, setPromptInPatch(existing, persona), "utf8");
+		return file;
 	}
 
 	/** 统一的路由处理器。 */
@@ -433,6 +524,27 @@ export class SkillManagerService extends Service {
 				const data = await SkillManagerService.readBody(req, 20 * 1024 * 1024);
 				const result = await importSkills(this.skillsDir, { filename, data });
 				json(200, { ok: true, ...result });
+				return;
+			}
+			if (operation === "prompt") {
+				if (req.method === "GET" || req.method === "HEAD") {
+					json(200, { ok: true, path: promptPatchPath(), persona: await this.getPrompt() });
+					return;
+				}
+				if (req.method !== "POST") {
+					json(405, { ok: false, code: "skills/method", message: "method not allowed" });
+					return;
+				}
+				let promptBody;
+				try {
+					promptBody = JSON.parse((await SkillManagerService.readBody(req)).toString("utf8") || "{}");
+				} catch {
+					json(400, { ok: false, code: "skills/invalid-json", message: "请求体不是合法 JSON" });
+					return;
+				}
+				const persona = typeof promptBody.persona === "string" ? promptBody.persona : "";
+				await this.savePrompt(persona);
+				json(200, { ok: true, path: promptPatchPath(), persona });
 				return;
 			}
 			if (req.method !== "POST") {

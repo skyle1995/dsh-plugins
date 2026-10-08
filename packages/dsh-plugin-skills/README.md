@@ -1,8 +1,12 @@
 # dsh-plugin-skills
 
-**技能能力**：DSH 的 skills 技能管理插件。在设置面板左侧导航里提供独立的
-「技能能力」分区（settings.section），管理 `$DSH_HOME/skills`（缺省
-`~/.dsh/skills`）下的本地 skill。
+**技能能力 + 规则（提示词）**：DSH 的 skills 技能与全局提示词管理插件。
+在设置面板左侧导航里提供两个独立分区（settings.section）：
+
+- **技能能力**：管理 `$DSH_HOME/skills`（缺省 `~/.dsh/skills`）下的本地 skill；
+- **规则（提示词）**：查看/编辑 home 级 patch（`$DSH_HOME/cordis.patch.yml`）
+  里的 `- id: system-prompt` persona 全局提示词——手术式替换，保留文件内
+  其它条目；保存后由 dsh-hmr 热加载，无需重启。
 
 ## 功能
 
@@ -19,7 +23,9 @@
 - **查看**：列表描述缩略显示（两行），点「查看」展开完整描述、适用场景、
   文件路径与正文；
 - **模型可见开关**：改写 frontmatter 的 `disable-model-invocation` 字段，
-  其余字段与正文原样保留。
+  其余字段与正文原样保留；
+- **规则（提示词）**：读取/编辑全局 persona（`|` 块标量），支持行内标量
+  兼容；保存走手术式替换（只改 system-prompt 条目，其它条目原样保留）。
 
 filesystem 提供方实时监视技能根目录，因此保存后**无需重启**即可进入
 下一次会话目录。
