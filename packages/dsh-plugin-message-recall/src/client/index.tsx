@@ -62,23 +62,34 @@ function showDomToast(text) {
 			position: "fixed",
 			left: "50%",
 			bottom: "36px",
-			transform: "translateX(-50%)",
+			transform: "translate(-50%, 6px)",
 			zIndex: "2147483000",
-			background: "#ffffff",
-			color: "#1f2329",
-			border: "1px solid #d9dde3",
-			borderRadius: "10px",
-			boxShadow: "0 8px 24px rgba(0,0,0,.12)",
+			// DSH 主题变量：深色模式自动适配；内联样式同样支持 var()。
+			background: "var(--dsw-alias-bg-layer-2, #ffffff)",
+			color: "var(--dsw-alias-label-primary, #1f2329)",
+			border: "1px solid var(--dsw-alias-border-l2, #d9dde3)",
+			borderRadius: "var(--dsw-radius-md, 10px)",
+			boxShadow: "var(--dsw-elevation-panel, 0 8px 24px rgba(0,0,0,.12))",
 			padding: "10px 16px",
+			fontFamily: "inherit",
 			fontSize: "13px",
 			lineHeight: "1.6",
 			maxWidth: "min(560px, calc(100vw - 48px))",
 			overflowWrap: "anywhere",
 			pointerEvents: "none",
+			opacity: "0",
+			transition: "opacity .16s ease, transform .16s ease",
 		});
 		document.body.appendChild(el);
 	}
 	el.textContent = text;
+	// 淡入动画：先回到初始态，下一帧滑入。
+	el.style.opacity = "0";
+	el.style.transform = "translate(-50%, 6px)";
+	requestAnimationFrame(() => {
+		el.style.opacity = "1";
+		el.style.transform = "translate(-50%, 0)";
+	});
 	clearTimeout(el.__mrtTimer);
 	el.__mrtTimer = setTimeout(() => el.remove(), 4500);
 }
