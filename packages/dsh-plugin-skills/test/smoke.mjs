@@ -2,13 +2,17 @@
  * dsh-plugin-skills 文件操作冒烟测试（临时目录，不触碰真实技能目录）。
  * 运行：node packages/dsh-plugin-skills/test/smoke.mjs
  */
+import { execFile } from "node:child_process";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import {
-	buildFrontmatter, deleteSkill, findSkill, listSkills, parseFrontmatter,
+	buildFrontmatter, deleteSkill, findSkill, importSkills, listSkills, parseFrontmatter,
 	sanitizeSkillName, saveSkill, setFrontmatterField, setSkillModelEnabled,
 } from "../lib/index.js";
+
+const execFileAsync = promisify(execFile);
 
 const dir = await mkdtemp(join(tmpdir(), "dsh-skills-test-"));
 let failed = 0;
@@ -71,7 +75,44 @@ try {
 	await deleteSkill(dir, "renamed");
 	check("删除后只剩 bare", (await listSkills(dir)).length === 1);
 
-	// 9) 工具函数
+	// 9) 导入：单 .md
+	const importedMd = await importSkills(dir, { filename: "外部技能.md", data: Buffer.from("---\nname: 外部技能\ndescription: 导入的\n---\n\n正文\n", "utf8") });
+	check("导入单 md", importedMd.imported.length === 1 && importedMd.imported[0].name === "外部技能" && importedMd.imported[0].layout === "flat");
+	check("导入后出现在列表", (await listSkills(dir)).some((skill) => skill.name === "外部技能"));
+
+	// 10) 导入 tar.gz：包装目录里含 bundle + 平铺 + README（应跳过）
+	const source = await mkdtemp(join(tmpdir(), "dsh-skill-src-"));
+	try {
+		await mkdir(join(source, "wrapper", "bundle-a", "references"), { recursive: true });
+		await writeFile(join(source, "wrapper", "bundle-a", "SKILL.md"), "---\nname: bundle-a\ndescription: 包内目录技能\n---\n\nB\n", "utf8");
+		await writeFile(join(source, "wrapper", "flat-b.md"), "---\nname: flat-b\ndescription: 包内平铺技能\n---\n\nF\n", "utf8");
+		await writeFile(join(source, "wrapper", "README.md"), "# 不是技能\n", "utf8");
+		await execFileAsync("tar", ["-czf", join(source, "skills.tar.gz"), "-C", source, "wrapper"]);
+		const archive = await readFile(join(source, "skills.tar.gz"));
+		const imported = await importSkills(dir, { filename: "skills.tar.gz", data: archive });
+		check("tar.gz 导入 2 个技能", imported.imported.length === 2 && imported.imported.some((item) => item.name === "bundle-a" && item.layout === "bundle") && imported.imported.some((item) => item.name === "flat-b" && item.layout === "flat"));
+		check("README 被跳过", imported.skipped.some((item) => item.includes("README.md")));
+		check("bundle 内容完整", (await readFile(join(dir, "bundle-a", "SKILL.md"), "utf8")).includes("包内目录技能"));
+
+		// 11) 重名覆盖：再导一次同名 bundle
+		await writeFile(join(source, "wrapper", "bundle-a", "SKILL.md"), "---\nname: bundle-a\ndescription: 覆盖后的\n---\n\nB2\n", "utf8");
+		await execFileAsync("tar", ["-czf", join(source, "skills2.tar.gz"), "-C", source, "wrapper"]);
+		const again = await importSkills(dir, { filename: "skills2.tar.gz", data: await readFile(join(source, "skills2.tar.gz")) });
+		check("重名覆盖导入", again.imported.some((item) => item.name === "bundle-a") && (await readFile(join(dir, "bundle-a", "SKILL.md"), "utf8")).includes("覆盖后的"));
+
+		// 12) zip（bsdtar 可用时）
+		try {
+			await execFileAsync("tar", ["--format", "zip", "-cf", join(source, "skills.zip"), "-C", source, "wrapper"]);
+			const zipped = await importSkills(dir, { filename: "skills.zip", data: await readFile(join(source, "skills.zip")) });
+			check("zip 导入成功", zipped.imported.length === 2);
+		} catch {
+			console.log("skip- 当前 tar 不支持 zip 创建，跳过 zip 用例");
+		}
+	} finally {
+		await rm(source, { recursive: true, force: true });
+	}
+
+	// 13) 工具函数
 	check("名称净化", sanitizeSkillName("A b/c") === "A-b-c");
 	check("名称剔除非法字符", sanitizeSkillName("a:b*c?") === "a-b-c");
 	check("名称净化折叠", sanitizeSkillName("my skill! 测试") === "my-skill!-测试");

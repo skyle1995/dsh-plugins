@@ -6,17 +6,20 @@
  * 半区注册的 /api/dsh-plugin-skills 路由；filesystem 提供方会实时监视
  * 技能目录，保存后无需重启即可生效。
  */
-import { createElement as h, Fragment, useEffect, useState } from "react";
+import { createElement as h, Fragment, useEffect, useRef, useState } from "react";
 
 const NS = "dsh-plugin-skills";
 const API = "/api/dsh-plugin-skills";
 
 const zh = {
 	title: "技能能力",
-	description: "管理本地 skills 技能：新建、编辑、删除，以及是否允许模型调用。",
+	description: "管理本地 skills 技能：新建、编辑、删除、导入，以及是否允许模型调用。",
 	refresh: "刷新",
 	create: "新建技能",
+	import: "导入",
 	edit: "编辑",
+	view: "查看",
+	back: "返回",
 	delete: "删除",
 	cancel: "取消",
 	save: "保存",
@@ -40,14 +43,24 @@ const zh = {
 	layoutFlat: "文件",
 	userInvocable: "用户可调用",
 	userNotInvocable: "用户不可调用",
+	importOk: "已导入 {count} 个技能：{names}",
+	importFailed: "导入失败：{message}",
+	importSkipped: "跳过 {count} 个文件：{names}",
+	detailBody: "正文",
+	detailFile: "文件",
+	detailWhenToUse: "适用场景",
+	noWhenToUse: "（未填写）",
 };
 
 const en = {
 	title: "Skills",
-	description: "Manage local skills: create, edit, delete, and control model invocation.",
+	description: "Manage local skills: create, edit, delete, import, and control model invocation.",
 	refresh: "Refresh",
 	create: "New skill",
+	import: "Import",
 	edit: "Edit",
+	view: "View",
+	back: "Back",
 	delete: "Delete",
 	cancel: "Cancel",
 	save: "Save",
@@ -71,6 +84,13 @@ const en = {
 	layoutFlat: "File",
 	userInvocable: "User invocable",
 	userNotInvocable: "Not user invocable",
+	importOk: "Imported {count} skill(s): {names}",
+	importFailed: "Import failed: {message}",
+	importSkipped: "Skipped {count} file(s): {names}",
+	detailBody: "Body",
+	detailFile: "File",
+	detailWhenToUse: "When to use",
+	noWhenToUse: "(not set)",
 };
 
 /** 极简文案翻译：{name} 占位替换。 */
@@ -99,7 +119,10 @@ const css = `
 .dsk-row{display:flex;align-items:flex-start;gap:12px;border:1px solid var(--dsw-alias-border-l3,#ddd);border-radius:12px;padding:12px 14px}
 .dsk-info{flex:1;min-width:0}
 .dsk-name{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:14px;font-weight:600}
-.dsk-desc{margin:4px 0 0;color:var(--dsw-alias-label-secondary,#555);font-size:13px;line-height:1.55;overflow-wrap:anywhere}
+.dsk-desc{margin:4px 0 0;color:var(--dsw-alias-label-secondary,#555);font-size:13px;line-height:1.55;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.dsk-detail-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.dsk-body{box-sizing:border-box;max-height:360px;overflow:auto;border:.5px solid var(--dsw-alias-border-l2,#ccc);background:var(--dsw-alias-bg-layer-1,#fff);border-radius:8px;padding:10px 12px;margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.6;color:var(--dsw-alias-label-primary,#222)}
+.dsk-meta{margin:0;color:var(--dsw-alias-label-tertiary,#888);font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}
 .dsk-badges{display:flex;gap:6px;flex-wrap:wrap}
 .dsk-badge{font-size:11px;line-height:1.5;padding:1px 8px;border-radius:999px;border:1px solid var(--dsw-alias-border-l3,#ddd);color:var(--dsw-alias-label-tertiary,#777)}
 .dsk-badge-on{color:var(--dsw-alias-state-success,#18864b);border-color:currentColor}
@@ -132,6 +155,7 @@ function SkillsSection({ t }) {
 	const [busy, setBusy] = useState(false);
 	const [editing, setEditing] = useState(null);
 	const [form, setForm] = useState({ name: "", description: "", body: "" });
+	const fileRef = useRef(null);
 
 	async function refresh() {
 		setStatus("loading");
@@ -159,6 +183,37 @@ function SkillsSection({ t }) {
 		setForm({ name: skill.name, description: skill.description, body: skill.body });
 		setEditing({ mode: "edit", skill });
 		setNotice(null);
+	}
+
+	function openView(skill) {
+		setEditing({ mode: "view", skill });
+		setNotice(null);
+	}
+
+	async function handleImport(event) {
+		const file = event.target.files?.[0];
+		event.target.value = "";
+		if (file === undefined) return;
+		setBusy(true);
+		setNotice(null);
+		try {
+			const payload = await api("/import", {
+				method: "POST",
+				headers: { "x-file-name": encodeURIComponent(file.name), "content-type": "application/octet-stream" },
+				body: file,
+			});
+			const imported = payload.imported ?? [];
+			const skipped = payload.skipped ?? [];
+			setNotice({
+				kind: "ok",
+				text: `${format(t("importOk"), { count: imported.length, names: imported.map((item) => item.name).join("、") || "—" })}${skipped.length > 0 ? " " + format(t("importSkipped"), { count: skipped.length, names: skipped.join("、") }) : ""}`,
+			});
+			await refresh();
+		} catch (error) {
+			setNotice({ kind: "error", text: format(t("importFailed"), { message: error.message }) });
+		} finally {
+			setBusy(false);
+		}
 	}
 
 	async function submit() {
@@ -237,6 +292,27 @@ function SkillsSection({ t }) {
 				h("button", { className: "dsk-btn", disabled: busy, onClick: () => setEditing(null) }, t("cancel"))));
 	}
 
+	function renderDetail() {
+		const skill = editing.skill;
+		const badges = [
+			h("span", { key: "layout", className: "dsk-badge" }, skill.layout === "bundle" ? t("layoutBundle") : t("layoutFlat")),
+			h("span", { key: "model", className: `dsk-badge ${skill.modelDisabled ? "dsk-badge-off" : "dsk-badge-on"}` }, skill.modelDisabled ? t("modelDisabled") : t("modelEnabled")),
+			h("span", { key: "user", className: `dsk-badge ${skill.userInvocable ? "dsk-badge-on" : "dsk-badge-off"}` }, skill.userInvocable ? t("userInvocable") : t("userNotInvocable")),
+		];
+		return h("div", { className: "dsk-form" },
+			h("div", { className: "dsk-detail-head" },
+				h("div", { className: "dsk-name" },
+					h("span", null, skill.name),
+					h("div", { className: "dsk-badges" }, badges)),
+				h("button", { className: "dsk-btn", onClick: () => setEditing(null) }, t("back"))),
+			skill.description ? h("p", { className: "dsk-desc", style: { display: "block", WebkitLineClamp: "unset" } }, skill.description) : null,
+			skill.whenToUse ? h("p", { className: "dsk-desc", style: { display: "block", WebkitLineClamp: "unset" } }, `${t("detailWhenToUse")}：${skill.whenToUse}`) : h("p", { className: "dsk-subtitle" }, `${t("detailWhenToUse")}：${t("noWhenToUse")}`),
+			h("p", { className: "dsk-meta" }, `${t("detailFile")}：${skill.file}`),
+			h("div", { className: "dsk-field" },
+				h("span", { className: "dsk-label" }, t("detailBody")),
+				h("pre", { className: "dsk-body" }, skill.body)));
+	}
+
 	function renderRow(skill) {
 		const badges = [
 			h("span", { key: "layout", className: "dsk-badge" }, skill.layout === "bundle" ? t("layoutBundle") : t("layoutFlat")),
@@ -250,6 +326,7 @@ function SkillsSection({ t }) {
 					h("div", { className: "dsk-badges" }, badges)),
 				skill.description ? h("p", { className: "dsk-desc" }, skill.description) : null),
 			h("div", { className: "dsk-actions" },
+				h("button", { className: "dsk-btn", disabled: busy, onClick: () => openView(skill) }, t("view")),
 				h("button", { className: "dsk-btn", disabled: busy, onClick: () => openEdit(skill) }, t("edit")),
 				h("button", { className: "dsk-btn", disabled: busy, onClick: () => void toggleModel(skill) }, skill.modelDisabled ? t("enableModel") : t("disableModel")),
 				h("button", { className: "dsk-btn dsk-btn-danger", disabled: busy, onClick: () => void remove(skill) }, t("delete"))));
@@ -272,9 +349,12 @@ function SkillsSection({ t }) {
 					h("p", { className: "dsk-subtitle" }, t("description"))),
 				h("div", { className: "dsk-actions" },
 					h("button", { className: "dsk-btn", onClick: () => void refresh() }, t("refresh")),
-					h("button", { className: "dsk-btn dsk-btn-primary", onClick: openCreate }, t("create")))),
+					h("button", { className: "dsk-btn", onClick: () => fileRef.current?.click() }, t("import")),
+					h("button", { className: "dsk-btn dsk-btn-primary", onClick: openCreate }, t("create"))),
+				h("input", { ref: fileRef, type: "file", accept: ".md,.zip,.tar.gz,.tgz", style: { display: "none" }, onChange: (event) => void handleImport(event) })),
 			renderNotice(),
-			editing !== null ? renderForm() : null,
+			editing !== null && editing.mode === "view" ? renderDetail() : null,
+			editing !== null && editing.mode !== "view" ? renderForm() : null,
 			body));
 }
 

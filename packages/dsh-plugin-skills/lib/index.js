@@ -8,7 +8,9 @@
  *   disable-model-invocation/user-invocable），返回正文与布局信息；
  * - 新建（平铺 .md，frontmatter 含 name/description）、编辑（保留布局，
  *   改名时同步重命名文件/目录）、删除（文件或目录）、模型可见开关
- *   （改写 disable-model-invocation 字段，其余 frontmatter 保留）。
+ *   （改写 disable-model-invocation 字段，其余 frontmatter 保留）、
+ *   导入（.md 单文件与 .zip/.tar.gz/.tgz 压缩包，解包扫描目录 bundle 与
+ *   平铺技能，跳过 README 等非技能文件，重名覆盖）。
  *
  * filesystem 提供方（dsh-skill-filesystem）会监视这些根目录，因此本插件
  * 的改动无需重启即可进入下一次会话目录。
@@ -20,10 +22,14 @@
  */
 import { Service } from "@deepseek-ai/cordis";
 import Schema from "@deepseek-ai/schemastery";
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { cp, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
+import { basename, extname, join } from "node:path";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 /** 浏览器半区使用的 HTTP 路由前缀。 */
 export const SKILLS_API_PREFIX = "/api/dsh-plugin-skills";
@@ -241,6 +247,101 @@ export async function setSkillModelEnabled(dir, nameOrFile, modelEnabled) {
 }
 
 /**
+ * 递归扫描解包树并导入技能：目录含 SKILL.md → bundle；带 name frontmatter
+ * 的 .md → 平铺。跳过隐藏目录、__MACOSX、node_modules 与无 frontmatter
+ * 的 .md（README 等）。重名覆盖。
+ */
+async function importTree(skillsDir, root, imported, skipped, depth = 0) {
+	if (depth > 4) return;
+	let entries;
+	try {
+		entries = await readdir(root, { withFileTypes: true });
+	} catch {
+		return;
+	}
+	for (const entry of entries) {
+		if (entry.name.startsWith(".") || entry.name === "__MACOSX" || entry.name === "node_modules") continue;
+		const full = join(root, entry.name);
+		if (entry.isDirectory()) {
+			const skillMd = join(full, "SKILL.md");
+			if (existsSync(skillMd)) {
+				try {
+					const { fields } = parseFrontmatter(await readFile(skillMd, "utf8"));
+					const name = sanitizeSkillName(fields.name ?? entry.name) || entry.name;
+					await rm(join(skillsDir, name), { recursive: true, force: true });
+					await cp(full, join(skillsDir, name), { recursive: true, force: true });
+					imported.push({ name, layout: "bundle" });
+				} catch (error) {
+					skipped.push(`${entry.name}（${error.message}）`);
+				}
+			} else {
+				await importTree(skillsDir, full, imported, skipped, depth + 1);
+			}
+		} else if (entry.isFile() && entry.name.toLowerCase().endsWith(".md")) {
+			try {
+				const content = await readFile(full, "utf8");
+				const { fields, hasFrontmatter } = parseFrontmatter(content);
+				if (!hasFrontmatter || typeof fields.name !== "string" || fields.name.trim() === "") {
+					skipped.push(entry.name);
+					continue;
+				}
+				const name = sanitizeSkillName(fields.name);
+				await rm(join(skillsDir, `${name}.md`), { force: true });
+				await writeFile(join(skillsDir, `${name}.md`), content, "utf8");
+				imported.push({ name, layout: "flat" });
+			} catch (error) {
+				skipped.push(`${entry.name}（${error.message}）`);
+			}
+		}
+	}
+}
+
+/**
+ * 从 .md 单文件或 .zip/.tar.gz/.tgz 压缩包导入技能（重名覆盖）。
+ * @param dir - 技能根目录。
+ * @param input - `{ filename, data }`（data 为 Buffer）。
+ * @returns `{ imported, skipped }`。
+ */
+export async function importSkills(dir, input) {
+	await mkdir(dir, { recursive: true });
+	const filename = String(input.filename ?? "");
+	const lower = filename.toLowerCase();
+	const work = await mkdtemp(join(tmpdir(), "dsh-skill-import-"));
+	try {
+		if (lower.endsWith(".md")) {
+			const content = input.data.toString("utf8");
+			const { fields } = parseFrontmatter(content);
+			const name = sanitizeSkillName(fields.name ?? basename(filename, extname(filename))) || "imported-skill";
+			await rm(join(dir, `${name}.md`), { force: true });
+			await writeFile(join(dir, `${name}.md`), content, "utf8");
+			return { imported: [{ name, layout: "flat" }], skipped: [] };
+		}
+		const archive = join(work, "archive.bin");
+		await writeFile(archive, input.data);
+		const tree = join(work, "tree");
+		await mkdir(tree, { recursive: true });
+		if (lower.endsWith(".zip")) {
+			try {
+				await execFileAsync("unzip", ["-o", "-q", archive, "-d", tree], { timeout: 120_000, maxBuffer: 4 * 1024 * 1024 });
+			} catch (error) {
+				if (error.code === "ENOENT") await execFileAsync("tar", ["-xf", archive, "-C", tree], { timeout: 120_000, maxBuffer: 4 * 1024 * 1024 });
+				else throw error;
+			}
+		} else if (lower.endsWith(".tar.gz") || lower.endsWith(".tgz")) {
+			await execFileAsync("tar", ["-xzf", archive, "-C", tree], { timeout: 120_000, maxBuffer: 4 * 1024 * 1024 });
+		} else {
+			throw new SkillError("skills/unsupported-archive", "仅支持 .md、.zip、.tar.gz、.tgz 格式");
+		}
+		const imported = [];
+		const skipped = [];
+		await importTree(dir, tree, imported, skipped);
+		return { imported, skipped };
+	} finally {
+		await rm(work, { recursive: true, force: true });
+	}
+}
+
+/**
  * dsh-plugin-skills 的 Cordis 服务：技能文件管理 + Web 路由。
  * 服务键 `skillManager`（ctx.skillManager）。
  */
@@ -277,6 +378,11 @@ export class SkillManagerService extends Service {
 						path: `${SKILLS_API_PREFIX}/toggle`,
 						handler: (req, res) => this.handleRequest(req, res, "toggle"),
 					}),
+					webCtx.webServer.register({
+						kind: "exact",
+						path: `${SKILLS_API_PREFIX}/import`,
+						handler: (req, res) => this.handleRequest(req, res, "import"),
+					}),
 				];
 				return () => {
 					for (const dispose of disposers) dispose();
@@ -286,16 +392,16 @@ export class SkillManagerService extends Service {
 		});
 	}
 
-	/** 读取请求体（上限 1 MiB）。 */
-	static async readBody(req) {
+	/** 读取请求体为 Buffer（JSON 端点默认上限 1 MiB，导入端点 20 MiB）。 */
+	static async readBody(req, maxBytes = 1024 * 1024) {
 		let size = 0;
 		const chunks = [];
 		for await (const chunk of req) {
 			size += chunk.length;
-			if (size > 1024 * 1024) throw new SkillError("skills/body-too-large", "请求体过大");
+			if (size > maxBytes) throw new SkillError("skills/body-too-large", "上传内容过大");
 			chunks.push(chunk);
 		}
-		return Buffer.concat(chunks).toString("utf8");
+		return Buffer.concat(chunks);
 	}
 
 	/** 统一的路由处理器。 */
@@ -313,13 +419,29 @@ export class SkillManagerService extends Service {
 				json(200, { ok: true, dir: this.skillsDir, skills: await listSkills(this.skillsDir) });
 				return;
 			}
+			if (operation === "import") {
+				if (req.method !== "POST") {
+					json(405, { ok: false, code: "skills/method", message: "method not allowed" });
+					return;
+				}
+				let filename = "";
+				try {
+					filename = decodeURIComponent(String(req.headers["x-file-name"] ?? ""));
+				} catch {
+					filename = String(req.headers["x-file-name"] ?? "");
+				}
+				const data = await SkillManagerService.readBody(req, 20 * 1024 * 1024);
+				const result = await importSkills(this.skillsDir, { filename, data });
+				json(200, { ok: true, ...result });
+				return;
+			}
 			if (req.method !== "POST") {
 				json(405, { ok: false, code: "skills/method", message: "method not allowed" });
 				return;
 			}
 			let body;
 			try {
-				body = JSON.parse(await SkillManagerService.readBody(req) || "{}");
+				body = JSON.parse((await SkillManagerService.readBody(req)).toString("utf8") || "{}");
 			} catch {
 				json(400, { ok: false, code: "skills/invalid-json", message: "请求体不是合法 JSON" });
 				return;

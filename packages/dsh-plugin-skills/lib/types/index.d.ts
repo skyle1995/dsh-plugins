@@ -41,6 +41,7 @@ export function findSkill(dir: string, nameOrFile: string): Promise<SkillEntry |
 export function saveSkill(dir: string, input: { name: string; description?: string; body?: string; previous?: SkillEntry }): Promise<{ name: string; layout: "bundle" | "flat"; file: string }>;
 export function deleteSkill(dir: string, nameOrFile: string): Promise<SkillEntry>;
 export function setSkillModelEnabled(dir: string, nameOrFile: string, modelEnabled: boolean): Promise<SkillEntry>;
+export function importSkills(dir: string, input: { filename: string; data: Buffer }): Promise<{ imported: Array<{ name: string; layout: "bundle" | "flat" }>; skipped: string[] }>;
 
 export class SkillManagerService extends Service {
 	constructor(ctx: Context, config: SkillManagerConfig);
