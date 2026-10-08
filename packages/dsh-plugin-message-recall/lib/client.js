@@ -63,22 +63,19 @@ var en = {
 function format(text, params) {
   return text.replace(/\{(\w+)\}/g, (_, key) => String(params[key] ?? ""));
 }
-var activeToast = null;
-var toastListeners = /* @__PURE__ */ new Set();
-function notifyToast(text) {
-  activeToast = text;
-  for (const listener of toastListeners) listener();
-}
-function useToast() {
-  const [text, setText] = (0, import_react.useState)(activeToast);
-  (0, import_react.useEffect)(() => {
-    const listener = () => setText(activeToast);
-    toastListeners.add(listener);
-    return () => {
-      toastListeners.delete(listener);
-    };
-  }, []);
-  return text;
+function showDomToast(text) {
+  if (typeof document === "undefined") return;
+  let el = document.querySelector(".mrt-toast-host");
+  if (el === null) {
+    el = document.createElement("div");
+    el.className = "mrt-toast-host";
+    el.setAttribute("role", "status");
+    document.body.appendChild(el);
+  }
+  el.textContent = text;
+  el.classList.add("mrt-toast-show");
+  clearTimeout(el.__mrtTimer);
+  el.__mrtTimer = setTimeout(() => el.remove(), 4500);
 }
 var pendingRecall = null;
 var listeners = /* @__PURE__ */ new Set();
@@ -153,36 +150,25 @@ function RecallUserNodeView(props) {
 function RecallConfirmDialog({ t, usePendingRecall: usePending, settleRecall: settle, confirmRecall }) {
   const request = usePending();
   const [acknowledged, setAcknowledged] = (0, import_react.useState)(false);
-  const toast = useToast();
   (0, import_react.useEffect)(() => {
     if (request !== null) setAcknowledged(false);
   }, [request]);
-  (0, import_react.useEffect)(() => {
-    if (toast === null) return;
-    const timer = setTimeout(() => notifyToast(null), 4500);
-    return () => clearTimeout(timer);
-  }, [toast]);
-  return (0, import_react.createElement)(
-    "div",
-    null,
-    toast !== null ? (0, import_react.createElement)("div", { className: "mrt-toast", role: "status" }, toast) : null,
-    (0, import_react.createElement)(import_dsh_client_ui_primitives.RiskConfirmation, {
-      open: request !== null,
-      title: t("recallConfirmTitle"),
-      description: t("recallConfirm"),
-      acknowledgeLabel: t("recallAcknowledge"),
-      cancelLabel: t("recallCancel"),
-      confirmLabel: t("recallConfirmAction"),
-      acknowledged,
-      onAcknowledgedChange: setAcknowledged,
-      onCancel: settle,
-      onConfirm: () => {
-        const target = request;
-        settle();
-        if (target !== null) confirmRecall(target.sessionId, target.messageId, target.seq);
-      }
-    })
-  );
+  return (0, import_react.createElement)(import_dsh_client_ui_primitives.RiskConfirmation, {
+    open: request !== null,
+    title: t("recallConfirmTitle"),
+    description: t("recallConfirm"),
+    acknowledgeLabel: t("recallAcknowledge"),
+    cancelLabel: t("recallCancel"),
+    confirmLabel: t("recallConfirmAction"),
+    acknowledged,
+    onAcknowledgedChange: setAcknowledged,
+    onCancel: settle,
+    onConfirm: () => {
+      const target = request;
+      settle();
+      if (target !== null) confirmRecall(target.sessionId, target.messageId, target.seq);
+    }
+  });
 }
 function apply(ctx) {
   register(ctx);
@@ -203,11 +189,11 @@ function register(ctx) {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload.ok !== true) {
         console.error("[dsh-plugin-message-recall]", payload.message ?? `HTTP ${response.status}`, payload);
-        notifyToast(format(t("recallFailed"), { message: payload.message ?? `HTTP ${response.status}` }));
+        showDomToast(format(t("recallFailed"), { message: payload.message ?? `HTTP ${response.status}` }));
         return;
       }
       const notice = typeof payload.value?.notice === "string" && payload.value.notice !== "" ? payload.value.notice : t("recalledShort");
-      notifyToast(format(t("recalledNotice"), { message: notice }));
+      showDomToast(format(t("recalledNotice"), { message: notice }));
     }).catch((error) => {
       globalThis.alert(format(t("recallFailed"), { message: error.message }));
     });
