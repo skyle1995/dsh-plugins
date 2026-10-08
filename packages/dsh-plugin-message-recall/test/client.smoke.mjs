@@ -83,21 +83,26 @@ globalThis.alert = () => {};
 
 entry.module.apply(ctx);
 
-check("注册助手动作行 slot", slotRegistrations.some((s) => s.name === "conversation.chat.assistant-actions" && s.registration.options.id === "recall"));
+check("不再注册助手动作行 slot", !slotRegistrations.some((s) => s.name === "conversation.chat.assistant-actions"));
 check("注册用户节点遮蔽 slot", slotRegistrations.some((s) => s.name === "conversation.chat.node" && s.registration.options.key === "user" && s.registration.options.priority === -1));
 check("注册 shell.overlay slot", slotRegistrations.some((s) => s.name === "shell.overlay" && s.registration.options.id === "message-recall-confirm"));
 check("词典注册", dictionaries.some((d) => d.ns === "dsh-plugin-message-recall" && d.dict.zh["action.recall"] === "撤回"));
 
-// ---- 动作注入 → 确认弹窗 → 请求宿主路由 ----
-const actionSlot = slotRegistrations.find((s) => s.name === "conversation.chat.assistant-actions");
+// ---- 用户节点动作注入 → 确认弹窗 → 请求宿主路由 ----
+const nodeSlot = slotRegistrations.find((s) => s.name === "conversation.chat.node");
 const overlaySlot = slotRegistrations.find((s) => s.name === "shell.overlay");
-const injected = actionSlot.registration.options.inject("session-1");
-check("动作注入提供 requestRecall", typeof injected.requestRecall === "function");
+const injected = nodeSlot.registration.options.inject("session-1");
+check("用户节点注入提供 requestRecall", typeof injected.requestRecall === "function");
+// 作用域键缺失时注入降级为空串（宿主按 messageId 定位会话）。
+const degraded = nodeSlot.registration.options.inject(undefined);
+check("作用域缺失降级为空串", typeof degraded.requestRecall === "function");
 const overlay = overlaySlot.registration.options.inject();
 check("overlay 注入提供确认入口", typeof overlay.confirmRecall === "function" && typeof overlay.usePendingRecall === "function");
 
 injected.requestRecall("message-1");
-check("点击后进入待确认状态", overlay.usePendingRecall()?.messageId === "message-1");
+check("点击后进入待确认状态", overlay.usePendingRecall()?.messageId === "message-1" && overlay.usePendingRecall()?.sessionId === "session-1");
+degraded.requestRecall("message-2");
+check("降级注入会话 id 为空串", overlay.usePendingRecall()?.sessionId === "");
 // 弹窗 onConfirm 的流程：先清空待确认状态，再发请求。
 overlay.settleRecall();
 await overlay.confirmRecall("session-1", "message-1");

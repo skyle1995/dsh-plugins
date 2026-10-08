@@ -3,10 +3,8 @@
  * 消息动作行的备用入口，以及撤回确认弹窗。
  *
  * - conversation.chat.node（key: "user"，priority -1 遮蔽官方视图）在用户
- *   消息气泡上渲染「撤回」按钮（悬停显示，另附复制按钮）；遮蔽崩溃时
- *   框架自动回退到官方视图，撤回能力退化为助手动作行入口；
- * - conversation.chat.assistant-actions 在助手消息动作行保留同样的「撤回」
- *   按钮作为备用入口；
+ *   消息气泡上渲染「撤回」按钮（悬停显示 Tooltip，另附复制按钮）；遮蔽
+ *   崩溃时框架自动回退到官方视图；
  * - 点击后经 shell.overlay 弹出 RiskConfirmation 确认弹窗，确认后调用宿主
  *   半区的 POST /api/dsh-message-recall/recall（{ sessionId, messageId }），
  *   宿主按「轮」撤回：删除该轮用户消息与助手回复、还原该轮文件变更；
@@ -15,7 +13,7 @@
  */
 import { createElement as h, useEffect, useState } from "react";
 import {
-	IconCheckOutlineRegular, IconCopyOutlineRegular, IconRefreshOutlineRegular, RiskConfirmation,
+	IconCheckOutlineRegular, IconCopyOutlineRegular, IconRefreshOutlineRegular, RiskConfirmation, Tooltip,
 } from "@deepseek-ai/dsh-client-ui-primitives";
 
 const NS = "dsh-plugin-message-recall";
@@ -115,40 +113,8 @@ function RecallUserNodeView(props) {
 			images.length > 0 ? h("div", { className: "mru-images" }, images.map((block, index) => h("img", { key: index, src: block.image.preview.url, alt: block.image.name ?? "" }))) : null,
 			labels.length > 0 ? h("div", { className: "mru-refs" }, labels.join(" · ")) : null),
 		hover || copied ? h("div", { className: "mru-actions" },
-			h("button", { className: "mru-btn", type: "button", title: t("action.recall"), "aria-label": t("action.recall"), onClick: () => requestRecall(data.id) }, h(IconRefreshOutlineRegular, { size: 14 })),
-			h("button", { className: "mru-btn", type: "button", title: t("action.copy"), "aria-label": t("action.copy"), onClick: copy }, copied ? h(IconCheckOutlineRegular, { size: 14 }) : h(IconCopyOutlineRegular, { size: 14 }))) : null);
-}
-
-/** 助手消息动作行的「撤回」图标按钮（备用入口，与官方动作同排）。 */
-function RecallAction({ messageId, requestRecall: open, t }) {
-	const style = {
-		width: "calc(28px + var(--dsh-content-font-delta, 0px))",
-		height: "calc(28px + var(--dsh-content-font-delta, 0px))",
-		borderRadius: "var(--dsw-radius-sm)",
-		color: "var(--dsw-alias-label-tertiary)",
-		cursor: "pointer",
-		background: "0 0",
-		border: "none",
-		justifyContent: "center",
-		alignItems: "center",
-		padding: 6,
-		display: "inline-flex",
-	};
-	return h("button", {
-		type: "button",
-		title: t("action.title"),
-		"aria-label": t("action.recall"),
-		style,
-		onClick: () => open(messageId),
-		onMouseEnter: (event) => {
-			event.currentTarget.style.background = "var(--dsw-alias-interactive-bg-hover)";
-			event.currentTarget.style.color = "var(--dsw-alias-label-secondary)";
-		},
-		onMouseLeave: (event) => {
-			event.currentTarget.style.background = "";
-			event.currentTarget.style.color = "";
-		},
-	}, h(IconRefreshOutlineRegular, { size: 15 }));
+			h(Tooltip, { label: t("action.title"), side: "bottom", align: "end", delayMs: 400, children: h("button", { className: "mru-btn", type: "button", "aria-label": t("action.recall"), onClick: () => requestRecall(data.id) }, h(IconRefreshOutlineRegular, { size: 14 })) }),
+			h(Tooltip, { label: t("action.copy"), side: "bottom", align: "end", delayMs: 400, children: h("button", { className: "mru-btn", type: "button", "aria-label": t("action.copy"), onClick: copy }, copied ? h(IconCheckOutlineRegular, { size: 14 }) : h(IconCopyOutlineRegular, { size: 14 })) })) : null);
 }
 
 /** 撤回确认弹窗（RiskConfirmation，需勾选确认）。 */
@@ -211,26 +177,19 @@ export function register(ctx) {
 	};
 
 	// 用户消息气泡上的撤回按钮（遮蔽官方 user 节点视图；崩溃时框架回退官方视图）。
+	// sessionId 来自会话作用域绑定；取不到时传空串，宿主会按 messageId 自动定位会话。
 	ctx.slots.inject("conversation.chat.node", () => ctx.slots.register({
 		name: "conversation.chat.node",
 		key: "user",
 		priority: -1,
 		locale: NS,
-		inject: (sessionId) => ({
-			requestRecall: (messageId) => requestRecall(sessionId, messageId),
-		}),
+		inject: (scopeKey) => {
+			const sessionId = typeof scopeKey === "string" ? scopeKey : "";
+			return {
+				requestRecall: (messageId) => requestRecall(sessionId, messageId),
+			};
+		},
 	}, (props) => h(RecallUserNodeView, props)));
-
-	// 助手消息动作行的备用入口。
-	ctx.slots.inject("conversation.chat.assistant-actions", () => ctx.slots.register({
-		name: "conversation.chat.assistant-actions",
-		id: "recall",
-		order: 30,
-		locale: NS,
-		inject: (sessionId) => ({
-			requestRecall: (messageId) => requestRecall(sessionId, messageId),
-		}),
-	}, RecallAction));
 
 	ctx.slots.inject("shell.overlay", () => ctx.slots.register({
 		name: "shell.overlay",

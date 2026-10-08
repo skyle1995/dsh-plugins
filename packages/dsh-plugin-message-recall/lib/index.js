@@ -278,12 +278,55 @@ export class RecallEngine {
 	}
 
 	/**
+	 * 当请求未携带 sessionId 时，按 messageId 在所有活跃会话与持久化会话中
+	 * 定位所属会话（撤回按钮的界面动作通常就在当前会话里，活跃会话优先）。
+	 * @returns 会话 id，找不到返回空字符串。
+	 */
+	async resolveSessionId(messageId) {
+		const { sessions, sessionPersistence } = this.ctx;
+		const matches = (event) => {
+			if (event.type === "assistant/message") return event.data?.message?.id === messageId;
+			if (event.type === "user/message") return event.data?.id === messageId;
+			return false;
+		};
+		const liveList = typeof sessions.list === "function" ? sessions.list() : [];
+		for (const live of liveList) {
+			try {
+				if (live.snapshotEvents().some(matches)) return String(live.id);
+			} catch {
+				// 单个会话读取失败不阻断扫描。
+			}
+		}
+		const stored = typeof sessionPersistence.list === "function" ? await sessionPersistence.list() : [];
+		for (const snapshot of stored) {
+			const id = snapshot.header?.id;
+			if (id === undefined) continue;
+			try {
+				const handle = await sessionPersistence.open(id, "read");
+				try {
+					const { events } = await handle.read();
+					if (events.some(matches)) return String(id);
+				} finally {
+					await handle.close();
+				}
+			} catch {
+				// 单个冷会话读取失败不阻断扫描。
+			}
+		}
+		return "";
+	}
+
+	/**
 	 * 撤回一条消息：先还原文件变更，再以「消息已撤回」占位节点替换该轮
-	 * 助手侧 surface 范围。文件还原尽力而为：单个失败不影响撤回本身。
+	 * surface 范围（用户消息与助手回复）。文件还原尽力而为：单个失败不影响
+	 * 撤回本身。sessionId 缺省时按 messageId 自动定位会话。
 	 *
 	 * @returns `{ ok: true, value }` 或 `{ ok: false, error: { code, message } }`。
 	 */
-	recall({ sessionId, messageId }) {
+	async recall({ sessionId, messageId }) {
+		const target = typeof sessionId === "string" && sessionId.trim() !== "" ? sessionId.trim() : await this.resolveSessionId(messageId);
+		if (target === "") return { ok: false, error: { code: "recall/session-not-found", message: "找不到包含该消息的会话。" } };
+		sessionId = target;
 		return this.enqueue(sessionId, () => this.withSessionEvents(sessionId, async (events, append) => {
 			const plan = planRecall(events, messageId);
 			if (!plan.ok) return { ok: false, error: { code: plan.code, message: plan.message } };
@@ -450,8 +493,8 @@ export class MessageRecallService extends Service {
 			}
 			const sessionId = String(body.sessionId ?? "").trim();
 			const messageId = String(body.messageId ?? "").trim();
-			if (sessionId === "" || messageId === "") {
-				payload(400, { ok: false, code: "recall/invalid-request", message: "缺少 sessionId 或 messageId" });
+			if (messageId === "") {
+				payload(400, { ok: false, code: "recall/invalid-request", message: "缺少 messageId" });
 				return;
 			}
 			if (this.engine === undefined) {

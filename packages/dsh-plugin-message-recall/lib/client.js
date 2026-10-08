@@ -125,40 +125,10 @@ function RecallUserNodeView(props) {
     hover || copied ? (0, import_react.createElement)(
       "div",
       { className: "mru-actions" },
-      (0, import_react.createElement)("button", { className: "mru-btn", type: "button", title: t("action.recall"), "aria-label": t("action.recall"), onClick: () => requestRecall2(data.id) }, (0, import_react.createElement)(import_dsh_client_ui_primitives.IconRefreshOutlineRegular, { size: 14 })),
-      (0, import_react.createElement)("button", { className: "mru-btn", type: "button", title: t("action.copy"), "aria-label": t("action.copy"), onClick: copy }, copied ? (0, import_react.createElement)(import_dsh_client_ui_primitives.IconCheckOutlineRegular, { size: 14 }) : (0, import_react.createElement)(import_dsh_client_ui_primitives.IconCopyOutlineRegular, { size: 14 }))
+      (0, import_react.createElement)(import_dsh_client_ui_primitives.Tooltip, { label: t("action.title"), side: "bottom", align: "end", delayMs: 400, children: (0, import_react.createElement)("button", { className: "mru-btn", type: "button", "aria-label": t("action.recall"), onClick: () => requestRecall2(data.id) }, (0, import_react.createElement)(import_dsh_client_ui_primitives.IconRefreshOutlineRegular, { size: 14 })) }),
+      (0, import_react.createElement)(import_dsh_client_ui_primitives.Tooltip, { label: t("action.copy"), side: "bottom", align: "end", delayMs: 400, children: (0, import_react.createElement)("button", { className: "mru-btn", type: "button", "aria-label": t("action.copy"), onClick: copy }, copied ? (0, import_react.createElement)(import_dsh_client_ui_primitives.IconCheckOutlineRegular, { size: 14 }) : (0, import_react.createElement)(import_dsh_client_ui_primitives.IconCopyOutlineRegular, { size: 14 })) })
     ) : null
   );
-}
-function RecallAction({ messageId, requestRecall: open, t }) {
-  const style = {
-    width: "calc(28px + var(--dsh-content-font-delta, 0px))",
-    height: "calc(28px + var(--dsh-content-font-delta, 0px))",
-    borderRadius: "var(--dsw-radius-sm)",
-    color: "var(--dsw-alias-label-tertiary)",
-    cursor: "pointer",
-    background: "0 0",
-    border: "none",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 6,
-    display: "inline-flex"
-  };
-  return (0, import_react.createElement)("button", {
-    type: "button",
-    title: t("action.title"),
-    "aria-label": t("action.recall"),
-    style,
-    onClick: () => open(messageId),
-    onMouseEnter: (event) => {
-      event.currentTarget.style.background = "var(--dsw-alias-interactive-bg-hover)";
-      event.currentTarget.style.color = "var(--dsw-alias-label-secondary)";
-    },
-    onMouseLeave: (event) => {
-      event.currentTarget.style.background = "";
-      event.currentTarget.style.color = "";
-    }
-  }, (0, import_react.createElement)(import_dsh_client_ui_primitives.IconRefreshOutlineRegular, { size: 15 }));
 }
 function RecallConfirmDialog({ t, usePendingRecall: usePending, settleRecall: settle, confirmRecall }) {
   const request = usePending();
@@ -214,19 +184,13 @@ function register(ctx) {
     key: "user",
     priority: -1,
     locale: NS,
-    inject: (sessionId) => ({
-      requestRecall: (messageId) => requestRecall(sessionId, messageId)
-    })
+    inject: (scopeKey) => {
+      const sessionId = typeof scopeKey === "string" ? scopeKey : "";
+      return {
+        requestRecall: (messageId) => requestRecall(sessionId, messageId)
+      };
+    }
   }, (props) => (0, import_react.createElement)(RecallUserNodeView, props)));
-  ctx.slots.inject("conversation.chat.assistant-actions", () => ctx.slots.register({
-    name: "conversation.chat.assistant-actions",
-    id: "recall",
-    order: 30,
-    locale: NS,
-    inject: (sessionId) => ({
-      requestRecall: (messageId) => requestRecall(sessionId, messageId)
-    })
-  }, RecallAction));
   ctx.slots.inject("shell.overlay", () => ctx.slots.register({
     name: "shell.overlay",
     id: "message-recall-confirm",

@@ -84,6 +84,7 @@ try {
 		sessions: {
 			get: (id) => String(id) === sessionId ? session : undefined,
 			flush: async () => true,
+			list: () => [session],
 		},
 		sessionPersistence: {
 			stat: async () => undefined,
@@ -121,6 +122,7 @@ try {
 	// 再次撤回同一消息应失败（范围已被遮蔽）。
 	const second = await engine.recall({ sessionId, messageId: "m-3" });
 	check("重复撤回被拒绝", second.ok === false && (second.error.code === "recall/target-not-found" || second.error.code === "recall/range-not-intact"));
+
 
 	// ---- 冷会话路径：live 不存在时直接写持久化句柄 ----
 	const stored = [...session.snapshotEvents()];
@@ -166,6 +168,27 @@ try {
 	// 不存在的会话。
 	const noSession = await engine.recall({ sessionId: "ghost-session", messageId: "m-1" });
 	check("未知会话业务失败", noSession.ok === false && noSession.error.code === "recall/session-not-found");
+	// 空 sessionId：按 messageId 自动定位（此刻活跃会话里 m-1 仍完整）。
+	const resolved = new RecallEngine({
+		sessions: {
+			get: (id) => String(id) === sessionId ? session : undefined,
+			flush: async () => true,
+			list: () => [session],
+		},
+		sessionPersistence: {
+			stat: async () => undefined,
+			open: async (id, access) => ({
+				header: session.header,
+				read: async (offset, length) => ({ events: session.snapshotEvents(offset, offset + (length ?? 0)) }),
+				close: async () => {},
+			}),
+		},
+		logger: { warn: () => {} },
+	}, { capturesDir, maxFileBytes: 1024 * 1024 }, () => undefined);
+	const fallback = await resolved.recall({ sessionId: "", messageId: "m-1" });
+	check("空会话 id 按消息定位会话", fallback.ok === true && fallback.value.live === true);
+	const ghost = await resolved.recall({ sessionId: "", messageId: "m-nope" });
+	check("定位失败给出业务错误", ghost.ok === false && ghost.error.code === "recall/session-not-found");
 
 	root.dispose?.();
 } finally {
