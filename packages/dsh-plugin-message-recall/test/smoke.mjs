@@ -165,6 +165,12 @@ const turn3 = [
 		const byMessage = planTurn(events, "m-32");
 		check("planTurn 按消息定位", byMessage.ok === true && byMessage.turn === 3);
 		check("planTurn 未知目标失败", planTurn(events, "", 9999).code === "recall/target-not-found");
+		const placeholderEvents = [
+			...events,
+			event("user/message", { id: "ph", role: "user", content: [{ type: "text", text: "已撤回" }], source: { kind: "user" } }, { op: "replace", startSeq: turn3[1].seq, endSeq: turn3[4].seq }),
+		];
+		const viaPlaceholder = planTurn(placeholderEvents, "", placeholderEvents.at(-1).seq);
+		check("旧占位节点可重试撤回", viaPlaceholder.ok === true && viaPlaceholder.turn === 3);
 	}
 
 	// 11) 撤回中间轮：前一轮用户提问保留、后一轮不受影响

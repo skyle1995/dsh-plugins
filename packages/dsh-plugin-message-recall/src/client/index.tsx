@@ -195,7 +195,9 @@ export function register(ctx) {
 		}).then(async (response) => {
 			const payload = await response.json().catch(() => ({}));
 			if (!response.ok || payload.ok !== true) {
-				globalThis.alert(format(t("recallFailed"), { message: payload.message ?? `HTTP ${response.status}` }));
+				// 失败也走 toast：web 外壳可能屏蔽原生 alert。
+				console.error("[dsh-plugin-message-recall]", payload.message ?? `HTTP ${response.status}`, payload);
+				notifyToast(format(t("recallFailed"), { message: payload.message ?? `HTTP ${response.status}` }));
 				return;
 			}
 			// 成功：弹 toast，同时宿主追加的「已撤回第 N 轮的编辑…」消息会出现在会话里。

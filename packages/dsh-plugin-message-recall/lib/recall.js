@@ -99,7 +99,14 @@ export function turnAtSeqMap(events) {
 export function planTurn(events, messageId, seq) {
 	let target;
 	if (Number.isSafeInteger(seq)) {
-		target = events.find((event) => event.seq === seq && isAppendSurfaceEvent(event) && (event.type === "user/message" || event.type === "assistant/message"));
+		target = events.find((event) => event.seq === seq && (event.type === "user/message" || event.type === "assistant/message") && isAppendSurfaceEvent(event));
+		// 目标若是旧版「消息已撤回」替换占位节点，退回其遮蔽范围的起点重试。
+		if (target === undefined) {
+			const placeholder = events.find((event) => event.seq === seq && event.type === "user/message" && event.surfaceOp?.op === "replace");
+			if (placeholder !== undefined && Number.isSafeInteger(placeholder.surfaceOp.startSeq)) {
+				target = events.find((event) => event.seq === placeholder.surfaceOp.startSeq && (event.type === "user/message" || event.type === "assistant/message"));
+			}
+		}
 	} else {
 		target = [...events].reverse().find((event) => {
 			if (!isAppendSurfaceEvent(event)) return false;

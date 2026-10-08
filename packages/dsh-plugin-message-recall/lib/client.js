@@ -202,7 +202,8 @@ function register(ctx) {
     }).then(async (response) => {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload.ok !== true) {
-        globalThis.alert(format(t("recallFailed"), { message: payload.message ?? `HTTP ${response.status}` }));
+        console.error("[dsh-plugin-message-recall]", payload.message ?? `HTTP ${response.status}`, payload);
+        notifyToast(format(t("recallFailed"), { message: payload.message ?? `HTTP ${response.status}` }));
         return;
       }
       const notice = typeof payload.value?.notice === "string" && payload.value.notice !== "" ? payload.value.notice : t("recalledShort");
