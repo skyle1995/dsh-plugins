@@ -278,7 +278,12 @@ export class PluginRepoService extends Service {
 				return;
 			}
 			if (operation === "remove") {
-				const result = await manager.removeBundle(String(body.name ?? ""));
+				const name = String(body.name ?? "").trim();
+				if (name === "") {
+					payload(400, { ok: false, code: "plugin-repo/invalid-name", message: "缺少插件名" });
+					return;
+				}
+				const result = await manager.removeBundle(name);
 				payload(200, { ok: true, result });
 				return;
 			}
