@@ -211,16 +211,28 @@ export class SessionArchiveService extends Service {
 		};
 	}
 
-	/** 永久删除：归档集移除 + workspace 记账 detach + 文件清理。 */
+	/**
+	 * 永久删除：先删文件（校验存在），再清归档集与 workspace 记账。
+	 * 活跃（已实体化）会话直接拒绝：进程内仍持有该会话，删文件会被
+	 * 持久化句柄复活、记账 detach 又会让它掉进「未分组」，形成删不掉的
+	 * 僵尸条目——必须等会话关闭（重启 Web GUI）后再删。
+	 */
 	async deleteSession(sessionId) {
+		const liveSessions = this.ctx.get("sessions");
+		if (liveSessions?.get(sessionId) !== undefined) {
+			throw new SessionArchiveError("session-archive/session-live", "该会话已打开（正在使用），无法删除；请先关闭会话或重启 Web GUI 后再试。");
+		}
+		const dirs = await findSessionDirs(this.sessionsDir, sessionId);
+		if (dirs.length === 0) {
+			throw new SessionArchiveError("session-archive/not-found", "会话文件不存在或已被删除。");
+		}
+		for (const dir of dirs) await rm(dir, { recursive: true, force: true });
+		await rm(join(this.projcacheDir, `${sessionId}.json`), { force: true });
 		const registry = this.ctx.workspaceRegistry;
 		await registry.unarchiveSession(sessionId);
 		for (const entity of registry.list()) {
 			if ((entity.record?.sessionIds ?? []).includes(sessionId)) await entity.detachSession(sessionId);
 		}
-		const dirs = await findSessionDirs(this.sessionsDir, sessionId);
-		for (const dir of dirs) await rm(dir, { recursive: true, force: true });
-		await rm(join(this.projcacheDir, `${sessionId}.json`), { force: true });
 		return { removedDirs: dirs };
 	}
 
