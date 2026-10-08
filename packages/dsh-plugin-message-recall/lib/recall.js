@@ -228,7 +228,7 @@ export function planRollback(captures, targetTurn) {
  */
 export function noticeContent(summary) {
 	const { turn, restored, skipped, failed } = summary;
-	const parts = [`已撤回第 ${turn} 轮的编辑：该轮对工作区文件的修改已还原。`];
+	const parts = [`↩️ 已撤回第 ${turn} 轮的编辑：该轮对工作区文件的修改已还原。`];
 	if (restored > 0) parts.push(`${restored} 个文件已还原或删除。`);
 	if (skipped > 0) parts.push(`${skipped} 个文件因之后被再次修改或内容过大而未还原。`);
 	if (failed > 0) parts.push(`${failed} 个文件还原失败（见操作结果）。`);
