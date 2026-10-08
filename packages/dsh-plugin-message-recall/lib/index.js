@@ -44,7 +44,9 @@ export const RECALL_ROUTE = "/api/dsh-message-recall/recall";
 export const DEFAULT_MAX_FILE_BYTES = 2 * 1024 * 1024;
 
 /** 占位消息的生产者 source kind（MessageSourceMap 可扩展，未知 kind 安全回落）。 */
-export const PLACEHOLDER_SOURCE_KIND = "message-recall";
+export // 撤回提示以普通用户消息呈现（source.kind: "user"）：聊天界面渲染为右侧
+// 用户气泡、会话列表预览可见、也进入模型上下文——作为可核对的持久记录。
+const PLACEHOLDER_SOURCE_KIND = "user";
 
 /** 解析 $DSH_HOME（DSH_HOME 环境变量优先，其次 ~/.dsh）。 */
 export function resolveDshHome() {
