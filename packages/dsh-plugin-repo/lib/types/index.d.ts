@@ -46,6 +46,11 @@ export interface CatalogEntry {
 	isBundle: boolean;
 	/** 可直接安装的 git spec（#branch&path: 语法） */
 	spec: string;
+	/** 已安装版本（listBundles 合并；未安装或未知为 null） */
+	installedVersion?: string | null;
+	installed?: boolean;
+	enabled?: boolean;
+	removable?: boolean;
 }
 
 export class RepoError extends Error {

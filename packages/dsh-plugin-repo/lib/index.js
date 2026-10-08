@@ -232,6 +232,7 @@ export class PluginRepoService extends Service {
 					installed: bundle?.installed === true,
 					enabled: bundle?.enabled === true,
 					removable: bundle?.removable === true,
+					installedVersion: typeof bundle?.version === "string" ? bundle.version : null,
 				};
 			}),
 		};

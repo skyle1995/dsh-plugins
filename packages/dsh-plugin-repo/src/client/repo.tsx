@@ -26,6 +26,7 @@ const zh = {
 	loadError: "读取仓库目录失败：{message}",
 	entryInstall: "安装",
 	entryUpdate: "更新",
+	entryReinstall: "重装",
 	entryRemove: "卸载",
 	entryBusy: "处理中…",
 	entryCancel: "取消",
@@ -33,6 +34,8 @@ const zh = {
 	installedBadge: "已安装",
 	enabledBadge: "已启用",
 	catalogBadge: "在线版本 {version}",
+	installedVersionBadge: "已装版本 {version}",
+	updateAvailableBadge: "可更新",
 	installOk: "「{name}」操作成功。",
 	installFailed: "「{name}」操作失败：{message}",
 	removeConfirm: "确定卸载「{name}」吗？其配置覆盖会保留在 profile 中。",
@@ -49,6 +52,7 @@ const en = {
 	loadError: "Failed to load the repository catalog: {message}",
 	entryInstall: "Install",
 	entryUpdate: "Update",
+	entryReinstall: "Reinstall",
 	entryRemove: "Uninstall",
 	entryBusy: "Working…",
 	entryCancel: "Cancel",
@@ -56,6 +60,8 @@ const en = {
 	installedBadge: "Installed",
 	enabledBadge: "Enabled",
 	catalogBadge: "Online version {version}",
+	installedVersionBadge: "Installed version {version}",
+	updateAvailableBadge: "Update available",
 	installOk: "“{name}” succeeded.",
 	installFailed: "“{name}” operation failed: {message}",
 	removeConfirm: "Uninstall “{name}”? Its configuration overrides remain in the profile.",
@@ -197,13 +203,17 @@ function RepoSection({ t }) {
 			actions.push(h("button", { key: "busy", className: "dpr-btn", disabled: true }, t("entryBusy")));
 			if (entryBusy === "install") actions.push(h("button", { key: "cancel", className: "dpr-btn", onClick: () => void cancel(entry.name) }, t("entryCancel")));
 		} else if (entry.installed) {
-			actions.push(h("button", { key: "update", className: "dpr-btn dpr-btn-primary", onClick: () => void install(entry) }, t("entryUpdate")));
+			const hasUpdate = entry.installedVersion !== null && entry.installedVersion !== undefined && entry.version !== null && entry.version !== undefined && entry.installedVersion !== entry.version;
+			actions.push(h("button", { key: hasUpdate ? "update" : "reinstall", className: hasUpdate ? "dpr-btn dpr-btn-primary" : "dpr-btn", onClick: () => void install(entry) }, hasUpdate ? t("entryUpdate") : t("entryReinstall")));
 			if (entry.removable !== false) actions.push(h("button", { key: "remove", className: "dpr-btn dpr-btn-danger", onClick: () => void remove(entry) }, t("entryRemove")));
 		} else {
 			actions.push(h("button", { key: "install", className: "dpr-btn dpr-btn-primary", onClick: () => void install(entry) }, t("entryInstall")));
 		}
 		const badges = [];
+		const hasUpdate = entry.installedVersion !== null && entry.installedVersion !== undefined && entry.version !== null && entry.version !== undefined && entry.installedVersion !== entry.version;
 		if (entry.installed) badges.push(h("span", { key: "installed", className: "dpr-badge dpr-badge-on" }, t("installedBadge")));
+		if (hasUpdate) badges.push(h("span", { key: "update", className: "dpr-badge dpr-badge-warn" }, t("updateAvailableBadge")));
+		if (entry.installedVersion !== null && entry.installedVersion !== undefined) badges.push(h("span", { key: "iv", className: "dpr-badge" }, format(t("installedVersionBadge"), { version: entry.installedVersion })));
 		if (entry.enabled) badges.push(h("span", { key: "enabled", className: "dpr-badge dpr-badge-on" }, t("enabledBadge")));
 		if (!entry.isBundle) badges.push(h("span", { key: "nb", className: "dpr-badge dpr-badge-warn" }, t("notBundle")));
 		if (entry.version !== null && entry.version !== undefined) badges.push(h("span", { key: "v", className: "dpr-badge" }, format(t("catalogBadge"), { version: entry.version })));

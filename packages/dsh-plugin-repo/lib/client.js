@@ -45,6 +45,7 @@ var zh = {
   loadError: "\u8BFB\u53D6\u4ED3\u5E93\u76EE\u5F55\u5931\u8D25\uFF1A{message}",
   entryInstall: "\u5B89\u88C5",
   entryUpdate: "\u66F4\u65B0",
+  entryReinstall: "\u91CD\u88C5",
   entryRemove: "\u5378\u8F7D",
   entryBusy: "\u5904\u7406\u4E2D\u2026",
   entryCancel: "\u53D6\u6D88",
@@ -52,6 +53,8 @@ var zh = {
   installedBadge: "\u5DF2\u5B89\u88C5",
   enabledBadge: "\u5DF2\u542F\u7528",
   catalogBadge: "\u5728\u7EBF\u7248\u672C {version}",
+  installedVersionBadge: "\u5DF2\u88C5\u7248\u672C {version}",
+  updateAvailableBadge: "\u53EF\u66F4\u65B0",
   installOk: "\u300C{name}\u300D\u64CD\u4F5C\u6210\u529F\u3002",
   installFailed: "\u300C{name}\u300D\u64CD\u4F5C\u5931\u8D25\uFF1A{message}",
   removeConfirm: "\u786E\u5B9A\u5378\u8F7D\u300C{name}\u300D\u5417\uFF1F\u5176\u914D\u7F6E\u8986\u76D6\u4F1A\u4FDD\u7559\u5728 profile \u4E2D\u3002"
@@ -67,6 +70,7 @@ var en = {
   loadError: "Failed to load the repository catalog: {message}",
   entryInstall: "Install",
   entryUpdate: "Update",
+  entryReinstall: "Reinstall",
   entryRemove: "Uninstall",
   entryBusy: "Working\u2026",
   entryCancel: "Cancel",
@@ -74,6 +78,8 @@ var en = {
   installedBadge: "Installed",
   enabledBadge: "Enabled",
   catalogBadge: "Online version {version}",
+  installedVersionBadge: "Installed version {version}",
+  updateAvailableBadge: "Update available",
   installOk: "\u201C{name}\u201D succeeded.",
   installFailed: "\u201C{name}\u201D operation failed: {message}",
   removeConfirm: "Uninstall \u201C{name}\u201D? Its configuration overrides remain in the profile."
@@ -198,13 +204,17 @@ function RepoSection({ t }) {
       actions.push((0, import_react.createElement)("button", { key: "busy", className: "dpr-btn", disabled: true }, t("entryBusy")));
       if (entryBusy === "install") actions.push((0, import_react.createElement)("button", { key: "cancel", className: "dpr-btn", onClick: () => void cancel(entry.name) }, t("entryCancel")));
     } else if (entry.installed) {
-      actions.push((0, import_react.createElement)("button", { key: "update", className: "dpr-btn dpr-btn-primary", onClick: () => void install(entry) }, t("entryUpdate")));
+      const hasUpdate2 = entry.installedVersion !== null && entry.installedVersion !== void 0 && entry.version !== null && entry.version !== void 0 && entry.installedVersion !== entry.version;
+      actions.push((0, import_react.createElement)("button", { key: hasUpdate2 ? "update" : "reinstall", className: hasUpdate2 ? "dpr-btn dpr-btn-primary" : "dpr-btn", onClick: () => void install(entry) }, hasUpdate2 ? t("entryUpdate") : t("entryReinstall")));
       if (entry.removable !== false) actions.push((0, import_react.createElement)("button", { key: "remove", className: "dpr-btn dpr-btn-danger", onClick: () => void remove(entry) }, t("entryRemove")));
     } else {
       actions.push((0, import_react.createElement)("button", { key: "install", className: "dpr-btn dpr-btn-primary", onClick: () => void install(entry) }, t("entryInstall")));
     }
     const badges = [];
+    const hasUpdate = entry.installedVersion !== null && entry.installedVersion !== void 0 && entry.version !== null && entry.version !== void 0 && entry.installedVersion !== entry.version;
     if (entry.installed) badges.push((0, import_react.createElement)("span", { key: "installed", className: "dpr-badge dpr-badge-on" }, t("installedBadge")));
+    if (hasUpdate) badges.push((0, import_react.createElement)("span", { key: "update", className: "dpr-badge dpr-badge-warn" }, t("updateAvailableBadge")));
+    if (entry.installedVersion !== null && entry.installedVersion !== void 0) badges.push((0, import_react.createElement)("span", { key: "iv", className: "dpr-badge" }, format(t("installedVersionBadge"), { version: entry.installedVersion })));
     if (entry.enabled) badges.push((0, import_react.createElement)("span", { key: "enabled", className: "dpr-badge dpr-badge-on" }, t("enabledBadge")));
     if (!entry.isBundle) badges.push((0, import_react.createElement)("span", { key: "nb", className: "dpr-badge dpr-badge-warn" }, t("notBundle")));
     if (entry.version !== null && entry.version !== void 0) badges.push((0, import_react.createElement)("span", { key: "v", className: "dpr-badge" }, format(t("catalogBadge"), { version: entry.version })));
