@@ -28,6 +28,8 @@ const zh = {
 	recallCancel: "取消",
 	recallConfirmAction: "撤回",
 	recallFailed: "撤回失败：{message}",
+	recalledNotice: "撤回成功：{message}",
+	recalledShort: "撤回成功",
 };
 
 const en = {
@@ -40,10 +42,31 @@ const en = {
 	recallCancel: "Cancel",
 	recallConfirmAction: "Recall",
 	recallFailed: "Recall failed: {message}",
+	recalledNotice: "Recalled: {message}",
+	recalledShort: "Recall succeeded",
 };
 
 function format(text, params) {
 	return text.replace(/\{(\w+)\}/g, (_, key) => String(params[key] ?? ""));
+}
+
+/** 模块级成功提示 store（单实例 bundle，供确认流程与弹窗共享）。 */
+let activeToast = null;
+const toastListeners = new Set();
+function notifyToast(text) {
+	activeToast = text;
+	for (const listener of toastListeners) listener();
+}
+function useToast() {
+	const [text, setText] = useState(activeToast);
+	useEffect(() => {
+		const listener = () => setText(activeToast);
+		toastListeners.add(listener);
+		return () => {
+			toastListeners.delete(listener);
+		};
+	}, []);
+	return text;
 }
 
 /** 模块级待确认撤回 store（单实例 bundle，供按钮与确认弹窗共享）。 */
@@ -115,15 +138,24 @@ function RecallUserNodeView(props) {
 			h(Tooltip, { label: t("action.copy"), side: "bottom", align: "end", delayMs: 400, children: h("button", { className: "mru-btn", type: "button", "aria-label": t("action.copy"), onClick: copy }, copied ? h(IconCheckOutlineRegular, { size: 14 }) : h(IconCopyOutlineRegular, { size: 14 })) })) : null);
 }
 
-/** 撤回确认弹窗（RiskConfirmation，需勾选确认）。 */
+/** 撤回确认弹窗（RiskConfirmation，需勾选确认）+ 成功 toast。 */
 function RecallConfirmDialog({ t, usePendingRecall: usePending, settleRecall: settle, confirmRecall }) {
 	const request = usePending();
 	const [acknowledged, setAcknowledged] = useState(false);
+	const toast = useToast();
 	useEffect(() => {
 		if (request !== null) setAcknowledged(false);
 	}, [request]);
-	return h(RiskConfirmation, {
-		open: request !== null,
+	// toast 自动消失。
+	useEffect(() => {
+		if (toast === null) return;
+		const timer = setTimeout(() => notifyToast(null), 4500);
+		return () => clearTimeout(timer);
+	}, [toast]);
+	return h("div", null,
+		toast !== null ? h("div", { className: "mrt-toast", role: "status" }, toast) : null,
+		h(RiskConfirmation, {
+			open: request !== null,
 		title: t("recallConfirmTitle"),
 		description: t("recallConfirm"),
 		acknowledgeLabel: t("recallAcknowledge"),
@@ -132,12 +164,12 @@ function RecallConfirmDialog({ t, usePendingRecall: usePending, settleRecall: se
 		acknowledged,
 		onAcknowledgedChange: setAcknowledged,
 		onCancel: settle,
-		onConfirm: () => {
-			const target = request;
-			settle();
-			if (target !== null) confirmRecall(target.sessionId, target.messageId, target.seq);
-		},
-	});
+			onConfirm: () => {
+				const target = request;
+				settle();
+				if (target !== null) confirmRecall(target.sessionId, target.messageId, target.seq);
+			},
+		}));
 }
 
 /** 浏览器插件入口：注册词典、按钮与确认弹窗。 */
@@ -164,9 +196,11 @@ export function register(ctx) {
 			const payload = await response.json().catch(() => ({}));
 			if (!response.ok || payload.ok !== true) {
 				globalThis.alert(format(t("recallFailed"), { message: payload.message ?? `HTTP ${response.status}` }));
+				return;
 			}
-			// 成功无需额外提示：宿主会追加一条「已撤回第 N 轮的编辑…」消息，
-			// 作为普通消息出现在会话里（原消息保留）。
+			// 成功：弹 toast，同时宿主追加的「已撤回第 N 轮的编辑…」消息会出现在会话里。
+			const notice = typeof payload.value?.notice === "string" && payload.value.notice !== "" ? payload.value.notice : t("recalledShort");
+			notifyToast(format(t("recalledNotice"), { message: notice }));
 		}).catch((error) => {
 			globalThis.alert(format(t("recallFailed"), { message: error.message }));
 		});

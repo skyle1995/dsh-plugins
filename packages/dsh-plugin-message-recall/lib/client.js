@@ -43,7 +43,9 @@ var zh = {
   recallAcknowledge: "\u6211\u5DF2\u77E5\u6653\u64A4\u56DE\u4F1A\u8FD8\u539F\u8BE5\u8F6E\u6587\u4EF6\u53D8\u66F4",
   recallCancel: "\u53D6\u6D88",
   recallConfirmAction: "\u64A4\u56DE",
-  recallFailed: "\u64A4\u56DE\u5931\u8D25\uFF1A{message}"
+  recallFailed: "\u64A4\u56DE\u5931\u8D25\uFF1A{message}",
+  recalledNotice: "\u64A4\u56DE\u6210\u529F\uFF1A{message}",
+  recalledShort: "\u64A4\u56DE\u6210\u529F"
 };
 var en = {
   "action.recall": "Recall",
@@ -54,10 +56,29 @@ var en = {
   recallAcknowledge: "I understand the file changes will be reverted",
   recallCancel: "Cancel",
   recallConfirmAction: "Recall",
-  recallFailed: "Recall failed: {message}"
+  recallFailed: "Recall failed: {message}",
+  recalledNotice: "Recalled: {message}",
+  recalledShort: "Recall succeeded"
 };
 function format(text, params) {
   return text.replace(/\{(\w+)\}/g, (_, key) => String(params[key] ?? ""));
+}
+var activeToast = null;
+var toastListeners = /* @__PURE__ */ new Set();
+function notifyToast(text) {
+  activeToast = text;
+  for (const listener of toastListeners) listener();
+}
+function useToast() {
+  const [text, setText] = (0, import_react.useState)(activeToast);
+  (0, import_react.useEffect)(() => {
+    const listener = () => setText(activeToast);
+    toastListeners.add(listener);
+    return () => {
+      toastListeners.delete(listener);
+    };
+  }, []);
+  return text;
 }
 var pendingRecall = null;
 var listeners = /* @__PURE__ */ new Set();
@@ -132,25 +153,36 @@ function RecallUserNodeView(props) {
 function RecallConfirmDialog({ t, usePendingRecall: usePending, settleRecall: settle, confirmRecall }) {
   const request = usePending();
   const [acknowledged, setAcknowledged] = (0, import_react.useState)(false);
+  const toast = useToast();
   (0, import_react.useEffect)(() => {
     if (request !== null) setAcknowledged(false);
   }, [request]);
-  return (0, import_react.createElement)(import_dsh_client_ui_primitives.RiskConfirmation, {
-    open: request !== null,
-    title: t("recallConfirmTitle"),
-    description: t("recallConfirm"),
-    acknowledgeLabel: t("recallAcknowledge"),
-    cancelLabel: t("recallCancel"),
-    confirmLabel: t("recallConfirmAction"),
-    acknowledged,
-    onAcknowledgedChange: setAcknowledged,
-    onCancel: settle,
-    onConfirm: () => {
-      const target = request;
-      settle();
-      if (target !== null) confirmRecall(target.sessionId, target.messageId, target.seq);
-    }
-  });
+  (0, import_react.useEffect)(() => {
+    if (toast === null) return;
+    const timer = setTimeout(() => notifyToast(null), 4500);
+    return () => clearTimeout(timer);
+  }, [toast]);
+  return (0, import_react.createElement)(
+    "div",
+    null,
+    toast !== null ? (0, import_react.createElement)("div", { className: "mrt-toast", role: "status" }, toast) : null,
+    (0, import_react.createElement)(import_dsh_client_ui_primitives.RiskConfirmation, {
+      open: request !== null,
+      title: t("recallConfirmTitle"),
+      description: t("recallConfirm"),
+      acknowledgeLabel: t("recallAcknowledge"),
+      cancelLabel: t("recallCancel"),
+      confirmLabel: t("recallConfirmAction"),
+      acknowledged,
+      onAcknowledgedChange: setAcknowledged,
+      onCancel: settle,
+      onConfirm: () => {
+        const target = request;
+        settle();
+        if (target !== null) confirmRecall(target.sessionId, target.messageId, target.seq);
+      }
+    })
+  );
 }
 function apply(ctx) {
   register(ctx);
@@ -171,7 +203,10 @@ function register(ctx) {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload.ok !== true) {
         globalThis.alert(format(t("recallFailed"), { message: payload.message ?? `HTTP ${response.status}` }));
+        return;
       }
+      const notice = typeof payload.value?.notice === "string" && payload.value.notice !== "" ? payload.value.notice : t("recalledShort");
+      notifyToast(format(t("recalledNotice"), { message: notice }));
     }).catch((error) => {
       globalThis.alert(format(t("recallFailed"), { message: error.message }));
     });
