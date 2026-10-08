@@ -232,22 +232,23 @@ function RepoSection(props) {
 			body));
 }
 
-/** 浏览器插件入口：注册 locale 词典与设置分区。 */
+/** 浏览器插件入口：注册 locale 词典与设置「插件」分区里的仓库标签页。 */
 export function apply(ctx) {
 	ctx.effect(() => ctx.locale.register(NS, { zh, en }), "plugin-repo: dictionaries");
 	const t = ctx.locale.bind(NS);
-	ctx.slots.inject("settings.section", () => ctx.slots.register({
-		name: "settings.section",
+	ctx.slots.inject("settings.plugins.tab", () => ctx.slots.register({
+		name: "settings.plugins.tab",
 		id: "plugin-repo",
-		order: 100,
+		order: 30,
 		label: () => t("title"),
 		locale: NS,
 		inject: () => ({ ctx }),
 	}, RepoSection));
 }
 
-/** 浏览器依赖注入面（与 package.json 的 dsh.client.inject 一致）。 */
+/** 浏览器依赖注入面（服务名；包级依赖见 package.json 的 dsh.client.inject）。 */
 export const inject = [
-	"@deepseek-ai/dsh-api-remotes",
-	"@deepseek-ai/dsh-client-locale",
+	"slots",
+	"locale",
+	"remote",
 ];

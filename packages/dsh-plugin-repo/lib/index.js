@@ -158,17 +158,18 @@ export class PluginRepoService extends Service {
 		super(ctx, "pluginRepo");
 		this.config = config;
 		ctx.logger.info(`dsh-plugin-repo 已激活：${gitUrlOf(config)}（分支 ${config.branch}，目录 ${config.catalogDir}/）`);
-		// Web profile 中注册浏览器半区使用的目录路由；webServer 不存在时（headless
-		// 等 profile）只保留服务本身。用 ctx.get 而非 inject，避免拖垮无 Web 的 profile。
-		const webServer = ctx.get("webServer");
-		if (webServer !== void 0) {
-			ctx.effect(() => webServer.register({
+		// Web profile 中注册浏览器半区使用的目录路由。webServer 属于 Web 组合的
+		// 作用域，不能从本行的注入面直接读取（ctx.get 拿不到），因此用
+		// ctx.inject 建一个以 webServer 为依赖的作用域子插件：Web 存在时注册
+		// 路由，headless 等 profile 里保持休眠、不影响本服务。
+		ctx.inject(["webServer"], (webCtx) => {
+			webCtx.effect(() => webCtx.webServer.register({
 				kind: "exact",
 				path: CATALOG_ROUTE,
 				handler: (req, res) => this.handleCatalogRequest(req, res),
 			}), "plugin-repo: catalog HTTP route");
 			ctx.logger.info(`dsh-plugin-repo 目录路由已注册：${CATALOG_ROUTE}`);
-		}
+		});
 	}
 
 	/** GET {CATALOG_ROUTE} —— 返回 `{ ok, source, entries }`，供浏览器半区读取。 */

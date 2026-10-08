@@ -250,18 +250,19 @@ function RepoSection(props) {
 function apply(ctx) {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), "plugin-repo: dictionaries");
   const t = ctx.locale.bind(NS);
-  ctx.slots.inject("settings.section", () => ctx.slots.register({
-    name: "settings.section",
+  ctx.slots.inject("settings.plugins.tab", () => ctx.slots.register({
+    name: "settings.plugins.tab",
     id: "plugin-repo",
-    order: 100,
+    order: 30,
     label: () => t("title"),
     locale: NS,
     inject: () => ({ ctx })
   }, RepoSection));
 }
 var inject = [
-  "@deepseek-ai/dsh-api-remotes",
-  "@deepseek-ai/dsh-client-locale"
+  "slots",
+  "locale",
+  "remote"
 ];
 
     return module.exports;
