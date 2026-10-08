@@ -384,7 +384,7 @@ export function extractPersona(content) {
  */
 export function buildPromptBlock(persona) {
 	const lines = String(persona ?? "").split(/\r?\n/);
-	return ["- id: system-prompt", "  config:", "    persona: |", ...lines.map((line) => (line === "" ? "" : `      ${line}`)), ""].join("\n");
+	return ["- id: system-prompt", "  config:", "    persona: |-", ...lines.map((line) => (line === "" ? "" : `      ${line}`)), ""].join("\n");
 }
 
 /**

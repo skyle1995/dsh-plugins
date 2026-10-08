@@ -134,7 +134,7 @@ try {
 	check("system-prompt 仍唯一", (replaced.match(/- id: system-prompt/g) ?? []).length === 1);
 	const appended = setPromptInPatch("- id: other-entry\n  config:\n    x: 1\n", "我的规则");
 	check("无块时追加", extractPersona(appended) === "我的规则" && appended.includes("- id: other-entry") && appended.indexOf("- id: other-entry") < appended.indexOf("- id: system-prompt"));
-	check("空块生成", buildPromptBlock("").trimEnd() === "- id: system-prompt\n  config:\n    persona: |");
+	check("空块生成", buildPromptBlock("").trimEnd() === "- id: system-prompt\n  config:\n    persona: |-");
 	check("空内容替换为空", extractPersona(setPromptInPatch(patchWithExtras, "")) === "");
 
 	// 14) 工具函数
