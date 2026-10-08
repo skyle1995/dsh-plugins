@@ -1,7 +1,7 @@
 # dsh-plugin-repo
 
-把 Gitea 上的插件 monorepo 注册为 DSH 的插件安装源，并在 Web
-左侧菜单提供独立的**插件仓库**页：在线目录的查看、安装、更新与卸载。
+把 Gitea 上的插件 monorepo 注册为 DSH 的插件安装源，并在
+**设置**面板里提供独立的「插件仓库」分区：在线目录的查看、安装、更新与卸载。
 
 DSH 的插件安装（`dsh plugin --profile <name> add <spec>` / Web 插件页）本质是
 pnpm 安装，而 pnpm 11 支持 `git+https://host/owner/repo.git#<分支>&path:<子目录>`
@@ -14,8 +14,8 @@ pnpm 安装，而 pnpm 11 支持 `git+https://host/owner/repo.git#<分支>&path:
 - **一键安装** `ctx.pluginRepo.install(name, options)` —— 解析后转发给 profile
   的 `pluginManager.installBundle`，复用其 DSH 版本兼容预检、失败回滚、
   构建脚本批准等全部流程；
-- **左侧菜单页（浏览器半区）** —— 左侧导航「插件仓库」（独立入口，不在
-  设置/内置插件里）：读取宿主半区注册的
+- **设置分区页（浏览器半区）** —— 设置面板左侧导航里的独立「插件仓库」
+  分区（与「内置插件」等分区并列，不混入其中）：读取宿主半区注册的
   `/api/dsh-plugin-repo/catalog` 路由渲染在线目录；安装/更新/卸载走现成的
   `ctx.remote.pluginManager` 远程能力，更新即按分支 spec 重装最新提交。
 

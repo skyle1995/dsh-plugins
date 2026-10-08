@@ -23,7 +23,7 @@ dsh plugin --profile web add \
 
 | 插件 | 目录 | 说明 |
 |---|---|---|
-| [`dsh-plugin-repo`](packages/dsh-plugin-repo) | `packages/dsh-plugin-repo` | 把本仓库注册为 DSH 插件安装源：目录查询（Gitea API）、安装 spec 生成、一键安装（`ctx.pluginRepo`）+ 左侧菜单的「插件仓库」独立页面（在线列表/安装/更新/卸载） |
+| [`dsh-plugin-repo`](packages/dsh-plugin-repo) | `packages/dsh-plugin-repo` | 把本仓库注册为 DSH 插件安装源：目录查询（Gitea API）、安装 spec 生成、一键安装（`ctx.pluginRepo`）+ 设置里的「插件仓库」独立分区（在线列表/安装/更新/卸载） |
 
 ## 为什么需要「仓库插件」
 
@@ -36,7 +36,7 @@ monorepo 形态下有几件事裸 pnpm 做不了：
 - **一键安装**：把「解析 + 安装」转发给 profile 的 `pluginManager`，复用 DSH
   原生的版本兼容预检、失败回滚、构建脚本批准流程。
 
-`dsh-plugin-repo` 把这些能力收拢为服务（`ctx.pluginRepo`）和左侧菜单页面，
+`dsh-plugin-repo` 把这些能力收拢为服务（`ctx.pluginRepo`）和设置里的仓库分区页，
 后续插件与 agent 工具都建立在这个服务上。
 
 ## 编写新插件的规范
@@ -80,6 +80,6 @@ DSH 版本」精确豁免后才可运行。
 ## 路线图
 
 - [x] `dsh-plugin-repo`：宿主服务（catalog / spec / install）
-- [x] 左侧菜单的「插件仓库」独立页面：在线列表查看、安装、更新、卸载（浏览器半区）
+- [x] 设置里的「插件仓库」独立分区：在线列表查看、安装、更新、卸载（浏览器半区）
 - [ ] `plugin_repo` agent 工具（目录搜索 + 安装，需评估启用策略）
 - [ ] 更多业务插件（session-manager 等迁入）

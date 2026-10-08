@@ -1,21 +1,19 @@
 /**
- * dsh-plugin-repo 浏览器半区：左侧菜单独立的「插件仓库」页。
+ * dsh-plugin-repo 浏览器半区：设置面板里的「插件仓库」独立分区。
  *
- * 通过 sidebar.panellist 注册左侧导航入口、main 注册页面主体，提供仓库
- * 插件目录的在线列表查看、安装、更新（重装分支最新提交）与卸载。目录数据
- * 来自宿主半区注册的 HTTP 路由 /api/dsh-plugin-repo/catalog；安装/卸载/
- * 更新复用现成的 ctx.remote.pluginManager 远程能力。
+ * 通过 settings.section 注册为设置面板左侧导航的一个独立分区（与
+ * 「内置插件」等分区并列，不混入其中），提供仓库插件目录的在线列表查看、
+ * 安装、更新（重装分支最新提交）与卸载。目录数据来自宿主半区注册的
+ * HTTP 路由 /api/dsh-plugin-repo/catalog；安装/卸载/更新复用现成的
+ * ctx.remote.pluginManager 远程能力。
  */
 import { createElement as h, Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { IconCordisPluginOutlineRegular } from "@deepseek-ai/dsh-client-ui-primitives";
 
 const NS = "dsh-plugin-repo";
-const PANEL_ID = "plugin-repo";
 const CATALOG_ROUTE = "/api/dsh-plugin-repo/catalog";
 
 const zh = {
 	title: "插件仓库",
-	panel: "插件仓库",
 	description: "管理仓库中的插件：查看在线目录、安装、更新与卸载。",
 	source: "仓库源",
 	refresh: "刷新",
@@ -39,7 +37,6 @@ const zh = {
 
 const en = {
 	title: "Plugin Repository",
-	panel: "Plugin Repository",
 	description: "Manage plugins from the repository: browse the online catalog, install, update, and uninstall.",
 	source: "Source",
 	refresh: "Refresh",
@@ -236,25 +233,15 @@ function RepoSection(props) {
 			body));
 }
 
-/** 左侧菜单图标（官方 primitives 图标，跟随主题）。 */
-function RepoPanelIcon({ size }) {
-	return h(IconCordisPluginOutlineRegular, { size });
-}
-
-/** 浏览器插件入口：注册 locale 词典、左侧菜单入口与页面主体。 */
+/** 浏览器插件入口：注册 locale 词典与设置面板左侧导航里的独立「插件仓库」分区。 */
 export function apply(ctx) {
 	ctx.effect(() => ctx.locale.register(NS, { zh, en }), "plugin-repo: dictionaries");
 	const t = ctx.locale.bind(NS);
-	ctx.slots.inject("sidebar.panellist", () => ctx.slots.register({
-		name: "sidebar.panellist",
-		id: PANEL_ID,
-		order: 20,
-		locale: NS,
-		label: () => t("panel"),
-	}, RepoPanelIcon));
-	ctx.slots.inject("main", () => ctx.slots.register({
-		name: "main",
-		key: PANEL_ID,
+	ctx.slots.inject("settings.section", () => ctx.slots.register({
+		name: "settings.section",
+		id: "plugin-repo",
+		order: 100,
+		label: () => t("title"),
 		locale: NS,
 		inject: () => ({ ctx }),
 	}, RepoSection));
