@@ -54,7 +54,8 @@ monorepo 形态下有几件事裸 pnpm 做不了：
 2. `cordis.patch.yml`：loader patch 条目（`- insert: [{ id, name }]`），行 id
    唯一、模块名指向插件入口。
 3. `lib/index.js`：默认导出 Cordis 插件（`class extends Service`，含
-   `static inject` 与可选 `static schema`）。
+   `static inject` 与可选 `static Config`（schemastery schema，loader 据此
+   校验配置并套用默认值）。
 4. **无构建步骤**：直接提交构建产物（纯 ESM JS + `.d.ts`），避免 pnpm 的
    构建脚本批准流程；确需构建时使用 `prepublishOnly` 并了解 profile 的
    `allowBuilds` 机制。

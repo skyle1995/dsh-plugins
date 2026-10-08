@@ -140,7 +140,8 @@ export async function buildCatalog(config, request = giteaRequest) {
 export class PluginRepoService extends Service {
 	static inject = ["pluginManager"];
 
-	static schema = Schema.object({
+	/** Cordis 配置契约：loader 据此校验 patch 配置并套用默认值。 */
+	static Config = Schema.object({
 		gitHost: Schema.string().default(DEFAULT_GIT_HOST),
 		owner: Schema.string().default("skyle1995"),
 		repo: Schema.string().default("dsh-plugins"),
