@@ -27,6 +27,25 @@ importers:
         specifier: ^0.25.0
         version: 0.25.0
 
+  packages/dsh-plugin-skills:
+    dependencies:
+      '@deepseek-ai/dsh':
+        specifier: 0.2.0-rc.2
+        version: 0.2.0-rc.2(21ed7b1c2f1cf8d27c58ecc2797875dd)
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: ~4.0.4
+        version: 4.0.4(@deepseek-ai/cordis-plugin-include@1.0.9)(@deepseek-ai/cordis-plugin-loader@1.0.5)
+      '@deepseek-ai/schemastery':
+        specifier: ~3.18.4
+        version: 3.18.4
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.3.0
+      esbuild:
+        specifier: ^0.25.0
+        version: 0.25.0
+
 packages:
 
   '@agentclientprotocol/sdk@1.4.0':

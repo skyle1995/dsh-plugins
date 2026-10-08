@@ -1,0 +1,11 @@
+# dsh-plugin-skills bundle patch: 注册技能管理服务行。
+#
+# 该行加载本包默认导出的 Cordis 插件（服务键 skillManager），管理
+# $DSH_HOME/skills 下的 skill 文件（列表/新建/编辑/删除/模型可见开关），
+# 并在 Web profile 里注册浏览器半区使用的 /api/dsh-plugin-skills 路由。
+# 浏览器半区通过本包的 dsh.client 声明与 ./client 导出提供设置面板里的
+# 「技能能力」分区（settings.section）。
+#
+- insert:
+    - id: skill-manager
+      name: 'dsh-plugin-skills'

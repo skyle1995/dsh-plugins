@@ -1,0 +1,335 @@
+window.__ModuleLoader__.load({
+  id: "dsh-plugin-skills",
+  factory: (require) => {
+    var module = { exports: {} };
+    var exports = module.exports;
+    Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+// packages/dsh-plugin-skills/src/client/index.tsx
+var index_exports = {};
+__export(index_exports, {
+  apply: () => apply,
+  inject: () => inject
+});
+module.exports = __toCommonJS(index_exports);
+var import_react = require("react");
+var NS = "dsh-plugin-skills";
+var API = "/api/dsh-plugin-skills";
+var zh = {
+  title: "\u6280\u80FD\u80FD\u529B",
+  description: "\u7BA1\u7406\u672C\u5730 skills \u6280\u80FD\uFF1A\u65B0\u5EFA\u3001\u7F16\u8F91\u3001\u5220\u9664\uFF0C\u4EE5\u53CA\u662F\u5426\u5141\u8BB8\u6A21\u578B\u8C03\u7528\u3002",
+  refresh: "\u5237\u65B0",
+  create: "\u65B0\u5EFA\u6280\u80FD",
+  edit: "\u7F16\u8F91",
+  delete: "\u5220\u9664",
+  cancel: "\u53D6\u6D88",
+  save: "\u4FDD\u5B58",
+  name: "\u540D\u79F0",
+  skillNamePlaceholder: "\u5982 my-skill\uFF08\u4EC5\u5B57\u6BCD\u6570\u5B57-_\uFF09",
+  skillDescription: "\u63CF\u8FF0",
+  skillBody: "\u6B63\u6587\uFF08SKILL.md \u5185\u5BB9\uFF09",
+  loading: "\u6B63\u5728\u52A0\u8F7D\u6280\u80FD\u5217\u8868\u2026",
+  empty: "\u8FD8\u6CA1\u6709\u6280\u80FD\uFF0C\u70B9\u51FB\u300C\u65B0\u5EFA\u6280\u80FD\u300D\u521B\u5EFA\u4E00\u4E2A\u3002",
+  loadError: "\u8BFB\u53D6\u6280\u80FD\u5217\u8868\u5931\u8D25\uFF1A{message}",
+  saved: "\u6280\u80FD\u300C{name}\u300D\u5DF2\u4FDD\u5B58\u3002",
+  removed: "\u6280\u80FD\u300C{name}\u300D\u5DF2\u5220\u9664\u3002",
+  saveFailed: "\u4FDD\u5B58\u5931\u8D25\uFF1A{message}",
+  actionFailed: "\u64CD\u4F5C\u5931\u8D25\uFF1A{message}",
+  deleteConfirm: "\u786E\u5B9A\u5220\u9664\u6280\u80FD\u300C{name}\u300D\u5417\uFF1F",
+  modelEnabled: "\u6A21\u578B\u53EF\u8C03\u7528",
+  modelDisabled: "\u6A21\u578B\u5DF2\u7981\u7528",
+  enableModel: "\u5141\u8BB8\u6A21\u578B\u8C03\u7528",
+  disableModel: "\u7981\u7528\u6A21\u578B\u8C03\u7528",
+  layoutBundle: "\u76EE\u5F55",
+  layoutFlat: "\u6587\u4EF6",
+  userInvocable: "\u7528\u6237\u53EF\u8C03\u7528",
+  userNotInvocable: "\u7528\u6237\u4E0D\u53EF\u8C03\u7528"
+};
+var en = {
+  title: "Skills",
+  description: "Manage local skills: create, edit, delete, and control model invocation.",
+  refresh: "Refresh",
+  create: "New skill",
+  edit: "Edit",
+  delete: "Delete",
+  cancel: "Cancel",
+  save: "Save",
+  name: "Name",
+  skillNamePlaceholder: "e.g. my-skill (letters, digits, - and _ only)",
+  skillDescription: "Description",
+  skillBody: "Body (SKILL.md content)",
+  loading: "Loading skills\u2026",
+  empty: "No skills yet. Click \u201CNew skill\u201D to create one.",
+  loadError: "Failed to load skills: {message}",
+  saved: "Skill \u201C{name}\u201D saved.",
+  removed: "Skill \u201C{name}\u201D deleted.",
+  saveFailed: "Save failed: {message}",
+  actionFailed: "Operation failed: {message}",
+  deleteConfirm: "Delete skill \u201C{name}\u201D?",
+  modelEnabled: "Model invocable",
+  modelDisabled: "Model disabled",
+  enableModel: "Allow model invocation",
+  disableModel: "Disable model invocation",
+  layoutBundle: "Directory",
+  layoutFlat: "File",
+  userInvocable: "User invocable",
+  userNotInvocable: "Not user invocable"
+};
+function format(text, params) {
+  return text.replace(/\{(\w+)\}/g, (_, key) => String(params[key] ?? ""));
+}
+var css = `
+.dsk-page{display:flex;flex-direction:column;gap:16px;min-width:0;padding:4px 0}
+.dsk-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.dsk-title{margin:0;font-size:16px;font-weight:600}
+.dsk-subtitle{margin:0;color:var(--dsw-alias-label-tertiary,#888);font-size:13px;line-height:1.6}
+.dsk-actions{display:flex;gap:8px;flex-shrink:0;align-items:center}
+.dsk-btn{appearance:none;border:1px solid var(--dsw-alias-border-l3,#ddd);background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#222);border-radius:8px;padding:4px 12px;font:inherit;font-size:13px;cursor:pointer}
+.dsk-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,#f2f2f2)}
+.dsk-btn:disabled{opacity:.5;cursor:default}
+.dsk-btn-primary{background:var(--dsw-alias-state-business-primary,#3b6ef5);border-color:transparent;color:#fff}
+.dsk-btn-danger{color:var(--dsw-alias-state-error-primary,#d33)}
+.dsk-form{display:flex;flex-direction:column;gap:10px;border:1px solid var(--dsw-alias-border-l3,#ddd);border-radius:12px;padding:14px}
+.dsk-field{display:flex;flex-direction:column;gap:4px}
+.dsk-label{font-size:12px;color:var(--dsw-alias-label-secondary,#555)}
+.dsk-input{box-sizing:border-box;border:.5px solid var(--dsw-alias-border-l2,#ccc);background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#222);font:inherit;border-radius:8px;outline:none;padding:6px 10px;font-size:13px;line-height:20px}
+.dsk-input:focus{border-color:var(--dsw-alias-state-business-primary,#3b6ef5)}
+.dsk-textarea{min-height:220px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.6}
+.dsk-list{display:flex;flex-direction:column;gap:8px}
+.dsk-row{display:flex;align-items:flex-start;gap:12px;border:1px solid var(--dsw-alias-border-l3,#ddd);border-radius:12px;padding:12px 14px}
+.dsk-info{flex:1;min-width:0}
+.dsk-name{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:14px;font-weight:600}
+.dsk-desc{margin:4px 0 0;color:var(--dsw-alias-label-secondary,#555);font-size:13px;line-height:1.55;overflow-wrap:anywhere}
+.dsk-badges{display:flex;gap:6px;flex-wrap:wrap}
+.dsk-badge{font-size:11px;line-height:1.5;padding:1px 8px;border-radius:999px;border:1px solid var(--dsw-alias-border-l3,#ddd);color:var(--dsw-alias-label-tertiary,#777)}
+.dsk-badge-on{color:var(--dsw-alias-state-success,#18864b);border-color:currentColor}
+.dsk-badge-off{color:var(--dsw-alias-state-warning,#a06b00);border-color:currentColor}
+.dsk-notice{margin:0;border-radius:8px;padding:10px 14px;font-size:13px;line-height:1.6}
+.dsk-notice-err{background:color-mix(in srgb,var(--dsw-alias-state-error-primary,#d33) 12%,transparent);color:var(--dsw-alias-state-error-primary,#d33)}
+.dsk-notice-ok{background:color-mix(in srgb,var(--dsw-alias-state-success,#18864b) 12%,transparent);color:var(--dsw-alias-state-success,#18864b)}
+`;
+async function api(path, options) {
+  const response = await fetch(`${API}${path}`, {
+    headers: { "content-type": "application/json", accept: "application/json" },
+    ...options
+  });
+  const payload = await response.json().catch(() => ({ ok: false, message: `HTTP ${response.status}` }));
+  if (!response.ok || payload.ok !== true) {
+    const error = new Error(payload.message ?? `HTTP ${response.status}`);
+    error.code = payload.code;
+    throw error;
+  }
+  return payload;
+}
+function SkillsSection({ t }) {
+  const [skills, setSkills] = (0, import_react.useState)([]);
+  const [status, setStatus] = (0, import_react.useState)("loading");
+  const [notice, setNotice] = (0, import_react.useState)(null);
+  const [busy, setBusy] = (0, import_react.useState)(false);
+  const [editing, setEditing] = (0, import_react.useState)(null);
+  const [form, setForm] = (0, import_react.useState)({ name: "", description: "", body: "" });
+  async function refresh() {
+    setStatus("loading");
+    try {
+      const payload = await api("/skills");
+      setSkills(payload.skills ?? []);
+      setStatus("ok");
+    } catch (error) {
+      setStatus("error");
+      setNotice({ kind: "error", text: format(t("loadError"), { message: error.message }) });
+    }
+  }
+  (0, import_react.useEffect)(() => {
+    void refresh();
+  }, []);
+  function openCreate() {
+    setForm({ name: "", description: "", body: "" });
+    setEditing({ mode: "create" });
+    setNotice(null);
+  }
+  function openEdit(skill) {
+    setForm({ name: skill.name, description: skill.description, body: skill.body });
+    setEditing({ mode: "edit", skill });
+    setNotice(null);
+  }
+  async function submit() {
+    if (form.name.trim() === "") {
+      setNotice({ kind: "error", text: format(t("saveFailed"), { message: t("skillNamePlaceholder") }) });
+      return;
+    }
+    setBusy(true);
+    setNotice(null);
+    try {
+      const payload = await api("/save", {
+        method: "POST",
+        body: JSON.stringify({
+          name: form.name,
+          description: form.description,
+          body: form.body,
+          ...editing.mode === "edit" ? { previous: editing.skill } : {}
+        })
+      });
+      setEditing(null);
+      setNotice({ kind: "ok", text: format(t("saved"), { name: payload.skill.name }) });
+      await refresh();
+    } catch (error) {
+      setNotice({ kind: "error", text: format(t("saveFailed"), { message: error.message }) });
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function toggleModel(skill) {
+    setBusy(true);
+    setNotice(null);
+    try {
+      await api("/toggle", { method: "POST", body: JSON.stringify({ name: skill.name, modelEnabled: skill.modelDisabled }) });
+      await refresh();
+    } catch (error) {
+      setNotice({ kind: "error", text: format(t("actionFailed"), { message: error.message }) });
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function remove(skill) {
+    if (!globalThis.confirm(format(t("deleteConfirm"), { name: skill.name }))) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      await api("/delete", { method: "POST", body: JSON.stringify({ name: skill.name }) });
+      setNotice({ kind: "ok", text: format(t("removed"), { name: skill.name }) });
+      await refresh();
+    } catch (error) {
+      setNotice({ kind: "error", text: format(t("actionFailed"), { message: error.message }) });
+    } finally {
+      setBusy(false);
+    }
+  }
+  function renderNotice() {
+    if (notice === null) return null;
+    return (0, import_react.createElement)("p", { className: `dsk-notice ${notice.kind === "error" ? "dsk-notice-err" : "dsk-notice-ok"}` }, notice.text);
+  }
+  function renderForm() {
+    return (0, import_react.createElement)(
+      "div",
+      { className: "dsk-form" },
+      (0, import_react.createElement)(
+        "div",
+        { className: "dsk-field" },
+        (0, import_react.createElement)("span", { className: "dsk-label" }, t("name")),
+        (0, import_react.createElement)("input", { className: "dsk-input", value: form.name, placeholder: t("skillNamePlaceholder"), onChange: (event) => setForm({ ...form, name: event.target.value }) })
+      ),
+      (0, import_react.createElement)(
+        "div",
+        { className: "dsk-field" },
+        (0, import_react.createElement)("span", { className: "dsk-label" }, t("skillDescription")),
+        (0, import_react.createElement)("input", { className: "dsk-input", value: form.description, onChange: (event) => setForm({ ...form, description: event.target.value }) })
+      ),
+      (0, import_react.createElement)(
+        "div",
+        { className: "dsk-field" },
+        (0, import_react.createElement)("span", { className: "dsk-label" }, t("skillBody")),
+        (0, import_react.createElement)("textarea", { className: "dsk-input dsk-textarea", value: form.body, onChange: (event) => setForm({ ...form, body: event.target.value }) })
+      ),
+      (0, import_react.createElement)(
+        "div",
+        { className: "dsk-actions" },
+        (0, import_react.createElement)("button", { className: "dsk-btn dsk-btn-primary", disabled: busy, onClick: () => void submit() }, t("save")),
+        (0, import_react.createElement)("button", { className: "dsk-btn", disabled: busy, onClick: () => setEditing(null) }, t("cancel"))
+      )
+    );
+  }
+  function renderRow(skill) {
+    const badges = [
+      (0, import_react.createElement)("span", { key: "layout", className: "dsk-badge" }, skill.layout === "bundle" ? t("layoutBundle") : t("layoutFlat")),
+      (0, import_react.createElement)("span", { key: "model", className: `dsk-badge ${skill.modelDisabled ? "dsk-badge-off" : "dsk-badge-on"}` }, skill.modelDisabled ? t("modelDisabled") : t("modelEnabled")),
+      (0, import_react.createElement)("span", { key: "user", className: `dsk-badge ${skill.userInvocable ? "dsk-badge-on" : "dsk-badge-off"}` }, skill.userInvocable ? t("userInvocable") : t("userNotInvocable"))
+    ];
+    return (0, import_react.createElement)(
+      "div",
+      { key: skill.name, className: "dsk-row" },
+      (0, import_react.createElement)(
+        "div",
+        { className: "dsk-info" },
+        (0, import_react.createElement)(
+          "div",
+          { className: "dsk-name" },
+          (0, import_react.createElement)("span", null, skill.name),
+          (0, import_react.createElement)("div", { className: "dsk-badges" }, badges)
+        ),
+        skill.description ? (0, import_react.createElement)("p", { className: "dsk-desc" }, skill.description) : null
+      ),
+      (0, import_react.createElement)(
+        "div",
+        { className: "dsk-actions" },
+        (0, import_react.createElement)("button", { className: "dsk-btn", disabled: busy, onClick: () => openEdit(skill) }, t("edit")),
+        (0, import_react.createElement)("button", { className: "dsk-btn", disabled: busy, onClick: () => void toggleModel(skill) }, skill.modelDisabled ? t("enableModel") : t("disableModel")),
+        (0, import_react.createElement)("button", { className: "dsk-btn dsk-btn-danger", disabled: busy, onClick: () => void remove(skill) }, t("delete"))
+      )
+    );
+  }
+  const body = status === "loading" ? (0, import_react.createElement)("p", { className: "dsk-subtitle" }, t("loading")) : status === "error" ? (0, import_react.createElement)("p", { className: "dsk-subtitle" }, format(t("loadError"), { message: "" })) : skills.length === 0 ? (0, import_react.createElement)("p", { className: "dsk-subtitle" }, t("empty")) : (0, import_react.createElement)("div", { className: "dsk-list" }, skills.map(renderRow));
+  return (0, import_react.createElement)(
+    import_react.Fragment,
+    null,
+    (0, import_react.createElement)("style", null, css),
+    (0, import_react.createElement)(
+      "div",
+      { className: "dsk-page" },
+      (0, import_react.createElement)(
+        "div",
+        { className: "dsk-head" },
+        (0, import_react.createElement)(
+          "div",
+          null,
+          (0, import_react.createElement)("h1", { className: "dsk-title" }, t("title")),
+          (0, import_react.createElement)("p", { className: "dsk-subtitle" }, t("description"))
+        ),
+        (0, import_react.createElement)(
+          "div",
+          { className: "dsk-actions" },
+          (0, import_react.createElement)("button", { className: "dsk-btn", onClick: () => void refresh() }, t("refresh")),
+          (0, import_react.createElement)("button", { className: "dsk-btn dsk-btn-primary", onClick: openCreate }, t("create"))
+        )
+      ),
+      renderNotice(),
+      editing !== null ? renderForm() : null,
+      body
+    )
+  );
+}
+function apply(ctx) {
+  ctx.effect(() => ctx.locale.register(NS, { zh, en }), "plugin-skills: dictionaries");
+  const t = ctx.locale.bind(NS);
+  ctx.slots.inject("settings.section", () => ctx.slots.register({
+    name: "settings.section",
+    id: "skills-manager",
+    order: 110,
+    label: () => t("title"),
+    locale: NS
+  }, SkillsSection));
+}
+var inject = [
+  "slots",
+  "locale"
+];
+
+    return module.exports;
+  }
+});

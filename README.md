@@ -24,6 +24,7 @@ dsh plugin --profile web add \
 | 插件 | 目录 | 说明 |
 |---|---|---|
 | [`dsh-plugin-repo`](packages/dsh-plugin-repo) | `packages/dsh-plugin-repo` | 把本仓库注册为 DSH 插件安装源：目录查询（Gitea API）、安装 spec 生成、一键安装（`ctx.pluginRepo`）+ 设置里的「插件仓库」独立分区（在线列表/安装/更新/卸载） |
+| [`dsh-plugin-skills`](packages/dsh-plugin-skills) | `packages/dsh-plugin-skills` | 技能能力：设置里的「技能能力」分区，管理本地 skills（列表/新建/编辑/删除/模型可见开关，`ctx.skillManager`） |
 
 ## 为什么需要「仓库插件」
 
