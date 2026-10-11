@@ -103,6 +103,7 @@ const zh = {
 	"edit.menuReplace": "替换",
 	"edit.menuGoto": "跳转到行",
 	"edit.pasteFailed": "粘贴失败：无法读取剪贴板",
+	"edit.largeFileNote": "文件过大，已关闭语法高亮",
 	"toast.cut": "已剪切 {count} 项，右键目录或使用顶部「粘贴」按钮粘贴",
 	"toast.copied": "已复制 {count} 项，右键目录或使用顶部「粘贴」按钮粘贴",
 	"toast.pasted": "已粘贴 {count} 项",
@@ -172,6 +173,7 @@ const en = {
 	"edit.menuReplace": "Replace",
 	"edit.menuGoto": "Go to line",
 	"edit.pasteFailed": "Paste failed: cannot read the clipboard",
+	"edit.largeFileNote": "Highlighting disabled for this large file",
 	"toast.cut": "Cut {count} items — right-click a directory or use the Paste button to paste",
 	"toast.copied": "Copied {count} items — right-click a directory or use the Paste button to paste",
 	"toast.pasted": "Pasted {count} items",
@@ -794,38 +796,106 @@ function tokenNodes(tokens, content, marks = []) {
 	return nodes;
 }
 
-/** 编辑态实时高亮：透明文字 textarea 叠在 shiki（DSH 自带）高亮层上，滚动/排版完全同步。 */
-function HighlightEditor({ content, language, onContent, onSave, findText, caseSensitive, findIndex, inputRef, onContextMenu }) {
+/** 编辑器排版常量：三层的 font-size 与 line-height 必须完全一致（CSS 同步声明）。 */
+const EDIT_FONT_SIZE = 13;
+const EDIT_LINE_HEIGHT = 20;
+const EDIT_PAD_TOP = 8;
+const EDIT_PAD_LEFT = 12;
+/** 超过该字符数（约 200KB）关闭语法高亮，纯文本编辑（防大文件卡顿）。 */
+const HIGHLIGHT_MAX_CHARS = 200000;
+
+/** 某行（0 基）的 token 序列按查找区间切分渲染。 */
+function renderLineTokens(lineTokens, lineStart, marks) {
+	const nodes = [];
+	let index = lineStart;
+	for (const token of lineTokens) {
+		nodes.push(...markedToken(token.text, index, marks, token.style));
+		index += token.text.length;
+	}
+	return nodes;
+}
+
+/** 编辑态实时高亮：透明文字 textarea 叠在 shiki（DSH 自带）高亮层上，滚动/排版完全同步。
+ *  行号与高亮层都只渲染可见区域（虚拟化），大文件不卡；超大文件自动降级纯文本。 */
+function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onOpenReplace, onOpenGoto, findText, caseSensitive, findIndex, inputRef, onContextMenu, heavy }) {
 	const highlight = useCodeHighlighter(language);
 	const [scroll, setScroll] = useState({ left: 0, top: 0 });
+	const [viewport, setViewport] = useState({ width: 0, height: 0 });
+	const viewportRef = useRef(null);
+	useEffect(() => {
+		const el = viewportRef.current;
+		if (el === null) return;
+		const measure = () => setViewport({ width: el.clientWidth, height: el.clientHeight });
+		measure();
+		const observer = new ResizeObserver(measure);
+		observer.observe(el);
+		return () => observer.disconnect();
+	}, []);
 	// 防抖高亮：输入流畅，高亮层稍后跟上（大文件不卡键）。
 	const [highlightContent, setHighlightContent] = useState(content);
 	useEffect(() => {
 		const timer = setTimeout(() => setHighlightContent(content), 120);
 		return () => clearTimeout(timer);
 	}, [content]);
-	const tokens = useMemo(() => highlight?.(highlightContent) ?? null, [highlight, highlightContent]);
+	const tokens = useMemo(() => {
+		if (heavy) return null;
+		return highlight?.(highlightContent) ?? null;
+	}, [highlight, highlightContent, heavy]);
 	// 查找命中标记（基于高亮层内容，保证与可见文本对齐）。
 	const marks = useMemo(() => {
 		const matches = findMatchesIn(highlightContent, findText, caseSensitive);
 		const current = Math.min(Math.max(findIndex, 0), matches.length - 1);
 		return matches.map((match, i) => ({ ...match, current: i === current }));
 	}, [highlightContent, findText, caseSensitive, findIndex]);
-	const lineCount = content.split("\n").length;
-	const gutterText = Array.from({ length: lineCount }, (_, i) => String(i + 1)).join("\n");
+	// 行首偏移（供命中标记换算全局偏移）。
+	const lineStarts = useMemo(() => {
+		const starts = [0];
+		for (let i = 0; ;) {
+			const nl = highlightContent.indexOf("\n", i);
+			if (nl === -1) break;
+			starts.push(nl + 1);
+			i = nl + 1;
+		}
+		return starts;
+	}, [highlightContent]);
+	const lineCount = (() => {
+		let count = 1;
+		for (let i = 0; i < content.length; i++) if (content.charCodeAt(i) === 10) count += 1;
+		return count;
+	})();
+	const firstLine = Math.min(Math.floor(scroll.top / EDIT_LINE_HEIGHT), Math.max(lineCount - 1, 0));
+	const visibleCount = Math.ceil(viewport.height / EDIT_LINE_HEIGHT) + 1;
+	const lastLine = Math.min(lineCount - 1, firstLine + visibleCount);
+	const visibleLines = [];
+	for (let i = firstLine; i <= lastLine; i++) visibleLines.push(i);
 	return h("div", { className: "dfa-code-editor" }, [
-		h("div", {
-			className: "dfa-code-gutter",
-			"aria-hidden": "true",
-			style: { transform: `translateY(${-scroll.top}px)` },
-			children: gutterText,
-		}),
-		h("div", { className: "dfa-code-viewport" }, [
+		h("div", { className: "dfa-code-gutter", "aria-hidden": "true" }, [
+			h("div", { className: "dfa-code-gutter-canvas", style: { height: EDIT_PAD_TOP + lineCount * EDIT_LINE_HEIGHT } },
+				visibleLines.map((i) => h("span", {
+					key: i,
+					className: "dfa-code-gutter-num",
+					style: { top: EDIT_PAD_TOP + i * EDIT_LINE_HEIGHT },
+					children: String(i + 1),
+				}))),
+		]),
+		h("div", { ref: viewportRef, className: "dfa-code-viewport" }, [
 			h("pre", {
 				className: "dfa-code-highlight",
 				"aria-hidden": "true",
-				style: { transform: `translate(${-scroll.left}px, ${-scroll.top}px)` },
-				children: tokenNodes(tokens, highlightContent, marks),
+				style: { height: EDIT_PAD_TOP + lineStarts.length * EDIT_LINE_HEIGHT + 48, transform: `translateX(${-scroll.left}px)` },
+				children: visibleLines.map((i) => {
+					const lineTokens = tokens?.[i];
+					const plain = highlightContent.slice(lineStarts[i] ?? 0, (lineStarts[i + 1] ?? highlightContent.length + 1) - 1);
+					const line = lineTokens !== undefined && lineTokens !== null
+						? renderLineTokens(lineTokens, lineStarts[i] ?? 0, marks)
+						: renderLineTokens([{ text: plain, style: null }], lineStarts[i] ?? 0, marks);
+					return h("span", {
+						key: i,
+						className: "dfa-code-line",
+						style: { top: EDIT_PAD_TOP + i * EDIT_LINE_HEIGHT, left: EDIT_PAD_LEFT },
+						children: line,
+					});
+				}),
 			}),
 			h("textarea", {
 				ref: inputRef,
@@ -1025,11 +1095,13 @@ function EditorTab(props) {
 	if (parsed === null) return h("div", { className: "dfa-editor-status" },
 		h("p", { className: "dfa-editor-status-line", children: translate("edit.unavailable") }));
 	const language = languageForPath(parsed.path) ?? "plaintext";
+	const heavy = content.length > HIGHLIGHT_MAX_CHARS;
 	const menuSide = menuAt === null || menuAt.y < window.innerHeight * 0.6 ? "bottom" : "top";
 	const menuAlign = menuAt === null || menuAt.x + 200 <= window.innerWidth - 12 ? "start" : "end";
 	return h("div", { className: "dfa-editor-root", "data-dfa-ui": "editor" }, [
 		h("div", { className: "dfa-editor-header" }, [
 			h("span", { className: "dfa-editor-name", title: parsed.path, children: name }),
+			heavy && h("span", { className: "dfa-editor-note", title: translate("edit.largeFileNote"), children: translate("edit.largeFileNote") }),
 			dirty && h("span", { className: "dfa-editor-dirty", children: "•" }),
 			h("span", { className: "dfa-editor-spacer" }),
 			confirmingReload ? h(Fragment, { children: [
@@ -1125,6 +1197,7 @@ function EditorTab(props) {
 			: h(HighlightEditor, {
 				content,
 				language,
+				heavy,
 				onContent: setContent,
 				onSave: save,
 				onOpenFind: openFind,
@@ -1374,6 +1447,15 @@ const CSS = `
 	flex: none;
 	line-height: 1;
 }
+.dfa-editor-note {
+	color: var(--dsw-alias-label-tertiary);
+	font-size: 12px;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	overflow: hidden;
+	max-width: 40%;
+	flex: none;
+}
 .dfa-editor-spacer {
 	flex: auto;
 }
@@ -1474,17 +1556,23 @@ const CSS = `
 	flex: none;
 	width: 44px;
 	overflow: hidden;
+	position: relative;
 	box-sizing: border-box;
-	padding: 8px 6px 8px 0;
-	text-align: right;
+	border-right: .5px solid var(--dsw-alias-border-l3);
+	background: var(--dsw-alias-bg-layer-1, transparent);
+}
+.dfa-code-gutter-canvas {
+	position: relative;
+}
+.dfa-code-gutter-num {
+	position: absolute;
+	right: 6px;
 	color: var(--dsw-alias-label-caption);
 	font-family: var(--dsh-font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
 	font-size: 13px;
-	line-height: 1.6;
+	line-height: 20px;
 	user-select: none;
 	white-space: pre;
-	border-right: .5px solid var(--dsw-alias-border-l3);
-	background: var(--dsw-alias-bg-layer-1, transparent);
 }
 .dfa-code-viewport {
 	flex: 1;
@@ -1493,28 +1581,25 @@ const CSS = `
 	position: relative;
 	overflow: hidden;
 }
-.dfa-code-highlight,
-.dfa-code-input {
-	margin: 0;
-	padding: 8px 12px 48px;
-	border: 0;
-	font-family: var(--dsh-font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
-	font-size: 13px;
-	line-height: 1.6;
-	letter-spacing: normal;
-	white-space: pre;
-	tab-size: 2;
-	word-break: normal;
-	overflow-wrap: normal;
-}
 .dfa-code-highlight {
 	position: absolute;
 	top: 0;
 	left: 0;
 	min-width: 100%;
-	box-sizing: border-box;
+	margin: 0;
+	padding: 0;
+	border: 0;
 	pointer-events: none;
 	color: var(--dsw-alias-label-primary);
+	font-family: var(--dsh-font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+	font-size: 13px;
+	line-height: 20px;
+	letter-spacing: normal;
+}
+.dfa-code-line {
+	position: absolute;
+	white-space: pre;
+	line-height: 20px;
 }
 .dfa-code-input {
 	position: absolute;
@@ -1529,6 +1614,17 @@ const CSS = `
 	color: transparent;
 	-webkit-text-fill-color: transparent;
 	caret-color: var(--dsw-alias-label-primary);
+	margin: 0;
+	padding: 8px 12px 48px;
+	border: 0;
+	font-family: var(--dsh-font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+	font-size: 13px;
+	line-height: 20px;
+	letter-spacing: normal;
+	white-space: pre;
+	tab-size: 2;
+	word-break: normal;
+	overflow-wrap: normal;
 }
 .dfa-code-input::selection {
 	background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 28%, transparent);

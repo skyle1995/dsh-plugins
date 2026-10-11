@@ -93,6 +93,7 @@ var zh = {
   "edit.menuReplace": "\u66FF\u6362",
   "edit.menuGoto": "\u8DF3\u8F6C\u5230\u884C",
   "edit.pasteFailed": "\u7C98\u8D34\u5931\u8D25\uFF1A\u65E0\u6CD5\u8BFB\u53D6\u526A\u8D34\u677F",
+  "edit.largeFileNote": "\u6587\u4EF6\u8FC7\u5927\uFF0C\u5DF2\u5173\u95ED\u8BED\u6CD5\u9AD8\u4EAE",
   "toast.cut": "\u5DF2\u526A\u5207 {count} \u9879\uFF0C\u53F3\u952E\u76EE\u5F55\u6216\u4F7F\u7528\u9876\u90E8\u300C\u7C98\u8D34\u300D\u6309\u94AE\u7C98\u8D34",
   "toast.copied": "\u5DF2\u590D\u5236 {count} \u9879\uFF0C\u53F3\u952E\u76EE\u5F55\u6216\u4F7F\u7528\u9876\u90E8\u300C\u7C98\u8D34\u300D\u6309\u94AE\u7C98\u8D34",
   "toast.pasted": "\u5DF2\u7C98\u8D34 {count} \u9879",
@@ -161,6 +162,7 @@ var en = {
   "edit.menuReplace": "Replace",
   "edit.menuGoto": "Go to line",
   "edit.pasteFailed": "Paste failed: cannot read the clipboard",
+  "edit.largeFileNote": "Highlighting disabled for this large file",
   "toast.cut": "Cut {count} items \u2014 right-click a directory or use the Paste button to paste",
   "toast.copied": "Copied {count} items \u2014 right-click a directory or use the Paste button to paste",
   "toast.pasted": "Pasted {count} items",
@@ -686,53 +688,96 @@ function markedToken(text, offset, marks, style) {
   if (cursor < text.length) out.push(styledText(text.slice(cursor), style));
   return out;
 }
-function tokenNodes(tokens, content, marks = []) {
-  const lines = tokens ?? content.split("\n").map((line) => [{ text: line, style: null }]);
+var EDIT_LINE_HEIGHT = 20;
+var EDIT_PAD_TOP = 8;
+var EDIT_PAD_LEFT = 12;
+var HIGHLIGHT_MAX_CHARS = 2e5;
+function renderLineTokens(lineTokens, lineStart, marks) {
   const nodes = [];
-  let index = 0;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? [];
-    for (let j = 0; j < line.length; j++) {
-      const token = line[j];
-      nodes.push(...markedToken(token.text, index, marks, token.style));
-      index += token.text.length;
-    }
-    if (i < lines.length - 1) {
-      nodes.push("\n");
-      index += 1;
-    }
+  let index = lineStart;
+  for (const token of lineTokens) {
+    nodes.push(...markedToken(token.text, index, marks, token.style));
+    index += token.text.length;
   }
   return nodes;
 }
-function HighlightEditor({ content, language, onContent, onSave, findText, caseSensitive, findIndex, inputRef, onContextMenu }) {
+function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onOpenReplace, onOpenGoto, findText, caseSensitive, findIndex, inputRef, onContextMenu, heavy }) {
   const highlight = (0, import_dsh_client_ui_primitives.useCodeHighlighter)(language);
   const [scroll, setScroll] = (0, import_react.useState)({ left: 0, top: 0 });
+  const [viewport, setViewport] = (0, import_react.useState)({ width: 0, height: 0 });
+  const viewportRef = (0, import_react.useRef)(null);
+  (0, import_react.useEffect)(() => {
+    const el = viewportRef.current;
+    if (el === null) return;
+    const measure = () => setViewport({ width: el.clientWidth, height: el.clientHeight });
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
   const [highlightContent, setHighlightContent] = (0, import_react.useState)(content);
   (0, import_react.useEffect)(() => {
     const timer = setTimeout(() => setHighlightContent(content), 120);
     return () => clearTimeout(timer);
   }, [content]);
-  const tokens = (0, import_react.useMemo)(() => highlight?.(highlightContent) ?? null, [highlight, highlightContent]);
+  const tokens = (0, import_react.useMemo)(() => {
+    if (heavy) return null;
+    return highlight?.(highlightContent) ?? null;
+  }, [highlight, highlightContent, heavy]);
   const marks = (0, import_react.useMemo)(() => {
     const matches = findMatchesIn(highlightContent, findText, caseSensitive);
     const current = Math.min(Math.max(findIndex, 0), matches.length - 1);
     return matches.map((match, i) => ({ ...match, current: i === current }));
   }, [highlightContent, findText, caseSensitive, findIndex]);
-  const lineCount = content.split("\n").length;
-  const gutterText = Array.from({ length: lineCount }, (_, i) => String(i + 1)).join("\n");
+  const lineStarts = (0, import_react.useMemo)(() => {
+    const starts = [0];
+    for (let i = 0; ; ) {
+      const nl = highlightContent.indexOf("\n", i);
+      if (nl === -1) break;
+      starts.push(nl + 1);
+      i = nl + 1;
+    }
+    return starts;
+  }, [highlightContent]);
+  const lineCount = (() => {
+    let count = 1;
+    for (let i = 0; i < content.length; i++) if (content.charCodeAt(i) === 10) count += 1;
+    return count;
+  })();
+  const firstLine = Math.min(Math.floor(scroll.top / EDIT_LINE_HEIGHT), Math.max(lineCount - 1, 0));
+  const visibleCount = Math.ceil(viewport.height / EDIT_LINE_HEIGHT) + 1;
+  const lastLine = Math.min(lineCount - 1, firstLine + visibleCount);
+  const visibleLines = [];
+  for (let i = firstLine; i <= lastLine; i++) visibleLines.push(i);
   return (0, import_react.createElement)("div", { className: "dfa-code-editor" }, [
-    (0, import_react.createElement)("div", {
-      className: "dfa-code-gutter",
-      "aria-hidden": "true",
-      style: { transform: `translateY(${-scroll.top}px)` },
-      children: gutterText
-    }),
-    (0, import_react.createElement)("div", { className: "dfa-code-viewport" }, [
+    (0, import_react.createElement)("div", { className: "dfa-code-gutter", "aria-hidden": "true" }, [
+      (0, import_react.createElement)(
+        "div",
+        { className: "dfa-code-gutter-canvas", style: { height: EDIT_PAD_TOP + lineCount * EDIT_LINE_HEIGHT } },
+        visibleLines.map((i) => (0, import_react.createElement)("span", {
+          key: i,
+          className: "dfa-code-gutter-num",
+          style: { top: EDIT_PAD_TOP + i * EDIT_LINE_HEIGHT },
+          children: String(i + 1)
+        }))
+      )
+    ]),
+    (0, import_react.createElement)("div", { ref: viewportRef, className: "dfa-code-viewport" }, [
       (0, import_react.createElement)("pre", {
         className: "dfa-code-highlight",
         "aria-hidden": "true",
-        style: { transform: `translate(${-scroll.left}px, ${-scroll.top}px)` },
-        children: tokenNodes(tokens, highlightContent, marks)
+        style: { height: EDIT_PAD_TOP + lineStarts.length * EDIT_LINE_HEIGHT + 48, transform: `translateX(${-scroll.left}px)` },
+        children: visibleLines.map((i) => {
+          const lineTokens = tokens?.[i];
+          const plain = highlightContent.slice(lineStarts[i] ?? 0, (lineStarts[i + 1] ?? highlightContent.length + 1) - 1);
+          const line = lineTokens !== void 0 && lineTokens !== null ? renderLineTokens(lineTokens, lineStarts[i] ?? 0, marks) : renderLineTokens([{ text: plain, style: null }], lineStarts[i] ?? 0, marks);
+          return (0, import_react.createElement)("span", {
+            key: i,
+            className: "dfa-code-line",
+            style: { top: EDIT_PAD_TOP + i * EDIT_LINE_HEIGHT, left: EDIT_PAD_LEFT },
+            children: line
+          });
+        })
       }),
       (0, import_react.createElement)("textarea", {
         ref: inputRef,
@@ -925,11 +970,13 @@ function EditorTab(props) {
     (0, import_react.createElement)("p", { className: "dfa-editor-status-line", children: translate("edit.unavailable") })
   );
   const language = (0, import_dsh_client_ui_primitives.languageForPath)(parsed.path) ?? "plaintext";
+  const heavy = content.length > HIGHLIGHT_MAX_CHARS;
   const menuSide = menuAt === null || menuAt.y < window.innerHeight * 0.6 ? "bottom" : "top";
   const menuAlign = menuAt === null || menuAt.x + 200 <= window.innerWidth - 12 ? "start" : "end";
   return (0, import_react.createElement)("div", { className: "dfa-editor-root", "data-dfa-ui": "editor" }, [
     (0, import_react.createElement)("div", { className: "dfa-editor-header" }, [
       (0, import_react.createElement)("span", { className: "dfa-editor-name", title: parsed.path, children: name }),
+      heavy && (0, import_react.createElement)("span", { className: "dfa-editor-note", title: translate("edit.largeFileNote"), children: translate("edit.largeFileNote") }),
       dirty && (0, import_react.createElement)("span", { className: "dfa-editor-dirty", children: "\u2022" }),
       (0, import_react.createElement)("span", { className: "dfa-editor-spacer" }),
       confirmingReload ? (0, import_react.createElement)(import_react.Fragment, { children: [
@@ -1026,6 +1073,7 @@ function EditorTab(props) {
     ]) : (0, import_react.createElement)(HighlightEditor, {
       content,
       language,
+      heavy,
       onContent: setContent,
       onSave: save,
       onOpenFind: openFind,
@@ -1268,6 +1316,15 @@ var CSS = `
 	flex: none;
 	line-height: 1;
 }
+.dfa-editor-note {
+	color: var(--dsw-alias-label-tertiary);
+	font-size: 12px;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	overflow: hidden;
+	max-width: 40%;
+	flex: none;
+}
 .dfa-editor-spacer {
 	flex: auto;
 }
@@ -1368,17 +1425,23 @@ var CSS = `
 	flex: none;
 	width: 44px;
 	overflow: hidden;
+	position: relative;
 	box-sizing: border-box;
-	padding: 8px 6px 8px 0;
-	text-align: right;
+	border-right: .5px solid var(--dsw-alias-border-l3);
+	background: var(--dsw-alias-bg-layer-1, transparent);
+}
+.dfa-code-gutter-canvas {
+	position: relative;
+}
+.dfa-code-gutter-num {
+	position: absolute;
+	right: 6px;
 	color: var(--dsw-alias-label-caption);
 	font-family: var(--dsh-font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
 	font-size: 13px;
-	line-height: 1.6;
+	line-height: 20px;
 	user-select: none;
 	white-space: pre;
-	border-right: .5px solid var(--dsw-alias-border-l3);
-	background: var(--dsw-alias-bg-layer-1, transparent);
 }
 .dfa-code-viewport {
 	flex: 1;
@@ -1387,28 +1450,25 @@ var CSS = `
 	position: relative;
 	overflow: hidden;
 }
-.dfa-code-highlight,
-.dfa-code-input {
-	margin: 0;
-	padding: 8px 12px 48px;
-	border: 0;
-	font-family: var(--dsh-font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
-	font-size: 13px;
-	line-height: 1.6;
-	letter-spacing: normal;
-	white-space: pre;
-	tab-size: 2;
-	word-break: normal;
-	overflow-wrap: normal;
-}
 .dfa-code-highlight {
 	position: absolute;
 	top: 0;
 	left: 0;
 	min-width: 100%;
-	box-sizing: border-box;
+	margin: 0;
+	padding: 0;
+	border: 0;
 	pointer-events: none;
 	color: var(--dsw-alias-label-primary);
+	font-family: var(--dsh-font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+	font-size: 13px;
+	line-height: 20px;
+	letter-spacing: normal;
+}
+.dfa-code-line {
+	position: absolute;
+	white-space: pre;
+	line-height: 20px;
 }
 .dfa-code-input {
 	position: absolute;
@@ -1423,6 +1483,17 @@ var CSS = `
 	color: transparent;
 	-webkit-text-fill-color: transparent;
 	caret-color: var(--dsw-alias-label-primary);
+	margin: 0;
+	padding: 8px 12px 48px;
+	border: 0;
+	font-family: var(--dsh-font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+	font-size: 13px;
+	line-height: 20px;
+	letter-spacing: normal;
+	white-space: pre;
+	tab-size: 2;
+	word-break: normal;
+	overflow-wrap: normal;
 }
 .dfa-code-input::selection {
 	background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 28%, transparent);
