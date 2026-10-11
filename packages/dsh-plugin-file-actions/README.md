@@ -5,14 +5,15 @@
 
 | 能力 | 说明 |
 |---|---|
+| **编辑** | 单选文件右键菜单最上方的「编辑」：弹出文本编辑弹窗——行号、Tab 缩进、⌘/Ctrl+S 保存、恢复原始、编辑/预览切换（预览带语法高亮），未保存关闭有确认；内置「一键格式化」（prettier 按扩展名识别 JS/TS/JSX/JSON/CSS/HTML/Vue/Markdown/YAML/GraphQL 等） |
 | **剪切 / 复制 / 粘贴** | 右键文件或目录 → 剪切/复制，进入模块级剪贴板（剪切项半透明标记）；右键目录、文件树空白处或文件树顶部「粘贴」按钮 → 粘贴（剪切即移动，同名冲突会报错） |
 | **删除** | 右键或批量栏「删除」，弹红色确认弹窗（需勾选「已知晓不可恢复」）；选中后按 `Delete` 键同样进入确认 |
-| **多选** | 按住 `⌘/Ctrl` 点击行切换选中（高亮 + ✓ 标记）；批量操作栏悬浮在窗口底部，支持剪切/复制/压缩/复制路径/删除/取消 |
-| **压缩** | 单个或多个选中项 → 打包为 `.zip`（单源用 `<名字>.zip`，多源 `archive.zip`，重名自动加 `(2)` 后缀）；内置无依赖 ZIP 写入器（deflate + CRC32，UTF-8 文件名，符号链接与超大文件跳过并计数） |
+| **多选** | 按住 `⌘/Ctrl` 点击行切换选中（高亮 + ✓ 标记）；批量操作栏悬浮在窗口底部，支持剪切/复制/压缩/复制路径/删除/取消；多选操作完成后自动清除选择 |
+| **压缩** | 单个或多个选中项 → 弹出命名输入框（自动填充 `<名>.zip` / `archive.zip`）→ 打包为 `.zip`（重名自动加 `(2)` 后缀）；内置无依赖 ZIP 写入器（deflate + CRC32，UTF-8 文件名，符号链接与超大文件跳过并计数） |
 | **复制路径** | 把选中项的绝对路径（多项按行拼接）写入系统剪贴板 |
 
-全部操作走宿主半区 `/api/dsh-file-actions/{copy,move,delete,compress}` 路由，
-成功/失败均有 Toast 反馈；文件树依赖官方目录监听自动刷新。
+全部操作走宿主半区 `/api/dsh-file-actions/{copy,move,delete,compress,read,save,format}`
+路由，成功/失败均有 Toast 反馈；文件树依赖官方目录监听自动刷新。
 
 ## 安全模型
 
@@ -20,13 +21,16 @@
   （或沙箱根兜底），并用官方 `fs` 服务的 `contains` 逐条校验，越界一律拒绝；
 - 工作区根目录本身禁止删除/移动；复制/移动禁止进入自身；
 - 复制/移动目标必须是工作区内已存在的目录，同名冲突整体报错（不做部分写入）；
-- 跨设备移动（`EXDEV`）自动退化为复制 + 删除。
+- 跨设备移动（`EXDEV`）自动退化为复制 + 删除；
+- 文本编辑的读取/保存受 `maxEditBytes` 上限约束，拒绝含 NUL 的非文本文件；
+  压缩包名与保存内容在宿主端再次净化/校验（防路径穿越）。
 
 ## 配置
 
 | 字段 | 默认值 | 含义 |
 |---|---:|---|
 | `maxZipFileBytes` | `268435456`（256MB） | 压缩时单文件大小上限，超限跳过并计入 skipped |
+| `maxEditBytes` | `1048576`（1MB） | 文本编辑（读取/保存）的文件大小上限 |
 
 在 profile 的 `cordis.patch.yml` 里覆盖：
 
@@ -35,6 +39,7 @@
   name: 'dsh-plugin-file-actions'
   config:
     maxZipFileBytes: 536870912
+    maxEditBytes: 2097152
 ```
 
 ## 安装
@@ -53,6 +58,7 @@ dsh plugin --profile <profile> add /path/to/dsh-plugins/packages/dsh-plugin-file
 ## 开发
 
 - 宿主半区（零构建）：`lib/index.js`、`lib/file-actions.js`、`lib/zip.js`；
+  唯一运行时依赖为 `prettier`（一键格式化，纯 JS 无构建脚本，随插件自动安装）；
 - 浏览器半区：`src/client/index.tsx` → `pnpm build:client`（esbuild 预构建为
   `lib/client.js`，React 与 `@deepseek-ai/*` 保持外部化）；
 - 冒烟测试（脱离 profile，真实 cordis + 桩服务 + 临时目录 + ZIP 自解析）：
@@ -67,4 +73,9 @@ const { name } = await ctx.fileActions.compressEntries({
   sources: ["/path/to/workspace/docs"],
   destination: "/path/to/workspace",
 });
+
+// 文本编辑三件套：
+const { content } = await ctx.fileActions.readTextEntry({ workspaceRoot, path });
+const { content: formatted } = await ctx.fileActions.formatTextEntry({ workspaceRoot, path, content });
+await ctx.fileActions.saveTextEntry({ workspaceRoot, path, content: formatted });
 ```

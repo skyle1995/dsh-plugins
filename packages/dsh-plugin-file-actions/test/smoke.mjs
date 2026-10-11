@@ -187,6 +187,35 @@ console.log("delete:", JSON.stringify(deleted));
 if (deleted.count !== 1 || deleted.missing !== 0) throw new Error("删除统计不符");
 if (await exists(join(workspace, "dest", "sub"))) throw new Error("删除未生效");
 
+// ─── 4.5) 文本编辑：读取 / 保存 / 一键格式化 ─────────────────────────────
+const jsonSource = '{"name":"dsh-plugin-file-actions","items":[1,2,3,4,5,6,7,8,9,10],"nested":{"key":"value","flag":true}}';
+await writeFile(join(workspace, "code.json"), jsonSource);
+const readBack = await actions.readTextEntry({ workspaceRoot: workspace, path: join(workspace, "code.json") });
+console.log("read:", JSON.stringify(readBack).slice(0, 90));
+if (readBack.content !== jsonSource) throw new Error("读取内容不符");
+const formatted = await actions.formatTextEntry({ workspaceRoot: workspace, path: join(workspace, "code.json"), content: readBack.content });
+console.log("format:", JSON.stringify(formatted.content).slice(0, 120));
+if (!formatted.content.includes("\n")) throw new Error("格式化结果未换行");
+if (JSON.stringify(JSON.parse(formatted.content)) !== JSON.stringify(JSON.parse(jsonSource))) throw new Error("格式化改变了数据内容");
+const saved = await actions.saveTextEntry({ workspaceRoot: workspace, path: join(workspace, "code.json"), content: formatted.content });
+console.log("save:", JSON.stringify(saved));
+if ((await readFile(join(workspace, "code.json"), "utf8")) !== formatted.content) throw new Error("保存内容不符");
+let unsupported = false;
+try {
+	await actions.formatTextEntry({ workspaceRoot: workspace, path: join(workspace, "code.xyz"), content: "x" });
+} catch (error) {
+	unsupported = error.code === "file-actions/format-unsupported";
+}
+if (!unsupported) throw new Error("未知类型未按预期拒绝格式化");
+await writeFile(join(workspace, "bin.dat"), Buffer.from([0x00, 0x01]));
+let notText = false;
+try {
+	await actions.readTextEntry({ workspaceRoot: workspace, path: join(workspace, "bin.dat") });
+} catch (error) {
+	notText = error.code === "file-actions/not-text";
+}
+if (!notText) throw new Error("NUL 文件未按预期拒绝");
+
 // ─── 5) 安全约束 ───────────────────────────────────────────────────────────
 let outsideRejected = false;
 try {
@@ -215,7 +244,7 @@ if (!badWorkspace) throw new Error("未知工作区未被拒绝");
 // ─── 6) HTTP 路由（走 handleRequest 全链路） ──────────────────────────────
 await new Promise((done) => setImmediate(done));
 const web = root.get("webServer");
-for (const op of ["copy", "move", "delete", "compress"]) {
+for (const op of ["copy", "move", "delete", "compress", "read", "save", "format"]) {
 	if (!web.routes.has(`/api/dsh-file-actions/${op}`)) throw new Error(`路由未注册：${op}`);
 }
 const captured = { status: 0, body: null };

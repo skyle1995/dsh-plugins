@@ -1,5 +1,6 @@
 /**
- * dsh-plugin-file-actions —— 文件操作服务：复制 / 剪切（移动）/ 删除 / 压缩。
+ * dsh-plugin-file-actions —— 文件操作服务：复制 / 剪切（移动）/ 删除 / 压缩 /
+ * 文本编辑（读取 / 保存 / 一键格式化）。
  *
  * 设计要点：
  * - 服务键 `fileActions`（ctx.fileActions），注入 fs / sessions / sandboxPolicy
@@ -10,14 +11,18 @@
  * - 复制/移动目标必须是工作区内已存在的目录，同名冲突报
  *   file-actions/exists；跨设备移动（EXDEV）自动退化为复制 + 删除；
  * - 压缩用自带的 ZIP 写入器（lib/zip.js，无第三方依赖，deflate + CRC32）；
+ * - 文本编辑的读取/保存受 maxEditBytes 上限约束（默认 1MB），拒绝含 NUL
+ *   的非文本文件；一键格式化由 prettier 按扩展名推断 parser（babel /
+ *   typescript / json / css / html / vue / markdown / yaml / graphql 等）；
  * - 浏览器半区经 Web 组合的 webServer 消费 /api/dsh-file-actions 路由。
  *
  * @module dsh-plugin-file-actions
  */
 import { Service } from "@deepseek-ai/cordis";
 import Schema from "@deepseek-ai/schemastery";
-import { cp, lstat, rename, rm, writeFile } from "node:fs/promises";
+import { cp, lstat, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { format as prettierFormat } from "prettier";
 import { createZipBuffer } from "./zip.js";
 
 /** 浏览器半区使用的 HTTP 路由前缀。 */
@@ -25,6 +30,9 @@ export const FILE_ACTIONS_API = "/api/dsh-file-actions";
 
 /** 默认单文件压缩上限（字节）。 */
 export const DEFAULT_MAX_ZIP_FILE_BYTES = 256 * 1024 * 1024;
+
+/** 默认文本编辑文件大小上限（字节）。 */
+export const DEFAULT_MAX_EDIT_BYTES = 1024 * 1024;
 
 /** 带错误码的文件操作失败，code 形如 `file-actions/<kind>`。 */
 export class FileActionsError extends Error {
@@ -51,6 +59,24 @@ export function sanitizeZipName(name) {
 	if (base === "" || base === "." || base === "..") return "";
 	if (!base.toLowerCase().endsWith(".zip")) return `${base}.zip`;
 	return base;
+}
+
+/** 从扩展名推断 prettier parser（一键格式化用）；未知类型返回 null。 */
+export function parserForPath(path) {
+	const lower = String(path).toLowerCase();
+	if (lower.endsWith(".js") || lower.endsWith(".mjs") || lower.endsWith(".cjs") || lower.endsWith(".jsx")) return "babel";
+	if (lower.endsWith(".ts") || lower.endsWith(".mts") || lower.endsWith(".cts") || lower.endsWith(".tsx")) return "typescript";
+	if (lower.endsWith(".json")) return "json";
+	if (lower.endsWith(".json5")) return "json5";
+	if (lower.endsWith(".css")) return "css";
+	if (lower.endsWith(".scss")) return "scss";
+	if (lower.endsWith(".less")) return "less";
+	if (lower.endsWith(".html") || lower.endsWith(".htm")) return "html";
+	if (lower.endsWith(".vue")) return "vue";
+	if (lower.endsWith(".md") || lower.endsWith(".markdown")) return "markdown";
+	if (lower.endsWith(".yml") || lower.endsWith(".yaml")) return "yaml";
+	if (lower.endsWith(".graphql") || lower.endsWith(".gql")) return "graphql";
+	return null;
 }
 
 /** 在目标目录里给压缩包名加 "(2)" 等后缀，避免覆盖既有文件。 */
@@ -85,19 +111,21 @@ export class FileActionsService extends Service {
 	static Config = Schema.object({
 		/** 压缩时单文件大小上限（字节），超限跳过并计入 skipped。 */
 		maxZipFileBytes: Schema.number().min(1).default(DEFAULT_MAX_ZIP_FILE_BYTES),
+		/** 文本编辑（读取/保存）的文件大小上限（字节）。 */
+		maxEditBytes: Schema.number().min(1).default(DEFAULT_MAX_EDIT_BYTES),
 	});
 
 	constructor(ctx, config) {
 		super(ctx, "fileActions");
 		this.config = config;
-		ctx.logger.info(`dsh-plugin-file-actions 已激活（maxZipFileBytes=${config.maxZipFileBytes}）`);
+		ctx.logger.info(`dsh-plugin-file-actions 已激活（maxZipFileBytes=${config.maxZipFileBytes}，maxEditBytes=${config.maxEditBytes}）`);
 		// Web profile 中注册浏览器半区使用的路由。webServer 属于 Web 组合的
 		// 作用域，不能从本行的注入面直接读取，因此用 ctx.inject 建一个以
 		// webServer 为依赖的作用域子插件：Web 存在时注册路由，headless 等
 		// profile 里保持休眠、不影响本服务。
 		ctx.inject(["webServer"], (webCtx) => {
 			webCtx.effect(() => {
-				const disposers = ["copy", "move", "delete", "compress"].map((operation) =>
+				const disposers = ["copy", "move", "delete", "compress", "read", "save", "format"].map((operation) =>
 					webCtx.webServer.register({
 						kind: "exact",
 						path: `${FILE_ACTIONS_API}/${operation}`,
@@ -283,6 +311,56 @@ export class FileActionsService extends Service {
 		return root;
 	}
 
+	/** 定位一个工作区内的普通文件（编辑类操作共用）。 */
+	async locateTextFile(root, path) {
+		const host = await this.confine(root, path);
+		let info;
+		try {
+			info = await lstat(host);
+		} catch {
+			throw new FileActionsError("file-actions/not-found", `文件不存在："${path}"`);
+		}
+		if (!info.isFile()) throw new FileActionsError("file-actions/not-regular-file", `不是普通文件："${path}"`);
+		return { host, info };
+	}
+
+	/** 读取文本内容（编辑用）：受 maxEditBytes 限制，拒绝含 NUL 的非文本。 */
+	async readTextEntry({ workspaceRoot, path }) {
+		const root = await this.bindWorkspace(workspaceRoot);
+		const { host, info } = await this.locateTextFile(root, path);
+		if (info.size > this.config.maxEditBytes) {
+			throw new FileActionsError("file-actions/too-large", `文件超过编辑上限（${this.config.maxEditBytes} 字节）`);
+		}
+		const data = await readFile(host);
+		if (data.includes(0)) throw new FileActionsError("file-actions/not-text", `"${path}" 不是文本文件（含 NUL 字节）`);
+		return { content: data.toString("utf8"), bytes: data.length, truncated: false };
+	}
+
+	/** 保存文本内容（编辑用）：UTF-8 覆盖写回，受 maxEditBytes 限制。 */
+	async saveTextEntry({ workspaceRoot, path, content }) {
+		const root = await this.bindWorkspace(workspaceRoot);
+		const { host } = await this.locateTextFile(root, path);
+		const data = Buffer.from(String(content ?? ""), "utf8");
+		if (data.length > this.config.maxEditBytes) {
+			throw new FileActionsError("file-actions/too-large", `内容超过编辑上限（${this.config.maxEditBytes} 字节）`);
+		}
+		await writeFile(host, data);
+		return { bytes: data.length };
+	}
+
+	/** 一键格式化：按扩展名推断 prettier parser，格式化客户端提交的内容。 */
+	async formatTextEntry({ workspaceRoot, path, content }) {
+		await this.bindWorkspace(workspaceRoot);
+		const parser = parserForPath(path);
+		if (parser === null) throw new FileActionsError("file-actions/format-unsupported", "该文件类型暂不支持一键格式化");
+		try {
+			const formatted = await prettierFormat(String(content ?? ""), { parser });
+			return { content: formatted, parser };
+		} catch (error) {
+			throw new FileActionsError("file-actions/format-failed", `格式化失败：${error.message}`, { cause: error });
+		}
+	}
+
 	/** 统一路由处理器：解析 JSON 请求体并分发。 */
 	async handleRequest(req, res, operation) {
 		const payload = (status, value) => {
@@ -317,6 +395,18 @@ export class FileActionsService extends Service {
 			}
 			if (operation === "compress") {
 				payload(200, { ok: true, ...(await this.compressEntries(body)) });
+				return;
+			}
+			if (operation === "read") {
+				payload(200, { ok: true, ...(await this.readTextEntry(body)) });
+				return;
+			}
+			if (operation === "save") {
+				payload(200, { ok: true, ...(await this.saveTextEntry(body)) });
+				return;
+			}
+			if (operation === "format") {
+				payload(200, { ok: true, ...(await this.formatTextEntry(body)) });
 				return;
 			}
 			payload(404, { ok: false, code: "file-actions/unknown", message: "unknown operation" });

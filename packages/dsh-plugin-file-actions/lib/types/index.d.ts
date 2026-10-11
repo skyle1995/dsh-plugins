@@ -7,6 +7,8 @@ import type { Service } from "@deepseek-ai/cordis";
 export interface FileActionsConfig {
 	/** 压缩时单文件大小上限（字节），超限跳过并计入 skipped。默认 268435456 */
 	maxZipFileBytes: number;
+	/** 文本编辑（读取/保存）的文件大小上限（字节），默认 1048576。 */
+	maxEditBytes: number;
 }
 
 /** 带错误码的操作失败。 */
@@ -42,11 +44,16 @@ export declare class FileActionsService extends Service {
 	moveEntries(request: FileActionsRequest): Promise<{ count: number; destination: string }>;
 	deleteEntries(request: FileActionsRequest): Promise<{ count: number; missing: number }>;
 	compressEntries(request: FileActionsRequest): Promise<{ name: string; count: number; skipped: number }>;
-	handleRequest(req: any, res: any, operation: "copy" | "move" | "delete" | "compress"): Promise<void>;
+	readTextEntry(request: FileActionsRequest): Promise<{ content: string; bytes: number; truncated: boolean }>;
+	saveTextEntry(request: FileActionsRequest & { content?: string }): Promise<{ bytes: number }>;
+	formatTextEntry(request: FileActionsRequest & { content?: string }): Promise<{ content: string; parser: string }>;
+	handleRequest(req: any, res: any, operation: "copy" | "move" | "delete" | "compress" | "read" | "save" | "format"): Promise<void>;
 }
 
 export default FileActionsService;
 export const FILE_ACTIONS_API: string;
 export const DEFAULT_MAX_ZIP_FILE_BYTES: number;
+export const DEFAULT_MAX_EDIT_BYTES: number;
 export declare function zipNameFor(sourceNames: string[]): string;
 export declare function sanitizeZipName(name: unknown): string;
+export declare function parserForPath(path: unknown): string | null;

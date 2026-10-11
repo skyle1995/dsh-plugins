@@ -43,20 +43,23 @@
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh": "0.2.0-rc.2",
     "@deepseek-ai/cordis": "~4.0.4",
+    "@deepseek-ai/dsh": "0.2.0-rc.2",
     "@deepseek-ai/schemastery": "~3.18.4"
   },
   "devDependencies": {
-    "esbuild": "^0.25.0",
-    "@types/react": "^19.0.0",
     "@deepseek-ai/cordis": "~4.0.4",
-    "@deepseek-ai/schemastery": "~3.18.4"
+    "@deepseek-ai/schemastery": "~3.18.4",
+    "@types/react": "^19.0.0",
+    "esbuild": "^0.25.0"
   },
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://hub.ifunx.com/skyle1995/dsh-plugins.git",
     "directory": "packages/dsh-plugin-file-actions"
+  },
+  "dependencies": {
+    "prettier": "^3.9.9"
   }
 }

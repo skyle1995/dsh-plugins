@@ -24,6 +24,9 @@ import {
 	IconFolderOpenOutlineRegular,
 	IconLinkOutlineRegular,
 	IconTrashOutlineRegular,
+	IconWarningOutlineRegular,
+	CodeBlock,
+	languageForPath,
 	Menu,
 	MenuItemButton,
 	Modal,
@@ -62,6 +65,21 @@ const zh = {
 	"compress.description": "压缩包文件名（可修改）：",
 	"compress.cancel": "取消",
 	"compress.confirm": "压缩",
+	"menu.edit": "编辑",
+	"edit.title": "编辑文件",
+	"edit.editing": "编辑",
+	"edit.preview": "预览",
+	"edit.loading": "加载中…",
+	"edit.format": "格式化",
+	"edit.formatUnsupported": "该文件类型暂不支持一键格式化",
+	"edit.revert": "恢复原始",
+	"edit.save": "保存",
+	"edit.cancel": "取消",
+	"edit.saved": "已保存 {name}",
+	"edit.formatted": "已格式化",
+	"edit.dirtyWarning": "有未保存的修改，确定放弃并关闭吗？",
+	"edit.discard": "放弃修改",
+	"edit.keepEditing": "继续编辑",
 	"toast.cut": "已剪切 {count} 项，右键目录或使用顶部「粘贴」按钮粘贴",
 	"toast.copied": "已复制 {count} 项，右键目录或使用顶部「粘贴」按钮粘贴",
 	"toast.pasted": "已粘贴 {count} 项",
@@ -98,6 +116,21 @@ const en = {
 	"compress.description": "Archive file name (editable):",
 	"compress.cancel": "Cancel",
 	"compress.confirm": "Compress",
+	"menu.edit": "Edit",
+	"edit.title": "Edit file",
+	"edit.editing": "Edit",
+	"edit.preview": "Preview",
+	"edit.loading": "Loading…",
+	"edit.format": "Format",
+	"edit.formatUnsupported": "One-click formatting is not supported for this file type",
+	"edit.revert": "Revert",
+	"edit.save": "Save",
+	"edit.cancel": "Cancel",
+	"edit.saved": "Saved {name}",
+	"edit.formatted": "Formatted",
+	"edit.dirtyWarning": "You have unsaved changes. Discard them and close?",
+	"edit.discard": "Discard changes",
+	"edit.keepEditing": "Keep editing",
 	"toast.cut": "Cut {count} items — right-click a directory or use the Paste button to paste",
 	"toast.copied": "Copied {count} items — right-click a directory or use the Paste button to paste",
 	"toast.pasted": "Pasted {count} items",
@@ -122,6 +155,7 @@ function format(text, params) {
  *             workspaceRoot: string }} MenuState
  * @typedef {{ paths: string[], workspaceRoot: string }} DeleteRequest
  * @typedef {{ paths: string[], workspaceRoot: string, name: string }} CompressRequest
+ * @typedef {{ path: string, workspaceRoot: string }} EditRequest
  * @typedef {{ id: number, text: string, kind: "ok" | "error" }} ToastItem
  */
 const state = {
@@ -130,6 +164,7 @@ const state = {
 	menu: /** @type {MenuState | null} */ (null),
 	deleteRequest: /** @type {DeleteRequest | null} */ (null),
 	compressRequest: /** @type {CompressRequest | null} */ (null),
+	editRequest: /** @type {EditRequest | null} */ (null),
 	toasts: /** @type {ToastItem[]} */ ([]),
 	treeVisible: false,
 };
@@ -148,6 +183,7 @@ function setState(patch) {
 		&& next.menu === state.menu
 		&& next.deleteRequest === state.deleteRequest
 		&& next.compressRequest === state.compressRequest
+		&& next.editRequest === state.editRequest
 		&& next.toasts === state.toasts
 		&& next.treeVisible === state.treeVisible
 	) return;
@@ -296,6 +332,21 @@ function settleCompress() {
 	setState({ compressRequest: null });
 }
 
+function requestEdit(request) {
+	setState({ editRequest: request });
+}
+
+function settleEdit() {
+	if (state.editRequest === null) return;
+	setState({ editRequest: null });
+}
+
+/** 打开文本编辑弹窗（单选文件右键菜单最上方的「编辑」）。 */
+function openEdit(path, workspaceRoot = currentTreeRoot()) {
+	if (workspaceRoot === null || path === null || path === "") return;
+	requestEdit({ path, workspaceRoot });
+}
+
 /** 把一组路径放进剪切/复制缓冲（操作完成即清除多选）。 */
 function stagePaths(paths, mode, workspaceRoot = currentTreeRoot()) {
 	if (workspaceRoot === null || paths.length === 0) return;
@@ -430,7 +481,15 @@ function ContextMenu() {
 					children: t("menu.clearSelection"),
 				}),
 				menu.scope === "row" && h(Fragment, { children: [
-					h(MenuItemButton, {
+				menu.entry === "file" && targets.length === 1 && h(MenuItemButton, {
+					icon: h(IconEditOutlineRegular, { size: 14 }),
+					onSelect: () => {
+						closeMenu();
+						openEdit(targets[0], menu.workspaceRoot);
+					},
+					children: t("menu.edit"),
+				}),
+				h(MenuItemButton, {
 						icon: h(IconEditOutlineRegular, { size: 14 }),
 						onSelect: () => {
 							closeMenu();
@@ -583,6 +642,163 @@ function CompressDialog() {
 	});
 }
 
+// ─── 文本编辑弹窗 ─────────────────────────────────────────────────────────
+/** 对选区跨行做缩进/反缩进；无选区时在光标处插入两个空格。 */
+function applyIndent(content, textarea, delta) {
+	const start = textarea.selectionStart ?? content.length;
+	const end = textarea.selectionEnd ?? start;
+	if (start === end) {
+		const next = content.slice(0, start) + "  " + content.slice(end);
+		queueMicrotask(() => {
+			textarea.selectionStart = textarea.selectionEnd = start + 2;
+		});
+		return next;
+	}
+	const lineStart = content.lastIndexOf("\n", start - 1) + 1;
+	const rawEnd = content.indexOf("\n", end - 1);
+	const blockEnd = rawEnd === -1 ? content.length : rawEnd;
+	const block = content.slice(lineStart, blockEnd);
+	const shifted = delta > 0 ? block.replace(/^/gm, "  ") : block.replace(/^ {1,2}/gm, "");
+	const next = content.slice(0, lineStart) + shifted + content.slice(blockEnd);
+	queueMicrotask(() => {
+		textarea.selectionStart = start + (start > lineStart ? delta : 0);
+		textarea.selectionEnd = start + (start > lineStart ? delta : 0) + shifted.length - (start === lineStart ? 0 : block.length - (end - start));
+	});
+	return next;
+}
+
+function EditDialog() {
+	const request = useStore((s) => s.editRequest);
+	const [content, setContent] = useState("");
+	const [original, setOriginal] = useState("");
+	const [loaded, setLoaded] = useState(false);
+	const [view, setView] = useState("edit");
+	const [confirmingClose, setConfirmingClose] = useState(false);
+	const [saving, setSaving] = useState(false);
+	const textareaRef = useRef(null);
+	const gutterRef = useRef(null);
+	useEffect(() => {
+		if (request === null) return;
+		setContent("");
+		setOriginal("");
+		setLoaded(false);
+		setView("edit");
+		setConfirmingClose(false);
+		api("read", { workspaceRoot: request.workspaceRoot, path: request.path }).then((payload) => {
+			setContent(payload.content);
+			setOriginal(payload.content);
+			setLoaded(true);
+		}).catch((error) => {
+			pushToast(error.message, "error");
+			settleEdit();
+		});
+	}, [request]);
+	if (request === null) return null;
+	const dirty = content !== original;
+	const name = basenameOf(request.path);
+	const lineCount = content.split("\n").length;
+	const gutterText = Array.from({ length: lineCount }, (_, i) => String(i + 1)).join("\n");
+	const requestClose = () => {
+		if (dirty && !confirmingClose) {
+			setConfirmingClose(true);
+			return;
+		}
+		settleEdit();
+	};
+	const save = () => {
+		if (!loaded || saving) return;
+		setSaving(true);
+		api("save", { workspaceRoot: request.workspaceRoot, path: request.path, content }).then((payload) => {
+			setSaving(false);
+			setOriginal(content);
+			settleEdit();
+			pushToast(t("edit.saved", { name }));
+		}).catch((error) => {
+			setSaving(false);
+			pushToast(error.message, "error");
+		});
+	};
+	const format = () => {
+		if (!loaded) return;
+		api("format", { workspaceRoot: request.workspaceRoot, path: request.path, content }).then((payload) => {
+			setContent(payload.content);
+			setView("edit");
+			pushToast(t("edit.formatted"));
+		}).catch((error) => {
+			pushToast(error.message, "error");
+		});
+	};
+	return h(Modal, {
+		open: true,
+		title: `${t("edit.title")} · ${name}`,
+		description: request.path,
+		className: "dfa-edit-dialog",
+		onClose: requestClose,
+		footer: confirmingClose ? h(Fragment, { children: [
+			h(Button, { variant: "outline", onClick: () => setConfirmingClose(false), children: t("edit.keepEditing") }),
+			h(Button, { variant: "primary", onClick: settleEdit, children: t("edit.discard") }),
+		] }) : h(Fragment, { children: [
+			h(Button, { variant: "outline", onClick: requestClose, children: t("edit.cancel") }),
+			h(Button, { variant: "outline", disabled: !loaded || !dirty, onClick: () => setContent(original), children: t("edit.revert") }),
+			h(Button, { variant: "outline", disabled: !loaded, onClick: format, children: t("edit.format") }),
+			h(Button, { variant: "primary", disabled: !loaded || !dirty || saving, onClick: save, children: t("edit.save") }),
+		] }),
+		children: confirmingClose ? h("div", { className: "dfa-edit-dirty" }, [
+			h(IconWarningOutlineRegular, { size: 18, className: "dfa-edit-dirty-icon" }),
+			h("p", { children: t("edit.dirtyWarning") }),
+		]) : h(Fragment, { children: [
+			h("div", { className: "dfa-edit-toolbar" }, [
+				h("div", { className: "dfa-edit-toggle", role: "tablist" }, [
+					toggleButton(view === "edit", t("edit.editing"), () => setView("edit")),
+					toggleButton(view === "preview", t("edit.preview"), () => setView("preview")),
+				]),
+			]),
+			!loaded ? h("p", { className: "dfa-edit-loading", children: t("edit.loading") })
+				: view === "edit" ? h("div", { className: "dfa-edit-body" }, [
+					h("div", { ref: gutterRef, className: "dfa-edit-gutter", "aria-hidden": "true", children: gutterText }),
+					h("textarea", {
+						ref: textareaRef,
+						className: "dfa-edit-textarea",
+						value: content,
+						spellCheck: false,
+						wrap: "off",
+						onChange: (event) => setContent(event.currentTarget.value),
+						onScroll: (event) => {
+							const gutter = gutterRef.current;
+							if (gutter !== null) gutter.scrollTop = event.currentTarget.scrollTop;
+						},
+						onKeyDown: (event) => {
+							if (event.key === "Tab") {
+								event.preventDefault();
+								const el = event.currentTarget;
+								setContent(applyIndent(content, el, event.shiftKey ? -2 : 2));
+								return;
+							}
+							if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+								event.preventDefault();
+								save();
+							}
+						},
+					}),
+				])
+				: h("div", { className: "dfa-edit-preview" },
+					h(CodeBlock, { code: content, lang: languageForPath(request.path) ?? "plaintext", lineNumbers: true, showHeader: false, wrap: true }),
+				),
+		] }),
+	});
+}
+
+function toggleButton(active, label, onClick) {
+	return h("button", {
+		type: "button",
+		role: "tab",
+		"aria-selected": active,
+		className: active ? "dfa-edit-toggle-btn dfa-edit-toggle-active" : "dfa-edit-toggle-btn",
+		onClick,
+		children: label,
+	});
+}
+
 // ─── Toast 堆栈 ───────────────────────────────────────────────────────────
 function ToastStack() {
 	const toasts = useStore((s) => s.toasts);
@@ -731,6 +947,114 @@ const CSS = `
 .dfa-compress-input:focus {
 	border-color: var(--dsw-alias-state-business-primary);
 }
+.dfa-edit-dialog {
+	width: min(920px, calc(100vw - 64px));
+	max-width: none;
+}
+.dfa-edit-toolbar {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 10px;
+}
+.dfa-edit-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	padding: 2px;
+	border: .5px solid var(--dsw-alias-border-l3);
+	border-radius: var(--dsw-radius-md);
+}
+.dfa-edit-toggle-btn {
+	border: none;
+	background: transparent;
+	color: var(--dsw-alias-label-secondary);
+	cursor: pointer;
+	font: inherit;
+	font-size: 13px;
+	padding: 3px 12px;
+	border-radius: var(--dsw-radius-sm);
+	line-height: 1.5;
+}
+.dfa-edit-toggle-btn:hover {
+	color: var(--dsw-alias-label-primary);
+	background: var(--dsw-alias-interactive-bg-hover);
+}
+.dfa-edit-toggle-active,
+.dfa-edit-toggle-active:hover {
+	color: var(--dsw-alias-label-primary);
+	background: var(--dsw-alias-interactive-bg-hover);
+}
+.dfa-edit-loading {
+	margin: 24px 0;
+	color: var(--dsw-alias-label-tertiary);
+	font-size: 13px;
+	text-align: center;
+}
+.dfa-edit-body {
+	display: flex;
+	height: min(62vh, 560px);
+	min-height: 220px;
+	border: .5px solid var(--dsw-alias-border-l3);
+	border-radius: var(--dsw-radius-md);
+	overflow: hidden;
+	background: var(--dsw-alias-bg-page, transparent);
+}
+.dfa-edit-gutter {
+	flex: none;
+	width: 44px;
+	overflow: hidden;
+	padding: 8px 6px 8px 0;
+	box-sizing: border-box;
+	text-align: right;
+	color: var(--dsw-alias-label-caption);
+	font-family: var(--dsh-font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+	font-size: 12px;
+	line-height: 1.6;
+	user-select: none;
+	white-space: pre;
+	border-right: .5px solid var(--dsw-alias-border-l3);
+}
+.dfa-edit-textarea {
+	flex: 1;
+	min-width: 0;
+	border: none;
+	outline: none;
+	resize: none;
+	padding: 8px 12px;
+	background: transparent;
+	color: var(--dsw-alias-label-primary);
+	font-family: var(--dsh-font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+	font-size: 13px;
+	line-height: 1.6;
+	white-space: pre;
+	overflow: auto;
+	tab-size: 2;
+}
+.dfa-edit-preview {
+	max-height: min(62vh, 560px);
+	min-height: 220px;
+	overflow: auto;
+	border: .5px solid var(--dsw-alias-border-l3);
+	border-radius: var(--dsw-radius-md);
+}
+.dfa-edit-dirty {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	padding: 4px 2px;
+	color: var(--dsw-alias-label-primary);
+}
+.dfa-edit-dirty-icon {
+	flex: none;
+	margin-top: 2px;
+	color: var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-business-primary));
+}
+.dfa-edit-dirty p {
+	margin: 0;
+	font-size: 13px;
+	line-height: 1.6;
+}
 .dfa-toasts {
 	position: fixed;
 	right: 20px;
@@ -825,6 +1149,12 @@ export function apply(ctx) {
 		locale: NS,
 		inject: () => ({}),
 	}, CompressDialog));
+	ctx.slots.inject("shell.overlay", () => ctx.slots.register({
+		name: "shell.overlay",
+		id: "file-actions-edit-dialog",
+		locale: NS,
+		inject: () => ({}),
+	}, EditDialog));
 	ctx.slots.inject("shell.overlay", () => ctx.slots.register({
 		name: "shell.overlay",
 		id: "file-actions-toasts",
