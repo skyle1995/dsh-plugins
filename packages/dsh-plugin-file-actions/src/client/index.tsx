@@ -84,6 +84,25 @@ const zh = {
 	"edit.closedUnsaved": "已关闭未保存的编辑：{name}",
 	"edit.unavailable": "无法解析该编辑地址",
 	"edit.unknownFormat": "该文件类型暂不支持一键格式化",
+	"edit.findPlaceholder": "查找",
+	"edit.replacePlaceholder": "替换为",
+	"edit.gotoPlaceholder": "行号",
+	"edit.prev": "上一个",
+	"edit.next": "下一个",
+	"edit.replaceOne": "替换",
+	"edit.replaceAll": "全部替换",
+	"edit.goto": "跳转",
+	"edit.closeBar": "关闭",
+	"edit.menuUndo": "撤销",
+	"edit.menuRedo": "重做",
+	"edit.menuCut": "剪切",
+	"edit.menuCopy": "复制",
+	"edit.menuPaste": "粘贴",
+	"edit.menuSelectAll": "全选",
+	"edit.menuFind": "搜索",
+	"edit.menuReplace": "替换",
+	"edit.menuGoto": "跳转到行",
+	"edit.pasteFailed": "粘贴失败：无法读取剪贴板",
 	"toast.cut": "已剪切 {count} 项，右键目录或使用顶部「粘贴」按钮粘贴",
 	"toast.copied": "已复制 {count} 项，右键目录或使用顶部「粘贴」按钮粘贴",
 	"toast.pasted": "已粘贴 {count} 项",
@@ -134,6 +153,25 @@ const en = {
 	"edit.closedUnsaved": "Closed with unsaved changes: {name}",
 	"edit.unavailable": "Cannot parse this editor address",
 	"edit.unknownFormat": "One-click formatting is not supported for this file type",
+	"edit.findPlaceholder": "Find",
+	"edit.replacePlaceholder": "Replace with",
+	"edit.gotoPlaceholder": "Line number",
+	"edit.prev": "Previous",
+	"edit.next": "Next",
+	"edit.replaceOne": "Replace",
+	"edit.replaceAll": "Replace all",
+	"edit.goto": "Go to",
+	"edit.closeBar": "Close",
+	"edit.menuUndo": "Undo",
+	"edit.menuRedo": "Redo",
+	"edit.menuCut": "Cut",
+	"edit.menuCopy": "Copy",
+	"edit.menuPaste": "Paste",
+	"edit.menuSelectAll": "Select all",
+	"edit.menuFind": "Find",
+	"edit.menuReplace": "Replace",
+	"edit.menuGoto": "Go to line",
+	"edit.pasteFailed": "Paste failed: cannot read the clipboard",
 	"toast.cut": "Cut {count} items — right-click a directory or use the Paste button to paste",
 	"toast.copied": "Copied {count} items — right-click a directory or use the Paste button to paste",
 	"toast.pasted": "Pasted {count} items",
@@ -689,24 +727,75 @@ function applyIndent(content, textarea, delta) {
 	return next;
 }
 
-/** 把高亮 token 行渲染为与 textarea 完全对齐的 pre 内容。 */
-function tokenNodes(tokens, content) {
+/** 文本中的查找匹配（不区分大小写可选），按出现顺序返回区间。 */
+function findMatchesIn(text, query, caseSensitive) {
+	const matches = [];
+	if (query === "") return matches;
+	const hay = caseSensitive ? text : text.toLowerCase();
+	const needle = caseSensitive ? query : query.toLowerCase();
+	let from = 0;
+	for (;;) {
+		const at = hay.indexOf(needle, from);
+		if (at === -1) break;
+		matches.push({ start: at, end: at + query.length });
+		from = at + query.length;
+	}
+	return matches;
+}
+
+/** 某行（0 基）在内容里的起始字符位置。 */
+function lineStartPos(content, lineIndex) {
+	if (lineIndex <= 0) return 0;
+	let pos = -1;
+	for (let i = 0; i < lineIndex; i++) pos = content.indexOf("\n", pos + 1);
+	return pos === -1 ? content.length : pos + 1;
+}
+
+/** 带样式地输出一段 token 文本。 */
+function styledText(text, style) {
+	return style !== null && style !== undefined ? h("span", { style }, text) : text;
+}
+
+/** 把 token 文本按查找区间切分，命中区间加标记类。 */
+function markedToken(text, offset, marks, style) {
+	const out = [];
+	let cursor = 0;
+	for (const mark of marks) {
+		const s = mark.start - offset;
+		const e = mark.end - offset;
+		if (e <= 0 || s >= text.length) continue;
+		const cs = Math.max(s, 0);
+		const ce = Math.min(e, text.length);
+		if (cs > cursor) out.push(styledText(text.slice(cursor, cs), style));
+		out.push(h("span", { className: mark.current ? "dfa-code-find dfa-code-find-current" : "dfa-code-find" }, text.slice(cs, ce)));
+		cursor = ce;
+	}
+	if (cursor < text.length) out.push(styledText(text.slice(cursor), style));
+	return out;
+}
+
+/** 把高亮 token 行渲染为与 textarea 完全对齐的 pre 内容（支持查找命中标记）。 */
+function tokenNodes(tokens, content, marks = []) {
 	const lines = tokens ?? content.split("\n").map((line) => [{ text: line, style: null }]);
 	const nodes = [];
+	let index = 0;
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i] ?? [];
 		for (let j = 0; j < line.length; j++) {
 			const token = line[j];
-			if (token.style !== null && token.style !== undefined) nodes.push(h("span", { style: token.style }, token.text));
-			else nodes.push(token.text);
+			nodes.push(...markedToken(token.text, index, marks, token.style));
+			index += token.text.length;
 		}
-		if (i < lines.length - 1) nodes.push("\n");
+		if (i < lines.length - 1) {
+			nodes.push("\n");
+			index += 1;
+		}
 	}
 	return nodes;
 }
 
-/** 编辑态实时高亮：透明文字 textarea 叠在 shiki 高亮层上，滚动/排版完全同步。 */
-function HighlightEditor({ content, language, onContent, onSave, onFormat, saveEnabled }) {
+/** 编辑态实时高亮：透明文字 textarea 叠在 shiki（DSH 自带）高亮层上，滚动/排版完全同步。 */
+function HighlightEditor({ content, language, onContent, onSave, findText, caseSensitive, findIndex, inputRef, onContextMenu }) {
 	const highlight = useCodeHighlighter(language);
 	const [scroll, setScroll] = useState({ left: 0, top: 0 });
 	// 防抖高亮：输入流畅，高亮层稍后跟上（大文件不卡键）。
@@ -716,9 +805,14 @@ function HighlightEditor({ content, language, onContent, onSave, onFormat, saveE
 		return () => clearTimeout(timer);
 	}, [content]);
 	const tokens = useMemo(() => highlight?.(highlightContent) ?? null, [highlight, highlightContent]);
+	// 查找命中标记（基于高亮层内容，保证与可见文本对齐）。
+	const marks = useMemo(() => {
+		const matches = findMatchesIn(highlightContent, findText, caseSensitive);
+		const current = Math.min(Math.max(findIndex, 0), matches.length - 1);
+		return matches.map((match, i) => ({ ...match, current: i === current }));
+	}, [highlightContent, findText, caseSensitive, findIndex]);
 	const lineCount = content.split("\n").length;
 	const gutterText = Array.from({ length: lineCount }, (_, i) => String(i + 1)).join("\n");
-	const textareaRef = useRef(null);
 	return h("div", { className: "dfa-code-editor" }, [
 		h("div", {
 			className: "dfa-code-gutter",
@@ -731,16 +825,17 @@ function HighlightEditor({ content, language, onContent, onSave, onFormat, saveE
 				className: "dfa-code-highlight",
 				"aria-hidden": "true",
 				style: { transform: `translate(${-scroll.left}px, ${-scroll.top}px)` },
-				children: tokenNodes(tokens, highlightContent),
+				children: tokenNodes(tokens, highlightContent, marks),
 			}),
 			h("textarea", {
-				ref: textareaRef,
+				ref: inputRef,
 				className: "dfa-code-input",
 				value: content,
 				spellCheck: false,
 				wrap: "off",
 				onChange: (event) => onContent(event.currentTarget.value),
 				onScroll: (event) => setScroll({ left: event.currentTarget.scrollLeft, top: event.currentTarget.scrollTop }),
+				onContextMenu,
 				onKeyDown: (event) => {
 					if (event.key === "Tab") {
 						event.preventDefault();
@@ -748,9 +843,20 @@ function HighlightEditor({ content, language, onContent, onSave, onFormat, saveE
 						onContent(applyIndent(content, el, event.shiftKey ? -2 : 2));
 						return;
 					}
-					if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+					const mod = event.metaKey || event.ctrlKey;
+					const key = event.key.toLowerCase();
+					if (mod && key === "s") {
 						event.preventDefault();
 						onSave();
+					} else if (mod && key === "f") {
+						event.preventDefault();
+						onOpenFind();
+					} else if (mod && key === "h") {
+						event.preventDefault();
+						onOpenReplace();
+					} else if (mod && key === "g") {
+						event.preventDefault();
+						onOpenGoto();
 					}
 				},
 			}),
@@ -758,7 +864,7 @@ function HighlightEditor({ content, language, onContent, onSave, onFormat, saveE
 	]);
 }
 
-/** 右侧栏「文件编辑」tab 主体：工具栏 + 高亮编辑器。 */
+/** 右侧栏「文件编辑」tab 主体：工具栏 + 搜索/替换/跳转栏 + 高亮编辑器 + 右键菜单。 */
 function EditorTab(props) {
 	const translate = props.t ?? t;
 	const { useTabInfo } = props;
@@ -770,10 +876,80 @@ function EditorTab(props) {
 	const [error, setError] = useState(null);
 	const [saving, setSaving] = useState(false);
 	const [confirmingReload, setConfirmingReload] = useState(false);
+	const [bar, setBar] = useState(null); // null | "find" | "replace" | "goto"
+	const [findText, setFindText] = useState("");
+	const [replaceText, setReplaceText] = useState("");
+	const [caseSensitive, setCaseSensitive] = useState(false);
+	const [findIndex, setFindIndex] = useState(0);
+	const [gotoText, setGotoText] = useState("");
+	const [menuAt, setMenuAt] = useState(null); // 编辑框右键菜单坐标
+	const inputRef = useRef(null);
 	const dirtyRef = useRef(false);
 	const dirty = content !== original;
 	dirtyRef.current = dirty;
 	const name = parsed === null ? "" : basenameOf(parsed.path);
+	const matches = useMemo(() => findMatchesIn(content, findText, caseSensitive), [content, findText, caseSensitive]);
+	const currentMatch = Math.min(Math.max(findIndex, 0), matches.length - 1);
+
+	const focusEditor = () => {
+		const el = inputRef.current;
+		if (el !== null) {
+			el.focus();
+			el.blur();
+			el.focus();
+		}
+	};
+	const selectRange = (start, end) => {
+		const el = inputRef.current;
+		if (el === null) return;
+		el.setSelectionRange(start, end);
+		el.focus();
+		el.blur();
+		el.focus();
+	};
+	const openFind = () => setBar("find");
+	const openReplace = () => setBar("replace");
+	const openGoto = () => {
+		setGotoText(String(matches.length > 0 && currentMatch >= 0 ? content.slice(0, matches[currentMatch].start).split("\n").length : ""));
+		setBar("goto");
+	};
+	const closeBar = () => {
+		setBar(null);
+		focusEditor();
+	};
+	const findNext = (step = 1) => {
+		if (matches.length === 0) return;
+		const next = (currentMatch + step + matches.length) % matches.length;
+		setFindIndex(next);
+		selectRange(matches[next].start, matches[next].end);
+	};
+	const replaceOne = () => {
+		const match = matches[currentMatch];
+		if (match === undefined) return;
+		const next = content.slice(0, match.start) + replaceText + content.slice(match.end);
+		setContent(next);
+		setFindIndex(currentMatch);
+		requestAnimationFrame(() => {
+			const el = inputRef.current;
+			if (el !== null) {
+				el.setSelectionRange(match.start, match.start + replaceText.length);
+				el.focus();
+			}
+		});
+	};
+	const replaceAll = () => {
+		if (findText === "") return;
+		const escaped = findText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+		const flags = caseSensitive ? "g" : "gi";
+		setContent(content.replace(new RegExp(escaped, flags), replaceText.replace(/\$/g, "$$$$")));
+	};
+	const doGoto = () => {
+		const line = Number.parseInt(String(gotoText).trim(), 10);
+		if (!Number.isFinite(line) || line < 1) return;
+		const index = Math.min(line, content.split("\n").length) - 1;
+		const pos = lineStartPos(content, index);
+		selectRange(pos, pos);
+	};
 
 	const load = () => {
 		if (parsed === null) return;
@@ -822,9 +998,35 @@ function EditorTab(props) {
 			pushToast(formatError.message, "error");
 		});
 	};
+	/** 编辑框右键菜单里的编辑指令（作用于 textarea）。 */
+	const runCommand = (command) => {
+		focusEditor();
+		try {
+			document.execCommand(command);
+		} catch {
+			// 老 API 被移除时静默失败。
+		}
+	};
+	const pasteFromClipboard = () => {
+		const el = inputRef.current;
+		if (el === null) return;
+		void navigator.clipboard.readText().then((text) => {
+			const start = el.selectionStart ?? el.value.length;
+			const end = el.selectionEnd ?? start;
+			setContent(content.slice(0, start) + text + content.slice(end));
+			requestAnimationFrame(() => {
+				el.setSelectionRange(start + text.length, start + text.length);
+				el.focus();
+			});
+		}).catch(() => {
+			pushToast(translate("edit.pasteFailed"), "error");
+		});
+	};
 	if (parsed === null) return h("div", { className: "dfa-editor-status" },
 		h("p", { className: "dfa-editor-status-line", children: translate("edit.unavailable") }));
 	const language = languageForPath(parsed.path) ?? "plaintext";
+	const menuSide = menuAt === null || menuAt.y < window.innerHeight * 0.6 ? "bottom" : "top";
+	const menuAlign = menuAt === null || menuAt.x + 200 <= window.innerWidth - 12 ? "start" : "end";
 	return h("div", { className: "dfa-editor-root", "data-dfa-ui": "editor" }, [
 		h("div", { className: "dfa-editor-header" }, [
 			h("span", { className: "dfa-editor-name", title: parsed.path, children: name }),
@@ -844,6 +1046,76 @@ function EditorTab(props) {
 				editorButton(translate("edit.save"), save, h(IconCheckOutlineRegular, { size: 14 }), !loaded || !dirty || saving, true),
 			] }),
 		]),
+		bar !== null && h("div", { className: "dfa-editor-bar" }, [
+			bar !== "goto" && h(Fragment, { children: [
+				h("input", {
+					className: "dfa-editor-bar-input",
+					type: "text",
+					placeholder: translate("edit.findPlaceholder"),
+					value: findText,
+					autoFocus: true,
+					onChange: (event) => {
+						setFindText(event.currentTarget.value);
+						setFindIndex(0);
+					},
+					onKeyDown: (event) => {
+						if (event.key === "Enter") {
+							event.preventDefault();
+							findNext(event.shiftKey ? -1 : 1);
+						} else if (event.key === "Escape") {
+							event.preventDefault();
+							closeBar();
+						}
+					},
+				}),
+				h("span", { className: "dfa-editor-bar-count", children: findText === "" ? "" : matches.length > 0 ? `${currentMatch + 1}/${matches.length}` : "0" }),
+				editorButton(translate("edit.prev"), () => findNext(-1), null, matches.length === 0),
+				editorButton(translate("edit.next"), () => findNext(1), null, matches.length === 0),
+				editorButton(caseSensitive ? "Aa" : "aa", () => setCaseSensitive(!caseSensitive), null, false),
+			] }),
+			bar === "replace" && h(Fragment, { children: [
+				h("input", {
+					className: "dfa-editor-bar-input",
+					type: "text",
+					placeholder: translate("edit.replacePlaceholder"),
+					value: replaceText,
+					onChange: (event) => setReplaceText(event.currentTarget.value),
+					onKeyDown: (event) => {
+						if (event.key === "Enter") {
+							event.preventDefault();
+							replaceOne();
+						} else if (event.key === "Escape") {
+							event.preventDefault();
+							closeBar();
+						}
+					},
+				}),
+				editorButton(translate("edit.replaceOne"), replaceOne, null, matches.length === 0),
+				editorButton(translate("edit.replaceAll"), replaceAll, null, findText === ""),
+			] }),
+			bar === "goto" && h(Fragment, { children: [
+				h("input", {
+					className: "dfa-editor-bar-input dfa-editor-bar-goto",
+					type: "number",
+					min: 1,
+					placeholder: translate("edit.gotoPlaceholder"),
+					value: gotoText,
+					autoFocus: true,
+					onChange: (event) => setGotoText(event.currentTarget.value),
+					onKeyDown: (event) => {
+						if (event.key === "Enter") {
+							event.preventDefault();
+							doGoto();
+						} else if (event.key === "Escape") {
+							event.preventDefault();
+							closeBar();
+						}
+					},
+				}),
+				editorButton(translate("edit.goto"), doGoto),
+			] }),
+			editorButton(translate("edit.closeBar"), closeBar, h(IconCloseOutlineRegular, { size: 14 })),
+		]),
 		!loaded && error === null ? h("div", { className: "dfa-editor-status" },
 			h("p", { className: "dfa-editor-status-line", children: translate("edit.loading") }))
 			: error !== null ? h("div", { className: "dfa-editor-status" }, [
@@ -855,7 +1127,49 @@ function EditorTab(props) {
 				language,
 				onContent: setContent,
 				onSave: save,
+				onOpenFind: openFind,
+				onOpenReplace: openReplace,
+				onOpenGoto: openGoto,
+				findText,
+				caseSensitive,
+				findIndex: currentMatch,
+				inputRef,
+				onContextMenu: (event) => {
+					event.preventDefault();
+					setMenuAt({ x: event.clientX, y: event.clientY });
+				},
 			}),
+		menuAt !== null && h(Menu, {
+			open: true,
+			portal: true,
+			compact: true,
+			autoFocus: true,
+			side: menuSide,
+			align: menuAlign,
+			listClassName: "dfa-menu",
+			onClose: () => setMenuAt(null),
+			getAnchorRect: () => ({ left: menuAt.x, top: menuAt.y, right: menuAt.x, bottom: menuAt.y, width: 0, height: 0 }),
+			anchor: h("span", { style: { position: "fixed", left: menuAt.x, top: menuAt.y, width: 0, height: 0 } }),
+			children: [
+				h(MenuItemButton, { onSelect: () => runCommand("undo"), children: translate("edit.menuUndo") }),
+				h(MenuItemButton, { onSelect: () => runCommand("redo"), children: translate("edit.menuRedo") }),
+				h(MenuItemButton, { separatorBefore: true, onSelect: () => runCommand("cut"), children: translate("edit.menuCut") }),
+				h(MenuItemButton, { onSelect: () => runCommand("copy"), children: translate("edit.menuCopy") }),
+				h(MenuItemButton, { onSelect: pasteFromClipboard, children: translate("edit.menuPaste") }),
+				h(MenuItemButton, { onSelect: () => {
+					const el = inputRef.current;
+					if (el !== null) {
+						el.focus();
+						el.select();
+					}
+				}, children: translate("edit.menuSelectAll") }),
+				h(MenuItemButton, { separatorBefore: true, onSelect: openFind, children: translate("edit.menuFind") }),
+				h(MenuItemButton, { onSelect: openReplace, children: translate("edit.menuReplace") }),
+				h(MenuItemButton, { onSelect: openGoto, children: translate("edit.menuGoto") }),
+				h(MenuItemButton, { separatorBefore: true, onSelect: format, children: translate("edit.format") }),
+				h(MenuItemButton, { onSelect: save, disabled: !loaded || !dirty, children: translate("edit.save") }),
+			],
+		}),
 	]);
 }
 
@@ -865,6 +1179,7 @@ function editorButton(label, onClick, icon = null, disabled = false, primary = f
 		className: primary ? "dfa-editor-btn dfa-editor-btn-primary" : "dfa-editor-btn",
 		disabled,
 		onClick,
+		title: typeof label === "string" ? label : undefined,
 		children: [icon, label].filter(Boolean),
 	});
 }
@@ -1221,6 +1536,55 @@ const CSS = `
 .dfa-code-input::placeholder {
 	color: var(--dsw-alias-label-caption);
 	-webkit-text-fill-color: var(--dsw-alias-label-caption);
+}
+.dfa-code-find {
+	background: color-mix(in srgb, var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-business-primary)) 35%, transparent);
+	border-radius: 2px;
+	outline: 1px solid color-mix(in srgb, var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-business-primary)) 55%, transparent);
+}
+.dfa-code-find-current {
+	background: color-mix(in srgb, var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-business-primary)) 65%, transparent);
+	outline-color: var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-business-primary));
+}
+.dfa-editor-bar {
+	box-sizing: border-box;
+	border-bottom: .5px solid var(--dsw-alias-border-l3);
+	flex: none;
+	align-items: center;
+	gap: 4px;
+	min-height: 36px;
+	padding: 4px 8px 4px 14px;
+	display: flex;
+	flex-wrap: wrap;
+	background: var(--dsw-alias-bg-layer-1, transparent);
+}
+.dfa-editor-bar-input {
+	box-sizing: border-box;
+	height: 26px;
+	min-width: 120px;
+	flex: 1 1 160px;
+	max-width: 320px;
+	border: .5px solid var(--dsw-alias-border-l4);
+	border-radius: var(--dsw-radius-sm);
+	background: transparent;
+	color: var(--dsw-alias-label-primary);
+	font: inherit;
+	font-size: 13px;
+	padding: 0 8px;
+	outline: none;
+}
+.dfa-editor-bar-input:focus {
+	border-color: var(--dsw-alias-state-business-primary);
+}
+.dfa-editor-bar-goto {
+	flex: 0 1 90px;
+	min-width: 60px;
+}
+.dfa-editor-bar-count {
+	color: var(--dsw-alias-label-tertiary);
+	font-size: 12px;
+	white-space: nowrap;
+	padding: 0 4px;
 }
 .dfa-toasts {
 	position: fixed;

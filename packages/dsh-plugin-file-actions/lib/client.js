@@ -74,6 +74,25 @@ var zh = {
   "edit.closedUnsaved": "\u5DF2\u5173\u95ED\u672A\u4FDD\u5B58\u7684\u7F16\u8F91\uFF1A{name}",
   "edit.unavailable": "\u65E0\u6CD5\u89E3\u6790\u8BE5\u7F16\u8F91\u5730\u5740",
   "edit.unknownFormat": "\u8BE5\u6587\u4EF6\u7C7B\u578B\u6682\u4E0D\u652F\u6301\u4E00\u952E\u683C\u5F0F\u5316",
+  "edit.findPlaceholder": "\u67E5\u627E",
+  "edit.replacePlaceholder": "\u66FF\u6362\u4E3A",
+  "edit.gotoPlaceholder": "\u884C\u53F7",
+  "edit.prev": "\u4E0A\u4E00\u4E2A",
+  "edit.next": "\u4E0B\u4E00\u4E2A",
+  "edit.replaceOne": "\u66FF\u6362",
+  "edit.replaceAll": "\u5168\u90E8\u66FF\u6362",
+  "edit.goto": "\u8DF3\u8F6C",
+  "edit.closeBar": "\u5173\u95ED",
+  "edit.menuUndo": "\u64A4\u9500",
+  "edit.menuRedo": "\u91CD\u505A",
+  "edit.menuCut": "\u526A\u5207",
+  "edit.menuCopy": "\u590D\u5236",
+  "edit.menuPaste": "\u7C98\u8D34",
+  "edit.menuSelectAll": "\u5168\u9009",
+  "edit.menuFind": "\u641C\u7D22",
+  "edit.menuReplace": "\u66FF\u6362",
+  "edit.menuGoto": "\u8DF3\u8F6C\u5230\u884C",
+  "edit.pasteFailed": "\u7C98\u8D34\u5931\u8D25\uFF1A\u65E0\u6CD5\u8BFB\u53D6\u526A\u8D34\u677F",
   "toast.cut": "\u5DF2\u526A\u5207 {count} \u9879\uFF0C\u53F3\u952E\u76EE\u5F55\u6216\u4F7F\u7528\u9876\u90E8\u300C\u7C98\u8D34\u300D\u6309\u94AE\u7C98\u8D34",
   "toast.copied": "\u5DF2\u590D\u5236 {count} \u9879\uFF0C\u53F3\u952E\u76EE\u5F55\u6216\u4F7F\u7528\u9876\u90E8\u300C\u7C98\u8D34\u300D\u6309\u94AE\u7C98\u8D34",
   "toast.pasted": "\u5DF2\u7C98\u8D34 {count} \u9879",
@@ -123,6 +142,25 @@ var en = {
   "edit.closedUnsaved": "Closed with unsaved changes: {name}",
   "edit.unavailable": "Cannot parse this editor address",
   "edit.unknownFormat": "One-click formatting is not supported for this file type",
+  "edit.findPlaceholder": "Find",
+  "edit.replacePlaceholder": "Replace with",
+  "edit.gotoPlaceholder": "Line number",
+  "edit.prev": "Previous",
+  "edit.next": "Next",
+  "edit.replaceOne": "Replace",
+  "edit.replaceAll": "Replace all",
+  "edit.goto": "Go to",
+  "edit.closeBar": "Close",
+  "edit.menuUndo": "Undo",
+  "edit.menuRedo": "Redo",
+  "edit.menuCut": "Cut",
+  "edit.menuCopy": "Copy",
+  "edit.menuPaste": "Paste",
+  "edit.menuSelectAll": "Select all",
+  "edit.menuFind": "Find",
+  "edit.menuReplace": "Replace",
+  "edit.menuGoto": "Go to line",
+  "edit.pasteFailed": "Paste failed: cannot read the clipboard",
   "toast.cut": "Cut {count} items \u2014 right-click a directory or use the Paste button to paste",
   "toast.copied": "Copied {count} items \u2014 right-click a directory or use the Paste button to paste",
   "toast.pasted": "Pasted {count} items",
@@ -609,21 +647,64 @@ function applyIndent(content, textarea, delta) {
   });
   return next;
 }
-function tokenNodes(tokens, content) {
+function findMatchesIn(text, query, caseSensitive) {
+  const matches = [];
+  if (query === "") return matches;
+  const hay = caseSensitive ? text : text.toLowerCase();
+  const needle = caseSensitive ? query : query.toLowerCase();
+  let from = 0;
+  for (; ; ) {
+    const at = hay.indexOf(needle, from);
+    if (at === -1) break;
+    matches.push({ start: at, end: at + query.length });
+    from = at + query.length;
+  }
+  return matches;
+}
+function lineStartPos(content, lineIndex) {
+  if (lineIndex <= 0) return 0;
+  let pos = -1;
+  for (let i = 0; i < lineIndex; i++) pos = content.indexOf("\n", pos + 1);
+  return pos === -1 ? content.length : pos + 1;
+}
+function styledText(text, style) {
+  return style !== null && style !== void 0 ? (0, import_react.createElement)("span", { style }, text) : text;
+}
+function markedToken(text, offset, marks, style) {
+  const out = [];
+  let cursor = 0;
+  for (const mark of marks) {
+    const s = mark.start - offset;
+    const e = mark.end - offset;
+    if (e <= 0 || s >= text.length) continue;
+    const cs = Math.max(s, 0);
+    const ce = Math.min(e, text.length);
+    if (cs > cursor) out.push(styledText(text.slice(cursor, cs), style));
+    out.push((0, import_react.createElement)("span", { className: mark.current ? "dfa-code-find dfa-code-find-current" : "dfa-code-find" }, text.slice(cs, ce)));
+    cursor = ce;
+  }
+  if (cursor < text.length) out.push(styledText(text.slice(cursor), style));
+  return out;
+}
+function tokenNodes(tokens, content, marks = []) {
   const lines = tokens ?? content.split("\n").map((line) => [{ text: line, style: null }]);
   const nodes = [];
+  let index = 0;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? [];
     for (let j = 0; j < line.length; j++) {
       const token = line[j];
-      if (token.style !== null && token.style !== void 0) nodes.push((0, import_react.createElement)("span", { style: token.style }, token.text));
-      else nodes.push(token.text);
+      nodes.push(...markedToken(token.text, index, marks, token.style));
+      index += token.text.length;
     }
-    if (i < lines.length - 1) nodes.push("\n");
+    if (i < lines.length - 1) {
+      nodes.push("\n");
+      index += 1;
+    }
   }
   return nodes;
 }
-function HighlightEditor({ content, language, onContent, onSave, onFormat, saveEnabled }) {
+function HighlightEditor({ content, language, onContent, onSave, findText, caseSensitive, findIndex, inputRef, onContextMenu }) {
   const highlight = (0, import_dsh_client_ui_primitives.useCodeHighlighter)(language);
   const [scroll, setScroll] = (0, import_react.useState)({ left: 0, top: 0 });
   const [highlightContent, setHighlightContent] = (0, import_react.useState)(content);
@@ -632,9 +713,13 @@ function HighlightEditor({ content, language, onContent, onSave, onFormat, saveE
     return () => clearTimeout(timer);
   }, [content]);
   const tokens = (0, import_react.useMemo)(() => highlight?.(highlightContent) ?? null, [highlight, highlightContent]);
+  const marks = (0, import_react.useMemo)(() => {
+    const matches = findMatchesIn(highlightContent, findText, caseSensitive);
+    const current = Math.min(Math.max(findIndex, 0), matches.length - 1);
+    return matches.map((match, i) => ({ ...match, current: i === current }));
+  }, [highlightContent, findText, caseSensitive, findIndex]);
   const lineCount = content.split("\n").length;
   const gutterText = Array.from({ length: lineCount }, (_, i) => String(i + 1)).join("\n");
-  const textareaRef = (0, import_react.useRef)(null);
   return (0, import_react.createElement)("div", { className: "dfa-code-editor" }, [
     (0, import_react.createElement)("div", {
       className: "dfa-code-gutter",
@@ -647,16 +732,17 @@ function HighlightEditor({ content, language, onContent, onSave, onFormat, saveE
         className: "dfa-code-highlight",
         "aria-hidden": "true",
         style: { transform: `translate(${-scroll.left}px, ${-scroll.top}px)` },
-        children: tokenNodes(tokens, highlightContent)
+        children: tokenNodes(tokens, highlightContent, marks)
       }),
       (0, import_react.createElement)("textarea", {
-        ref: textareaRef,
+        ref: inputRef,
         className: "dfa-code-input",
         value: content,
         spellCheck: false,
         wrap: "off",
         onChange: (event) => onContent(event.currentTarget.value),
         onScroll: (event) => setScroll({ left: event.currentTarget.scrollLeft, top: event.currentTarget.scrollTop }),
+        onContextMenu,
         onKeyDown: (event) => {
           if (event.key === "Tab") {
             event.preventDefault();
@@ -664,9 +750,20 @@ function HighlightEditor({ content, language, onContent, onSave, onFormat, saveE
             onContent(applyIndent(content, el, event.shiftKey ? -2 : 2));
             return;
           }
-          if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+          const mod = event.metaKey || event.ctrlKey;
+          const key = event.key.toLowerCase();
+          if (mod && key === "s") {
             event.preventDefault();
             onSave();
+          } else if (mod && key === "f") {
+            event.preventDefault();
+            onOpenFind();
+          } else if (mod && key === "h") {
+            event.preventDefault();
+            onOpenReplace();
+          } else if (mod && key === "g") {
+            event.preventDefault();
+            onOpenGoto();
           }
         }
       })
@@ -684,10 +781,79 @@ function EditorTab(props) {
   const [error, setError] = (0, import_react.useState)(null);
   const [saving, setSaving] = (0, import_react.useState)(false);
   const [confirmingReload, setConfirmingReload] = (0, import_react.useState)(false);
+  const [bar, setBar] = (0, import_react.useState)(null);
+  const [findText, setFindText] = (0, import_react.useState)("");
+  const [replaceText, setReplaceText] = (0, import_react.useState)("");
+  const [caseSensitive, setCaseSensitive] = (0, import_react.useState)(false);
+  const [findIndex, setFindIndex] = (0, import_react.useState)(0);
+  const [gotoText, setGotoText] = (0, import_react.useState)("");
+  const [menuAt, setMenuAt] = (0, import_react.useState)(null);
+  const inputRef = (0, import_react.useRef)(null);
   const dirtyRef = (0, import_react.useRef)(false);
   const dirty = content !== original;
   dirtyRef.current = dirty;
   const name = parsed === null ? "" : basenameOf(parsed.path);
+  const matches = (0, import_react.useMemo)(() => findMatchesIn(content, findText, caseSensitive), [content, findText, caseSensitive]);
+  const currentMatch = Math.min(Math.max(findIndex, 0), matches.length - 1);
+  const focusEditor = () => {
+    const el = inputRef.current;
+    if (el !== null) {
+      el.focus();
+      el.blur();
+      el.focus();
+    }
+  };
+  const selectRange = (start, end) => {
+    const el = inputRef.current;
+    if (el === null) return;
+    el.setSelectionRange(start, end);
+    el.focus();
+    el.blur();
+    el.focus();
+  };
+  const openFind = () => setBar("find");
+  const openReplace = () => setBar("replace");
+  const openGoto = () => {
+    setGotoText(String(matches.length > 0 && currentMatch >= 0 ? content.slice(0, matches[currentMatch].start).split("\n").length : ""));
+    setBar("goto");
+  };
+  const closeBar = () => {
+    setBar(null);
+    focusEditor();
+  };
+  const findNext = (step = 1) => {
+    if (matches.length === 0) return;
+    const next = (currentMatch + step + matches.length) % matches.length;
+    setFindIndex(next);
+    selectRange(matches[next].start, matches[next].end);
+  };
+  const replaceOne = () => {
+    const match = matches[currentMatch];
+    if (match === void 0) return;
+    const next = content.slice(0, match.start) + replaceText + content.slice(match.end);
+    setContent(next);
+    setFindIndex(currentMatch);
+    requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (el !== null) {
+        el.setSelectionRange(match.start, match.start + replaceText.length);
+        el.focus();
+      }
+    });
+  };
+  const replaceAll = () => {
+    if (findText === "") return;
+    const escaped = findText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const flags = caseSensitive ? "g" : "gi";
+    setContent(content.replace(new RegExp(escaped, flags), replaceText.replace(/\$/g, "$$$$")));
+  };
+  const doGoto = () => {
+    const line = Number.parseInt(String(gotoText).trim(), 10);
+    if (!Number.isFinite(line) || line < 1) return;
+    const index = Math.min(line, content.split("\n").length) - 1;
+    const pos = lineStartPos(content, index);
+    selectRange(pos, pos);
+  };
   const load = () => {
     if (parsed === null) return;
     setLoaded(false);
@@ -731,12 +897,36 @@ function EditorTab(props) {
       pushToast(formatError.message, "error");
     });
   };
+  const runCommand = (command) => {
+    focusEditor();
+    try {
+      document.execCommand(command);
+    } catch {
+    }
+  };
+  const pasteFromClipboard = () => {
+    const el = inputRef.current;
+    if (el === null) return;
+    void navigator.clipboard.readText().then((text) => {
+      const start = el.selectionStart ?? el.value.length;
+      const end = el.selectionEnd ?? start;
+      setContent(content.slice(0, start) + text + content.slice(end));
+      requestAnimationFrame(() => {
+        el.setSelectionRange(start + text.length, start + text.length);
+        el.focus();
+      });
+    }).catch(() => {
+      pushToast(translate("edit.pasteFailed"), "error");
+    });
+  };
   if (parsed === null) return (0, import_react.createElement)(
     "div",
     { className: "dfa-editor-status" },
     (0, import_react.createElement)("p", { className: "dfa-editor-status-line", children: translate("edit.unavailable") })
   );
   const language = (0, import_dsh_client_ui_primitives.languageForPath)(parsed.path) ?? "plaintext";
+  const menuSide = menuAt === null || menuAt.y < window.innerHeight * 0.6 ? "bottom" : "top";
+  const menuAlign = menuAt === null || menuAt.x + 200 <= window.innerWidth - 12 ? "start" : "end";
   return (0, import_react.createElement)("div", { className: "dfa-editor-root", "data-dfa-ui": "editor" }, [
     (0, import_react.createElement)("div", { className: "dfa-editor-header" }, [
       (0, import_react.createElement)("span", { className: "dfa-editor-name", title: parsed.path, children: name }),
@@ -756,6 +946,76 @@ function EditorTab(props) {
         editorButton(translate("edit.save"), save, (0, import_react.createElement)(import_dsh_client_ui_primitives.IconCheckOutlineRegular, { size: 14 }), !loaded || !dirty || saving, true)
       ] })
     ]),
+    bar !== null && (0, import_react.createElement)("div", { className: "dfa-editor-bar" }, [
+      bar !== "goto" && (0, import_react.createElement)(import_react.Fragment, { children: [
+        (0, import_react.createElement)("input", {
+          className: "dfa-editor-bar-input",
+          type: "text",
+          placeholder: translate("edit.findPlaceholder"),
+          value: findText,
+          autoFocus: true,
+          onChange: (event) => {
+            setFindText(event.currentTarget.value);
+            setFindIndex(0);
+          },
+          onKeyDown: (event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              findNext(event.shiftKey ? -1 : 1);
+            } else if (event.key === "Escape") {
+              event.preventDefault();
+              closeBar();
+            }
+          }
+        }),
+        (0, import_react.createElement)("span", { className: "dfa-editor-bar-count", children: findText === "" ? "" : matches.length > 0 ? `${currentMatch + 1}/${matches.length}` : "0" }),
+        editorButton(translate("edit.prev"), () => findNext(-1), null, matches.length === 0),
+        editorButton(translate("edit.next"), () => findNext(1), null, matches.length === 0),
+        editorButton(caseSensitive ? "Aa" : "aa", () => setCaseSensitive(!caseSensitive), null, false)
+      ] }),
+      bar === "replace" && (0, import_react.createElement)(import_react.Fragment, { children: [
+        (0, import_react.createElement)("input", {
+          className: "dfa-editor-bar-input",
+          type: "text",
+          placeholder: translate("edit.replacePlaceholder"),
+          value: replaceText,
+          onChange: (event) => setReplaceText(event.currentTarget.value),
+          onKeyDown: (event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              replaceOne();
+            } else if (event.key === "Escape") {
+              event.preventDefault();
+              closeBar();
+            }
+          }
+        }),
+        editorButton(translate("edit.replaceOne"), replaceOne, null, matches.length === 0),
+        editorButton(translate("edit.replaceAll"), replaceAll, null, findText === "")
+      ] }),
+      bar === "goto" && (0, import_react.createElement)(import_react.Fragment, { children: [
+        (0, import_react.createElement)("input", {
+          className: "dfa-editor-bar-input dfa-editor-bar-goto",
+          type: "number",
+          min: 1,
+          placeholder: translate("edit.gotoPlaceholder"),
+          value: gotoText,
+          autoFocus: true,
+          onChange: (event) => setGotoText(event.currentTarget.value),
+          onKeyDown: (event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              doGoto();
+            } else if (event.key === "Escape") {
+              event.preventDefault();
+              closeBar();
+            }
+          }
+        }),
+        editorButton(translate("edit.goto"), doGoto)
+      ] }),
+      editorButton(translate("edit.closeBar"), closeBar, (0, import_react.createElement)(import_dsh_client_ui_primitives.IconCloseOutlineRegular, { size: 14 }))
+    ]),
     !loaded && error === null ? (0, import_react.createElement)(
       "div",
       { className: "dfa-editor-status" },
@@ -767,7 +1027,49 @@ function EditorTab(props) {
       content,
       language,
       onContent: setContent,
-      onSave: save
+      onSave: save,
+      onOpenFind: openFind,
+      onOpenReplace: openReplace,
+      onOpenGoto: openGoto,
+      findText,
+      caseSensitive,
+      findIndex: currentMatch,
+      inputRef,
+      onContextMenu: (event) => {
+        event.preventDefault();
+        setMenuAt({ x: event.clientX, y: event.clientY });
+      }
+    }),
+    menuAt !== null && (0, import_react.createElement)(import_dsh_client_ui_primitives.Menu, {
+      open: true,
+      portal: true,
+      compact: true,
+      autoFocus: true,
+      side: menuSide,
+      align: menuAlign,
+      listClassName: "dfa-menu",
+      onClose: () => setMenuAt(null),
+      getAnchorRect: () => ({ left: menuAt.x, top: menuAt.y, right: menuAt.x, bottom: menuAt.y, width: 0, height: 0 }),
+      anchor: (0, import_react.createElement)("span", { style: { position: "fixed", left: menuAt.x, top: menuAt.y, width: 0, height: 0 } }),
+      children: [
+        (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, { onSelect: () => runCommand("undo"), children: translate("edit.menuUndo") }),
+        (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, { onSelect: () => runCommand("redo"), children: translate("edit.menuRedo") }),
+        (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, { separatorBefore: true, onSelect: () => runCommand("cut"), children: translate("edit.menuCut") }),
+        (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, { onSelect: () => runCommand("copy"), children: translate("edit.menuCopy") }),
+        (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, { onSelect: pasteFromClipboard, children: translate("edit.menuPaste") }),
+        (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, { onSelect: () => {
+          const el = inputRef.current;
+          if (el !== null) {
+            el.focus();
+            el.select();
+          }
+        }, children: translate("edit.menuSelectAll") }),
+        (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, { separatorBefore: true, onSelect: openFind, children: translate("edit.menuFind") }),
+        (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, { onSelect: openReplace, children: translate("edit.menuReplace") }),
+        (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, { onSelect: openGoto, children: translate("edit.menuGoto") }),
+        (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, { separatorBefore: true, onSelect: format2, children: translate("edit.format") }),
+        (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, { onSelect: save, disabled: !loaded || !dirty, children: translate("edit.save") })
+      ]
     })
   ]);
 }
@@ -777,6 +1079,7 @@ function editorButton(label, onClick, icon = null, disabled = false, primary = f
     className: primary ? "dfa-editor-btn dfa-editor-btn-primary" : "dfa-editor-btn",
     disabled,
     onClick,
+    title: typeof label === "string" ? label : void 0,
     children: [icon, label].filter(Boolean)
   });
 }
@@ -1127,6 +1430,55 @@ var CSS = `
 .dfa-code-input::placeholder {
 	color: var(--dsw-alias-label-caption);
 	-webkit-text-fill-color: var(--dsw-alias-label-caption);
+}
+.dfa-code-find {
+	background: color-mix(in srgb, var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-business-primary)) 35%, transparent);
+	border-radius: 2px;
+	outline: 1px solid color-mix(in srgb, var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-business-primary)) 55%, transparent);
+}
+.dfa-code-find-current {
+	background: color-mix(in srgb, var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-business-primary)) 65%, transparent);
+	outline-color: var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-business-primary));
+}
+.dfa-editor-bar {
+	box-sizing: border-box;
+	border-bottom: .5px solid var(--dsw-alias-border-l3);
+	flex: none;
+	align-items: center;
+	gap: 4px;
+	min-height: 36px;
+	padding: 4px 8px 4px 14px;
+	display: flex;
+	flex-wrap: wrap;
+	background: var(--dsw-alias-bg-layer-1, transparent);
+}
+.dfa-editor-bar-input {
+	box-sizing: border-box;
+	height: 26px;
+	min-width: 120px;
+	flex: 1 1 160px;
+	max-width: 320px;
+	border: .5px solid var(--dsw-alias-border-l4);
+	border-radius: var(--dsw-radius-sm);
+	background: transparent;
+	color: var(--dsw-alias-label-primary);
+	font: inherit;
+	font-size: 13px;
+	padding: 0 8px;
+	outline: none;
+}
+.dfa-editor-bar-input:focus {
+	border-color: var(--dsw-alias-state-business-primary);
+}
+.dfa-editor-bar-goto {
+	flex: 0 1 90px;
+	min-width: 60px;
+}
+.dfa-editor-bar-count {
+	color: var(--dsw-alias-label-tertiary);
+	font-size: 12px;
+	white-space: nowrap;
+	padding: 0 4px;
 }
 .dfa-toasts {
 	position: fixed;
