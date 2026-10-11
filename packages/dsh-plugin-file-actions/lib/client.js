@@ -291,8 +291,11 @@ function ContextMenu() {
   if (menu === null) return null;
   const clickedSelected = menu.path !== null && selection.has(menu.path);
   const targets = clickedSelected ? [...selection] : menu.path !== null ? [menu.path] : [];
-  const side = menu.y < window.innerHeight * 0.6 ? "bottom" : "top";
-  const align = menu.x < window.innerWidth * 0.5 ? "start" : "end";
+  const MENU_MARGIN = 12;
+  const MENU_EST_WIDTH = 200;
+  const MENU_EST_HEIGHT = 240;
+  const side = menu.y + MENU_EST_HEIGHT <= window.innerHeight - MENU_MARGIN ? "bottom" : "top";
+  const align = menu.x + MENU_EST_WIDTH <= window.innerWidth - MENU_MARGIN ? "start" : "end";
   const pasteTarget = menu.scope === "body" ? menu.workspaceRoot : menu.entry === "directory" ? menu.path : null;
   return (0, import_react.createElement)(
     "div",

@@ -343,8 +343,14 @@ function ContextMenu() {
 	if (menu === null) return null;
 	const clickedSelected = menu.path !== null && selection.has(menu.path);
 	const targets = clickedSelected ? [...selection] : (menu.path !== null ? [menu.path] : []);
-	const side = menu.y < window.innerHeight * 0.6 ? "bottom" : "top";
-	const align = menu.x < window.innerWidth * 0.5 ? "start" : "end";
+	// OS 式右键菜单定位：默认在指针右下方展开（菜单左上角对齐指针），
+	// 仅当预估尺寸会超出屏幕时才向指针左侧 / 上方翻转；
+	// Menu 组件内部还会按实际尺寸做边距钳制兜底。
+	const MENU_MARGIN = 12;
+	const MENU_EST_WIDTH = 200;
+	const MENU_EST_HEIGHT = 240;
+	const side = menu.y + MENU_EST_HEIGHT <= window.innerHeight - MENU_MARGIN ? "bottom" : "top";
+	const align = menu.x + MENU_EST_WIDTH <= window.innerWidth - MENU_MARGIN ? "start" : "end";
 	const pasteTarget = menu.scope === "body" ? menu.workspaceRoot : (menu.entry === "directory" ? menu.path : null);
 	return h("div", { "data-dfa-ui": "menu", style: { pointerEvents: "none" } },
 		h(Menu, {
