@@ -2111,3 +2111,4 @@ export function apply(ctx) {
 
 /** 浏览器依赖注入面（服务名；包级依赖见 package.json 的 dsh.client.inject）。 */
 export const inject = ["slots", "locale", "sidebarRightTabs", "sidebarRight"];
+
