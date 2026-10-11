@@ -843,15 +843,42 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 	const highlight = useCodeHighlighter(language);
 	const [scroll, setScroll] = useState({ left: 0, top: 0 });
 	const [viewport, setViewport] = useState({ width: 0, height: 0 });
-	const viewportRef = useRef(null);
+	const viewportHRef = useRef(0);
 	useEffect(() => {
-		const el = viewportRef.current;
+		const el = inputRef.current;
 		if (el === null) return;
-		const measure = () => setViewport({ width: el.clientWidth, height: el.clientHeight });
-		measure();
-		const observer = new ResizeObserver(measure);
-		observer.observe(el);
-		return () => observer.disconnect();
+		const measure = () => {
+			const h = el.clientHeight;
+			viewportHRef.current = h;
+			setViewport((current) => (
+				Math.abs(current.height - h) > 1 || Math.abs(current.width - el.clientWidth) > 1
+					? { width: el.clientWidth, height: h }
+					: current
+			));
+		};
+		// 原生 scroll 监听（不依赖 React 事件委托），顺带校准视口尺寸。
+		const onScrollNative = () => {
+			measure();
+			setScroll((current) => (
+				current.left === el.scrollLeft && current.top === el.scrollTop
+					? current
+					: { left: el.scrollLeft, top: el.scrollTop }
+			));
+		};
+		el.addEventListener("scroll", onScrollNative, { passive: true });
+		window.addEventListener("resize", measure);
+		// 挂载后校准三帧（布局稳定后拿到真实高度）。
+		let frames = 0;
+		const tick = () => {
+			measure();
+			frames += 1;
+			if (frames < 3) requestAnimationFrame(tick);
+		};
+		requestAnimationFrame(tick);
+		return () => {
+			el.removeEventListener("scroll", onScrollNative);
+			window.removeEventListener("resize", measure);
+		};
 	}, []);
 	// 防抖高亮：输入流畅，高亮层稍后跟上（大文件不卡键）。
 	const [highlightContent, setHighlightContent] = useState(content);
@@ -904,16 +931,16 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 	}, [tokens]);
 	useEffect(() => {
 		const canvas = minimapRef.current;
-		if (canvas === null || viewport.height <= 0) return;
+		if (canvas === null || viewportH <= 0) return;
 		const dpr = window.devicePixelRatio || 1;
 		canvas.width = Math.max(1, Math.round(MINIMAP_WIDTH * dpr));
-		canvas.height = Math.max(1, Math.round(viewport.height * dpr));
+		canvas.height = Math.max(1, Math.round(viewportH * dpr));
 		const draw = canvas.getContext("2d");
 		if (draw === null) return;
 		draw.scale(dpr, dpr);
-		draw.clearRect(0, 0, MINIMAP_WIDTH, viewport.height);
+		draw.clearRect(0, 0, MINIMAP_WIDTH, viewportH);
 		const count = Math.max(lineStarts.length, 1);
-		const perLine = Math.min(viewport.height / count, 4);
+		const perLine = Math.min(viewportH / count, 4);
 		const fallback = (() => {
 			const value = getComputedStyle(document.documentElement).getPropertyValue("--dsw-alias-label-secondary").trim();
 			return value === "" ? "#7a8699" : value;
@@ -923,9 +950,10 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 			draw.fillStyle = color !== undefined && color !== "" ? color : fallback;
 			draw.fillRect(0, Math.floor(i * perLine), MINIMAP_WIDTH, Math.max(1, Math.ceil(perLine)));
 		}
-	}, [lineColors, viewport.height, lineStarts.length]);
+	}, [lineColors, lineStarts.length, viewportH]);
 	const scrollHeightTotal = EDIT_PAD_TOP + lineCount * EDIT_LINE_HEIGHT + 48;
-	const viewportH = Math.max(viewport.height, 1);
+	// 渲染时直接读 DOM 真相：不依赖测量时机（ResizeObserver/首帧竞态都免疫）。
+	const viewportH = Math.max(viewport.height, inputRef.current?.clientHeight ?? 0, 1);
 	const scrollMax = Math.max(scrollHeightTotal - viewportH, 0);
 	const indicatorHeight = Math.max((viewportH * viewportH) / scrollHeightTotal, 24);
 	const indicatorTop = scrollMax > 0 ? (scroll.top / scrollMax) * (viewportH - indicatorHeight) : 0;
@@ -934,13 +962,16 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 		if (el === null || minimapRef.current === null) return;
 		const rect = minimapRef.current.getBoundingClientRect();
 		if (rect.height <= 0) return;
+		const liveH = Math.max(el.clientHeight, viewportH);
+		const liveMax = Math.max(scrollHeightTotal - liveH, 0);
+		const liveIndicator = Math.max((liveH * liveH) / scrollHeightTotal, 24);
 		const y = clientY - rect.top;
-		const travel = Math.max(viewportH - indicatorHeight, 1);
-		const target = ((y - indicatorHeight / 2) / travel) * scrollMax;
-		el.scrollTop = Math.max(0, Math.min(target, scrollMax));
+		const travel = Math.max(liveH - liveIndicator, 1);
+		const target = ((y - liveIndicator / 2) / travel) * liveMax;
+		el.scrollTop = Math.max(0, Math.min(target, liveMax));
 	};
 	const firstLine = Math.min(Math.floor(scroll.top / EDIT_LINE_HEIGHT), Math.max(lineCount - 1, 0));
-	const visibleCount = Math.ceil(viewport.height / EDIT_LINE_HEIGHT) + 1;
+	const visibleCount = Math.ceil(viewportH / EDIT_LINE_HEIGHT) + 1;
 	const lastLine = Math.min(lineCount - 1, firstLine + visibleCount);
 	const visibleLines = [];
 	for (let i = firstLine; i <= lastLine; i++) visibleLines.push(i);
@@ -954,7 +985,7 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 					children: String(i + 1),
 				}))),
 		]),
-		h("div", { ref: viewportRef, className: "dfa-code-viewport" }, [
+		h("div", { className: "dfa-code-viewport" }, [
 			h("pre", {
 				className: "dfa-code-highlight",
 				"aria-hidden": "true",
@@ -1002,7 +1033,6 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 				spellCheck: false,
 				wrap: "off",
 				onChange: (event) => onContent(event.currentTarget.value),
-				onScroll: (event) => setScroll({ left: event.currentTarget.scrollLeft, top: event.currentTarget.scrollTop }),
 				onContextMenu,
 				onKeyDown: (event) => {
 					if (event.key === "Tab") {
