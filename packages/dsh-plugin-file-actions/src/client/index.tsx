@@ -13,7 +13,7 @@
  *   <li data-files-entry="file|directory|other" data-files-path="<绝对路径>">
  *   <div data-files-state="tree" data-files-root="<工作区根>"> 为树根。
  */
-import { createElement as h, Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
 	IconArchiveOutlineRegular,
 	IconCheckCircleFillRegular,
@@ -845,9 +845,10 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 	const minimapRef = useRef(null);
 	const draggingRef = useRef(false);
 	const colorCacheRef = useRef({ content: "", colors: [] });
-	useEffect(() => {
+	useLayoutEffect(() => {
 		const el = inputRef.current;
 		if (el === null) return;
+		const disposers = [];
 		const measure = () => {
 			const h = el.clientHeight;
 			setViewport((current) => (
@@ -867,6 +868,12 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 		};
 		el.addEventListener("scroll", onScrollNative, { passive: true });
 		window.addEventListener("resize", measure);
+		// 尺寸兜底：tab 隐藏/显示、分栏调整时自动重测（滚动监听之外的独立来源）。
+		if (typeof ResizeObserver !== "undefined") {
+			const observer = new ResizeObserver(measure);
+			observer.observe(el);
+			disposers.push(() => observer.disconnect());
+		}
 		// 挂载后校准三帧（布局稳定后拿到真实高度）。
 		let frames = 0;
 		const tick = () => {
@@ -878,6 +885,7 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 		return () => {
 			el.removeEventListener("scroll", onScrollNative);
 			window.removeEventListener("resize", measure);
+			for (const dispose of disposers) dispose();
 		};
 	}, []);
 	// 防抖高亮：输入流畅，高亮层稍后跟上。
@@ -977,6 +985,7 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 	// 纯 DOM 行块预览（无 canvas，跨环境确定性渲染）：每行一个色块，
 	// 超长文件合并采样（最多 3000 块），颜色随窗口解析逐屏填充。
 	const minimapRows = useMemo(() => {
+		if (viewportH <= 1) return [];
 		const count = Math.max(lineStarts.length, 1);
 		const blocks = Math.min(count, 3000);
 		const rows = [];
@@ -1022,13 +1031,19 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 				}),
 			}),
 			h("div", {
+				ref: minimapRef,
 				className: "dfa-code-minimap",
 				"aria-hidden": "true",
 				onPointerDown: (event) => {
 					event.preventDefault();
 					draggingRef.current = true;
-					event.currentTarget.setPointerCapture?.(event.pointerId);
 					scrollMinimapTo(event.clientY);
+					// 捕获失败（无活动指针等边缘情况）不影响定位滚动。
+					try {
+						event.currentTarget.setPointerCapture?.(event.pointerId);
+					} catch {
+						// 忽略：后续 move 事件仍可能落在容器上。
+					}
 				},
 				onPointerMove: (event) => {
 					if (draggingRef.current) scrollMinimapTo(event.clientY);
@@ -1968,6 +1983,7 @@ export function apply(ctx) {
 		kind: EDIT_KIND,
 		patterns: ["dsh-resource://file-edit/**"],
 		priority: "fallback",
+		keepMounted: true,
 		canOpen: (address) => String(address).startsWith(EDIT_PREFIX),
 		title: (address) => parseEditAddress(address)?.path !== undefined ? basenameOf(parseEditAddress(address).path) : "Edit",
 	}), "file-actions: editor tab type");

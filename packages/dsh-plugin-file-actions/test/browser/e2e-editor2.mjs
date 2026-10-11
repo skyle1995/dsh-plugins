@@ -125,6 +125,33 @@ const scrolled = await page.evaluate(() => {
   };
 });
 console.log("AFTER SCROLL:", JSON.stringify(scrolled, null, 2));
+// 拖拽 minimap：pointerdown 到 50% 高度处 → 编辑器应滚动
+const drag = await page.evaluate(() => {
+  const mm = document.querySelector(".dfa-code-minimap");
+  const ta = document.querySelector(".dfa-code-input");
+  const rect = mm.getBoundingClientRect();
+  const before = ta.scrollTop;
+  mm.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: rect.left + 40, clientY: rect.top + rect.height * 0.5, pointerId: 1, isPrimary: true }));
+  mm.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: rect.left + 40, clientY: rect.top + rect.height * 0.5, pointerId: 1, isPrimary: true }));
+  mm.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1, isPrimary: true }));
+  return { before, after: ta.scrollTop, rectHeight: rect.height };
+});
+console.log("DRAG:", JSON.stringify(drag, null, 2));
+// tab 切换保持性：切到文件 tab 再切回，滚动位置与预览应保留（keepMounted）
+await clickContaining("工作区文件"); await sleep(2500);
+await clickContaining("sample.ts"); await sleep(2500);
+const persisted = await page.evaluate(() => {
+  const ta = document.querySelector(".dfa-code-input");
+  return {
+    scrollTop: ta?.scrollTop ?? null,
+    rows: document.querySelectorAll(".dfa-code-minimap-row").length,
+    colored: [...document.querySelectorAll(".dfa-code-minimap-row")].filter((r) => {
+      const bg = getComputedStyle(r).backgroundColor;
+      return bg !== "" && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent";
+    }).length,
+  };
+});
+console.log("TAB SWITCH PERSIST:", JSON.stringify(persisted, null, 2));
 await page.screenshot({ path: "/tmp/e2e-editor-scrolled.png" });
 console.log("ERRORS:", JSON.stringify(errors.slice(0, 12), null, 2));
 await browser.close();

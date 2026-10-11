@@ -720,9 +720,10 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
   const minimapRef = (0, import_react.useRef)(null);
   const draggingRef = (0, import_react.useRef)(false);
   const colorCacheRef = (0, import_react.useRef)({ content: "", colors: [] });
-  (0, import_react.useEffect)(() => {
+  (0, import_react.useLayoutEffect)(() => {
     const el = inputRef.current;
     if (el === null) return;
+    const disposers = [];
     const measure = () => {
       const h2 = el.clientHeight;
       setViewport((current) => Math.abs(current.height - h2) > 1 || Math.abs(current.width - el.clientWidth) > 1 ? { width: el.clientWidth, height: h2 } : current);
@@ -733,6 +734,11 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
     };
     el.addEventListener("scroll", onScrollNative, { passive: true });
     window.addEventListener("resize", measure);
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(measure);
+      observer.observe(el);
+      disposers.push(() => observer.disconnect());
+    }
     let frames = 0;
     const tick = () => {
       measure();
@@ -743,6 +749,7 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
     return () => {
       el.removeEventListener("scroll", onScrollNative);
       window.removeEventListener("resize", measure);
+      for (const dispose of disposers) dispose();
     };
   }, []);
   const [highlightContent, setHighlightContent] = (0, import_react.useState)(content);
@@ -832,6 +839,7 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
   }, [tokens, renderFirst, renderLast, highlightContent, lineStarts]);
   const lineColors = colorCacheRef.current.colors;
   const minimapRows = (0, import_react.useMemo)(() => {
+    if (viewportH <= 1) return [];
     const count = Math.max(lineStarts.length, 1);
     const blocks = Math.min(count, 3e3);
     const rows = [];
@@ -877,13 +885,17 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
         })
       }),
       (0, import_react.createElement)("div", {
+        ref: minimapRef,
         className: "dfa-code-minimap",
         "aria-hidden": "true",
         onPointerDown: (event) => {
           event.preventDefault();
           draggingRef.current = true;
-          event.currentTarget.setPointerCapture?.(event.pointerId);
           scrollMinimapTo(event.clientY);
+          try {
+            event.currentTarget.setPointerCapture?.(event.pointerId);
+          } catch {
+          }
         },
         onPointerMove: (event) => {
           if (draggingRef.current) scrollMinimapTo(event.clientY);
@@ -1808,6 +1820,7 @@ function apply(ctx) {
     kind: EDIT_KIND,
     patterns: ["dsh-resource://file-edit/**"],
     priority: "fallback",
+    keepMounted: true,
     canOpen: (address) => String(address).startsWith(EDIT_PREFIX),
     title: (address) => parseEditAddress(address)?.path !== void 0 ? basenameOf(parseEditAddress(address).path) : "Edit"
   }), "file-actions: editor tab type");
