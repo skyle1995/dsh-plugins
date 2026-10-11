@@ -13,6 +13,9 @@ importers:
       '@deepseek-ai/dsh':
         specifier: 0.2.0-rc.2
         version: 0.2.0-rc.2(21ed7b1c2f1cf8d27c58ecc2797875dd)
+      prettier:
+        specifier: ^3.9.9
+        version: 3.9.9
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: ~4.0.4
@@ -3740,6 +3743,11 @@ packages:
   powershell-utils@0.2.1:
     resolution: {integrity: sha512-C+y9x90UElAddDZmV4qOx9W53B61PO7cIqWz2dQsWlwswuq4mr8NEwytdGKboYbQlGZ3awrkTeNvcZiZNHnQ8A==}
     engines: {node: '>=20'}
+
+  prettier@3.9.9:
+    resolution: {integrity: sha512-Z/CJHIkdujO/OtN7nXUii0Rf3VT5SRuhjBA82Xvu2XhBUgX3nhP67T0LHceBdQLex7OOFGTox+Q5Yg8Jk2Qivg==}
+    engines: {node: '>=14'}
+    hasBin: true
 
   pretty-ms@9.3.1:
     resolution: {integrity: sha512-HzMy3Geq23nVALD/M2LliU+F+M+gVNsvkQWWqeBZ8HDiCgzo6YPJ/Omrmtq24EFrIsk0a3EkQGEd7bDOo+IhGA==}
@@ -8323,6 +8331,8 @@ snapshots:
   pkce-challenge@5.0.0: {}
 
   powershell-utils@0.2.1: {}
+
+  prettier@3.9.9: {}
 
   pretty-ms@9.3.1:
     dependencies:
