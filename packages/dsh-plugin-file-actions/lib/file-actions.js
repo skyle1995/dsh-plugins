@@ -1,0 +1,327 @@
+/**
+ * dsh-plugin-file-actions —— 文件操作服务：复制 / 剪切（移动）/ 删除 / 压缩。
+ *
+ * 设计要点：
+ * - 服务键 `fileActions`（ctx.fileActions），注入 fs / sessions / sandboxPolicy
+ *   （标准 profile 均提供，与官方 workspaceFiles 服务相同的注入面）；
+ * - 全部写操作都约束在「会话工作区」内：客户端只提交工作区绝对路径
+ *   （浏览器文件树 DOM 里的 data-files-path），宿主用 fs.resolve + fs.contains
+ *   逐条校验，越界一律拒绝；工作区根目录本身禁止删除/移动；
+ * - 复制/移动目标必须是工作区内已存在的目录，同名冲突报
+ *   file-actions/exists；跨设备移动（EXDEV）自动退化为复制 + 删除；
+ * - 压缩用自带的 ZIP 写入器（lib/zip.js，无第三方依赖，deflate + CRC32）；
+ * - 浏览器半区经 Web 组合的 webServer 消费 /api/dsh-file-actions 路由。
+ *
+ * @module dsh-plugin-file-actions
+ */
+import { Service } from "@deepseek-ai/cordis";
+import Schema from "@deepseek-ai/schemastery";
+import { cp, lstat, rename, rm, writeFile } from "node:fs/promises";
+import { basename, join } from "node:path";
+import { createZipBuffer } from "./zip.js";
+
+/** 浏览器半区使用的 HTTP 路由前缀。 */
+export const FILE_ACTIONS_API = "/api/dsh-file-actions";
+
+/** 默认单文件压缩上限（字节）。 */
+export const DEFAULT_MAX_ZIP_FILE_BYTES = 256 * 1024 * 1024;
+
+/** 带错误码的文件操作失败，code 形如 `file-actions/<kind>`。 */
+export class FileActionsError extends Error {
+	constructor(code, message, options) {
+		super(message, options);
+		this.name = "FileActionsError";
+		this.code = code;
+	}
+}
+
+/** 生成压缩包文件名：单源用 `<name>.zip`，多源用 `archive.zip`。 */
+export function zipNameFor(sourceNames) {
+	if (sourceNames.length === 1) return `${basename(sourceNames[0])}.zip`;
+	return "archive.zip";
+}
+
+/** 在目标目录里给压缩包名加 "(2)" 等后缀，避免覆盖既有文件。 */
+export async function uniqueZipPath(destination, name) {
+	const exists = async (candidate) => {
+		try {
+			await lstat(candidate);
+			return true;
+		} catch {
+			return false;
+		}
+	};
+	let candidate = join(destination, name);
+	if (!(await exists(candidate))) return { path: candidate, name };
+	const dot = name.lastIndexOf(".");
+	const stem = dot > 0 ? name.slice(0, dot) : name;
+	const ext = dot > 0 ? name.slice(dot) : "";
+	for (let n = 2; ; n++) {
+		candidate = join(destination, `${stem} (${n})${ext}`);
+		if (!(await exists(candidate))) return { path: candidate, name: `${stem} (${n})${ext}` };
+	}
+}
+
+/**
+ * dsh-plugin-file-actions 的 Cordis 服务：工作区文件写操作 + Web 路由。
+ * 服务键 `fileActions`（ctx.fileActions）。
+ */
+export class FileActionsService extends Service {
+	static inject = ["fs", "sessions", "sandboxPolicy"];
+
+	/** Cordis 配置契约：loader 据此校验 patch 配置并套用默认值。 */
+	static Config = Schema.object({
+		/** 压缩时单文件大小上限（字节），超限跳过并计入 skipped。 */
+		maxZipFileBytes: Schema.number().min(1).default(DEFAULT_MAX_ZIP_FILE_BYTES),
+	});
+
+	constructor(ctx, config) {
+		super(ctx, "fileActions");
+		this.config = config;
+		ctx.logger.info(`dsh-plugin-file-actions 已激活（maxZipFileBytes=${config.maxZipFileBytes}）`);
+		// Web profile 中注册浏览器半区使用的路由。webServer 属于 Web 组合的
+		// 作用域，不能从本行的注入面直接读取，因此用 ctx.inject 建一个以
+		// webServer 为依赖的作用域子插件：Web 存在时注册路由，headless 等
+		// profile 里保持休眠、不影响本服务。
+		ctx.inject(["webServer"], (webCtx) => {
+			webCtx.effect(() => {
+				const disposers = ["copy", "move", "delete", "compress"].map((operation) =>
+					webCtx.webServer.register({
+						kind: "exact",
+						path: `${FILE_ACTIONS_API}/${operation}`,
+						handler: (req, res) => this.handleRequest(req, res, operation),
+					}),
+				);
+				return () => {
+					for (const dispose of disposers) dispose();
+				};
+			}, "file-actions: HTTP routes");
+			ctx.logger.info(`dsh-plugin-file-actions 路由已注册：${FILE_ACTIONS_API}/*`);
+		});
+	}
+
+	/**
+	 * 把客户端提交的工作区根路径解析为宿主侧的会话工作区：
+	 * 优先匹配 live 会话的 header.cwd，其次匹配 sandboxPolicy.workspaceRoot；
+	 * 两者都不匹配时拒绝（找不到对应会话，或不属于任何已知工作区）。
+	 * @returns `{ workspaceRoot, source }`，source 为 "session" | "sandbox"。
+	 */
+	async resolveWorkspaceRoot(workspaceRoot) {
+		const submitted = String(workspaceRoot ?? "").trim();
+		if (submitted === "") throw new FileActionsError("file-actions/bad-request", "缺少工作区根目录");
+		const resolveKey = async (path) => {
+			try {
+				const target = await this.ctx.fs.resolve(path, {});
+				return this.ctx.fs.processPath(target);
+			} catch {
+				return null;
+			}
+		};
+		const target = await resolveKey(submitted);
+		if (target === null) throw new FileActionsError("file-actions/bad-request", "工作区根目录无法解析");
+		const sessions = this.ctx.get("sessions");
+		if (sessions !== undefined && typeof sessions.list === "function") {
+			for (const session of sessions.list()) {
+				const cwd = session?.header?.cwd;
+				if (typeof cwd === "string" && cwd !== "") {
+					const candidate = await resolveKey(cwd);
+					if (candidate !== null && candidate === target) return { workspaceRoot: candidate, source: "session" };
+				}
+			}
+		}
+		const fallback = this.ctx.sandboxPolicy?.workspaceRoot;
+		if (typeof fallback === "string" && fallback !== "") {
+			const candidate = await resolveKey(fallback);
+			if (candidate !== null && candidate === target) return { workspaceRoot: candidate, source: "sandbox" };
+		}
+		throw new FileActionsError("file-actions/no-workspace", "找不到与文件树对应的工作区（会话可能已关闭）");
+	}
+
+	/** 工作区根目录的 fs target（用于 contains 判定）。 */
+	async workspaceTarget(workspaceRoot) {
+		return this.ctx.fs.resolve(workspaceRoot, {});
+	}
+
+	/**
+	 * 把一条工作区路径解析为宿主绝对路径，并校验其位于工作区内。
+	 * @returns 宿主绝对路径。
+	 */
+	async confine(workspaceRoot, path, { signal } = {}) {
+		const submitted = String(path ?? "").trim();
+		if (submitted === "") throw new FileActionsError("file-actions/bad-request", "路径不能为空");
+		const root = await this.workspaceTarget(workspaceRoot);
+		let target;
+		try {
+			target = await this.ctx.fs.resolve(submitted, { cwd: workspaceRoot, signal });
+		} catch (error) {
+			throw new FileActionsError("file-actions/bad-request", `无法解析路径 "${submitted}"：${error.message}`, { cause: error });
+		}
+		if (!this.ctx.fs.contains(root, target)) {
+			throw new FileActionsError("file-actions/outside-workspace", `"${submitted}" 位于工作区之外，操作被拒绝`);
+		}
+		return this.ctx.fs.processPath(target);
+	}
+
+	/** 校验目标目录存在且确为目录。 */
+	async confineDirectory(workspaceRoot, destination) {
+		const host = await this.confine(workspaceRoot, destination);
+		let info;
+		try {
+			info = await lstat(host);
+		} catch {
+			throw new FileActionsError("file-actions/not-found", `目标目录不存在："${destination}"`);
+		}
+		if (!info.isDirectory()) throw new FileActionsError("file-actions/not-directory", `目标不是目录："${destination}"`);
+		return host;
+	}
+
+	/** 校验一组源路径（非空、都在工作区内、不与工作区根相同）。 */
+	async confineSources(workspaceRoot, sources) {
+		if (!Array.isArray(sources) || sources.length === 0) {
+			throw new FileActionsError("file-actions/bad-request", "缺少源路径");
+		}
+		const hostRoot = await this.confine(workspaceRoot, workspaceRoot);
+		const hosts = [];
+		for (const source of sources) {
+			const host = await this.confine(workspaceRoot, source);
+			if (host === hostRoot) throw new FileActionsError("file-actions/workspace-root", "工作区根目录本身不允许该操作");
+			hosts.push(host);
+		}
+		return hosts;
+	}
+
+	/** 复制：把每个源复制进目标目录；同名冲突整体报错（不做部分写入）。 */
+	async copyEntries({ workspaceRoot, sources, destination }) {
+		const root = await this.bindWorkspace(workspaceRoot);
+		const hosts = await this.confineSources(root, sources);
+		const hostDest = await this.confineDirectory(root, destination);
+		for (const host of hosts) {
+			const target = join(hostDest, basename(host));
+			if (target === host || (host + "/").startsWith(target + "/")) {
+				throw new FileActionsError("file-actions/into-itself", `不能把 "${basename(host)}" 复制进其自身`);
+			}
+			if (await exists(target)) {
+				throw new FileActionsError("file-actions/exists", `目标已存在同名项："${basename(host)}"`);
+			}
+		}
+		for (const host of hosts) {
+			await cp(host, join(hostDest, basename(host)), { recursive: true, errorOnExist: true });
+		}
+		return { count: hosts.length, destination: hostDest };
+	}
+
+	/** 移动（剪切）：优先 rename，跨设备（EXDEV 等）退化为复制 + 删除。 */
+	async moveEntries({ workspaceRoot, sources, destination }) {
+		const root = await this.bindWorkspace(workspaceRoot);
+		const hosts = await this.confineSources(root, sources);
+		const hostDest = await this.confineDirectory(root, destination);
+		for (const host of hosts) {
+			const target = join(hostDest, basename(host));
+			if (target === host || (host + "/").startsWith(target + "/")) {
+				throw new FileActionsError("file-actions/into-itself", `不能把 "${basename(host)}" 移动进其自身`);
+			}
+			if (await exists(target)) {
+				throw new FileActionsError("file-actions/exists", `目标已存在同名项："${basename(host)}"`);
+			}
+		}
+		for (const host of hosts) {
+			const target = join(hostDest, basename(host));
+			try {
+				await rename(host, target);
+			} catch (error) {
+				if (error.code !== "EXDEV" && error.code !== "ENOTEMPTY" && error.code !== "EPERM" && error.code !== "EACCES") throw error;
+				await cp(host, target, { recursive: true, errorOnExist: true });
+				await rm(host, { recursive: true, force: true });
+			}
+		}
+		return { count: hosts.length, destination: hostDest };
+	}
+
+	/** 删除：逐条 rm（recursive）；不存在的路径记入 missing 而非报错。 */
+	async deleteEntries({ workspaceRoot, paths }) {
+		const root = await this.bindWorkspace(workspaceRoot);
+		const hosts = await this.confineSources(root, paths);
+		let missing = 0;
+		for (const host of hosts) {
+			if (!(await exists(host))) {
+				missing += 1;
+				continue;
+			}
+			await rm(host, { recursive: true, force: true });
+		}
+		return { count: hosts.length, missing };
+	}
+
+	/** 压缩：把源打包进目标目录下的 .zip，返回最终文件名与统计。 */
+	async compressEntries({ workspaceRoot, sources, destination }) {
+		const root = await this.bindWorkspace(workspaceRoot);
+		const hosts = await this.confineSources(root, sources);
+		const hostDest = await this.confineDirectory(root, destination);
+		const names = sources.map((source) => basename(String(source)));
+		const base = zipNameFor(names);
+		if (!base.toLowerCase().endsWith(".zip")) throw new FileActionsError("file-actions/bad-request", "压缩包名必须以 .zip 结尾");
+		const { path, name } = await uniqueZipPath(hostDest, base);
+		const { buffer, skipped } = await createZipBuffer(hosts, { maxFileBytes: this.config.maxZipFileBytes });
+		await writeFile(path, buffer);
+		return { name, count: hosts.length, skipped };
+	}
+
+	/** 绑定请求的工作区根：解析为宿主绝对路径并校验属于某会话/沙箱根。 */
+	async bindWorkspace(workspaceRoot) {
+		const { workspaceRoot: root } = await this.resolveWorkspaceRoot(workspaceRoot);
+		return root;
+	}
+
+	/** 统一路由处理器：解析 JSON 请求体并分发。 */
+	async handleRequest(req, res, operation) {
+		const payload = (status, value) => {
+			res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
+			res.end(JSON.stringify(value));
+		};
+		try {
+			if (req.method !== "POST") {
+				payload(405, { ok: false, code: "file-actions/method", message: "method not allowed" });
+				return;
+			}
+			let body = {};
+			try {
+				const chunks = [];
+				for await (const chunk of req) chunks.push(chunk);
+				body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+			} catch {
+				payload(400, { ok: false, code: "file-actions/invalid-json", message: "请求体不是合法 JSON" });
+				return;
+			}
+			if (operation === "copy") {
+				payload(200, { ok: true, ...(await this.copyEntries(body)) });
+				return;
+			}
+			if (operation === "move") {
+				payload(200, { ok: true, ...(await this.moveEntries(body)) });
+				return;
+			}
+			if (operation === "delete") {
+				payload(200, { ok: true, ...(await this.deleteEntries(body)) });
+				return;
+			}
+			if (operation === "compress") {
+				payload(200, { ok: true, ...(await this.compressEntries(body)) });
+				return;
+			}
+			payload(404, { ok: false, code: "file-actions/unknown", message: "unknown operation" });
+		} catch (error) {
+			payload(400, { ok: false, code: error.code ?? "file-actions/failure", message: error.message });
+		}
+	}
+}
+
+async function exists(path) {
+	try {
+		await lstat(path);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+export default FileActionsService;

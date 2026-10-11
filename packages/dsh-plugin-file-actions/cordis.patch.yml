@@ -1,0 +1,17 @@
+# dsh-plugin-file-actions bundle patch: 注册文件操作服务行。
+#
+# 该行加载本包默认导出的 Cordis 插件（服务键 fileActions，即 ctx.fileActions），
+# 并在 Web 组合存在时向 webServer 注册 /api/dsh-file-actions 路由。
+# 宿主半区注入 fs / sessions / sandboxPolicy（标准 profile 均提供），
+# 全部写操作被约束在会话工作区内。
+#
+# 配置通过 profile 的 cordis.patch.yml 覆盖，例如：
+#
+# - id: file-actions
+#   name: 'dsh-plugin-file-actions'
+#   config:
+#     maxZipFileBytes: 268435456
+#
+- insert:
+    - id: file-actions
+      name: 'dsh-plugin-file-actions'
