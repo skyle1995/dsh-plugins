@@ -97,13 +97,8 @@ const scrolled = await page.evaluate(() => {
     const r = n.getBoundingClientRect();
     return r.bottom > vr.top && r.top < vr.bottom;
   });
-  // minimap 行块验证（DOM 渲染，无 canvas）
-  const rows = [...document.querySelectorAll(".dfa-code-minimap-row")];
-  const coloredRows = rows.filter((row) => {
-    const bg = getComputedStyle(row).backgroundColor;
-    return bg !== "" && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent";
-  }).length;
-  const rowRects = rows.slice(0, 3).map((row) => row.getBoundingClientRect().toJSON());
+  // 原生滚动条加宽验证
+  const scrollbarWidth = getComputedStyle(ta, "::-webkit-scrollbar").width;
   // 对齐验证：滚动后可见行的视口位置 = 视口顶 + top - scrollTop
   const firstVisible = visible[0];
   let alignError = null;
@@ -118,25 +113,10 @@ const scrolled = await page.evaluate(() => {
     visibleNumCount: nums.length,
     firstVisibleText: visible[0]?.textContent.slice(0, 50),
     alignErrorPx: alignError,
-    minimapRows: rows.length,
-    minimapColoredRows: coloredRows,
-    minimapRowSample: rowRects,
-    indicatorTop: document.querySelector(".dfa-code-minimap-indicator")?.style.top,
+    scrollbarWidth,
   };
 });
 console.log("AFTER SCROLL:", JSON.stringify(scrolled, null, 2));
-// 拖拽 minimap：pointerdown 到 50% 高度处 → 编辑器应滚动
-const drag = await page.evaluate(() => {
-  const mm = document.querySelector(".dfa-code-minimap");
-  const ta = document.querySelector(".dfa-code-input");
-  const rect = mm.getBoundingClientRect();
-  const before = ta.scrollTop;
-  mm.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: rect.left + 40, clientY: rect.top + rect.height * 0.5, pointerId: 1, isPrimary: true }));
-  mm.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: rect.left + 40, clientY: rect.top + rect.height * 0.5, pointerId: 1, isPrimary: true }));
-  mm.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1, isPrimary: true }));
-  return { before, after: ta.scrollTop, rectHeight: rect.height };
-});
-console.log("DRAG:", JSON.stringify(drag, null, 2));
 // tab 切换保持性：切到文件 tab 再切回，滚动位置与预览应保留（keepMounted）
 await clickContaining("工作区文件"); await sleep(2500);
 await clickContaining("sample.ts"); await sleep(2500);
@@ -144,11 +124,6 @@ const persisted = await page.evaluate(() => {
   const ta = document.querySelector(".dfa-code-input");
   return {
     scrollTop: ta?.scrollTop ?? null,
-    rows: document.querySelectorAll(".dfa-code-minimap-row").length,
-    colored: [...document.querySelectorAll(".dfa-code-minimap-row")].filter((r) => {
-      const bg = getComputedStyle(r).backgroundColor;
-      return bg !== "" && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent";
-    }).length,
   };
 });
 console.log("TAB SWITCH PERSIST:", JSON.stringify(persisted, null, 2));

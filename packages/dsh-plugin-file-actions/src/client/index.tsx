@@ -819,8 +819,6 @@ const EDIT_FONT_SIZE = 13;
 const EDIT_LINE_HEIGHT = 20;
 const EDIT_PAD_TOP = 8;
 const EDIT_PAD_LEFT = 12;
-/** 右侧代码缩略预览（minimap）宽度。 */
-const MINIMAP_WIDTH = 80;
 /** 可见窗口上下各多渲染的行数下限（overscan 缓冲，滚动时减少空白与解析抖动）。 */
 const EDIT_OVERSCAN_MIN = 20;
 
@@ -841,10 +839,6 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 	const highlight = useCodeHighlighter(language);
 	const [scroll, setScroll] = useState({ left: 0, top: 0 });
 	const [viewport, setViewport] = useState({ width: 0, height: 0 });
-	const [colorVersion, setColorVersion] = useState(0);
-	const minimapRef = useRef(null);
-	const draggingRef = useRef(false);
-	const colorCacheRef = useRef({ content: "", colors: [] });
 	useLayoutEffect(() => {
 		const el = inputRef.current;
 		if (el === null) return;
@@ -912,23 +906,6 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 	})();
 	// 渲染时直接读 DOM 真相：不依赖测量时机（ResizeObserver/首帧竞态都免疫）。
 	const viewportH = Math.max(viewport.height, inputRef.current?.clientHeight ?? 0, 1);
-	const scrollHeightTotal = EDIT_PAD_TOP + lineCount * EDIT_LINE_HEIGHT + 48;
-	const scrollMax = Math.max(scrollHeightTotal - viewportH, 0);
-	const indicatorHeight = Math.max((viewportH * viewportH) / scrollHeightTotal, 24);
-	const indicatorTop = scrollMax > 0 ? (scroll.top / scrollMax) * (viewportH - indicatorHeight) : 0;
-	const scrollMinimapTo = (clientY) => {
-		const el = inputRef.current;
-		if (el === null || minimapRef.current === null) return;
-		const rect = minimapRef.current.getBoundingClientRect();
-		if (rect.height <= 0) return;
-		const liveH = Math.max(el.clientHeight, viewportH);
-		const liveMax = Math.max(scrollHeightTotal - liveH, 0);
-		const liveIndicator = Math.max((liveH * liveH) / scrollHeightTotal, 24);
-		const y = clientY - rect.top;
-		const travel = Math.max(liveH - liveIndicator, 1);
-		const target = ((y - liveIndicator / 2) / travel) * liveMax;
-		el.scrollTop = Math.max(0, Math.min(target, liveMax));
-	};
 	const firstLine = Math.min(Math.floor(scroll.top / EDIT_LINE_HEIGHT), Math.max(lineCount - 1, 0));
 	const lastLine = Math.min(lineCount - 1, firstLine + Math.ceil(viewportH / EDIT_LINE_HEIGHT) + 1);
 	// overscan：可见窗口上下各多渲染/解析一段缓冲，小距离滚动不产生空白、
@@ -953,54 +930,6 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 		const current = Math.min(Math.max(findIndex, 0), matches.length - 1);
 		return matches.map((match, i) => ({ ...match, current: i === current }));
 	}, [highlightContent, findText, caseSensitive, findIndex]);
-	// minimap 行色缓存：窗口解析逐屏累积，未访问行用主题默认色。
-	useEffect(() => {
-		const cache = colorCacheRef.current;
-		if (cache.content !== highlightContent) {
-			cache.content = highlightContent;
-			cache.colors = new Array(lineStarts.length).fill("");
-		}
-		if (tokens !== null) {
-			let changed = false;
-			for (let vi = renderFirst; vi <= renderLast && vi < lineStarts.length; vi++) {
-				const line = tokens.lines[vi - renderFirst];
-				if (line !== undefined && line !== null) {
-					let color = "";
-					for (const token of line) {
-						if (token.style !== null && token.style !== undefined && token.style.color) {
-							color = token.style.color;
-							break;
-						}
-					}
-					if (cache.colors[vi] !== color) {
-						cache.colors[vi] = color;
-						changed = true;
-					}
-				}
-			}
-			if (changed) setColorVersion((version) => version + 1);
-		}
-	}, [tokens, renderFirst, renderLast, highlightContent, lineStarts]);
-	const lineColors = colorCacheRef.current.colors;
-	// 纯 DOM 行块预览（无 canvas，跨环境确定性渲染）：每行一个色块，
-	// 超长文件合并采样（最多 3000 块），颜色随窗口解析逐屏填充。
-	const minimapRows = useMemo(() => {
-		if (viewportH <= 1) return [];
-		const count = Math.max(lineStarts.length, 1);
-		const blocks = Math.min(count, 3000);
-		const rows = [];
-		for (let b = 0; b < blocks; b++) {
-			const lineIndex = Math.min(Math.floor((b * count) / blocks), count - 1);
-			rows.push({
-				key: b,
-				top: Math.floor((b * viewportH) / blocks),
-				height: Math.max(1, Math.ceil(viewportH / blocks)),
-				color: lineColors[lineIndex] ?? "",
-			});
-		}
-		return rows;
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [lineStarts.length, viewportH, colorVersion]);
 	return h("div", { className: "dfa-code-editor" }, [
 		h("div", { className: "dfa-code-gutter", "aria-hidden": "true" }, [
 			h("div", { className: "dfa-code-gutter-canvas", style: { height: EDIT_PAD_TOP + lineCount * EDIT_LINE_HEIGHT, transform: `translateY(${-scroll.top}px)` } },
@@ -1030,40 +959,7 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 					});
 				}),
 			}),
-			h("div", {
-				ref: minimapRef,
-				className: "dfa-code-minimap",
-				"aria-hidden": "true",
-				onPointerDown: (event) => {
-					event.preventDefault();
-					draggingRef.current = true;
-					scrollMinimapTo(event.clientY);
-					// 捕获失败（无活动指针等边缘情况）不影响定位滚动。
-					try {
-						event.currentTarget.setPointerCapture?.(event.pointerId);
-					} catch {
-						// 忽略：后续 move 事件仍可能落在容器上。
-					}
-				},
-				onPointerMove: (event) => {
-					if (draggingRef.current) scrollMinimapTo(event.clientY);
-				},
-				onPointerUp: () => {
-					draggingRef.current = false;
-				},
-				onPointerCancel: () => {
-					draggingRef.current = false;
-				},
-			}, [
-				h("div", { className: "dfa-code-minimap-rows", "aria-hidden": "true" },
-					minimapRows.map((row) => h("div", {
-						key: row.key,
-						className: "dfa-code-minimap-row",
-						style: { top: row.top, height: row.height, ...(row.color === "" ? {} : { background: row.color }) },
-					}))),
-				h("div", { className: "dfa-code-minimap-indicator", style: { top: indicatorTop, height: indicatorHeight } }),
-			]),
-			h("textarea", {
+h("textarea", {
 				ref: inputRef,
 				className: "dfa-code-input",
 				value: content,
@@ -1758,11 +1654,8 @@ const CSS = `
 }
 .dfa-code-input {
 	position: absolute;
-	left: 0;
-	top: 0;
-	right: 80px;
-	bottom: 0;
-	width: auto;
+	inset: 0;
+	width: 100%;
 	height: 100%;
 	box-sizing: border-box;
 	resize: none;
@@ -1792,45 +1685,27 @@ const CSS = `
 	-webkit-text-fill-color: var(--dsw-alias-label-caption);
 }
 .dfa-code-input::-webkit-scrollbar {
-	width: 0;
+	width: 14px;
 	height: 12px;
 }
+.dfa-code-input::-webkit-scrollbar-track {
+	background: transparent;
+}
+.dfa-code-input::-webkit-scrollbar-thumb {
+	background: var(--dsw-alias-scrollbar-hover-l2, var(--dsw-alias-label-caption, #66778c));
+	border-radius: 7px;
+	border: 3px solid transparent;
+	background-clip: padding-box;
+}
+.dfa-code-input::-webkit-scrollbar-thumb:hover {
+	background: var(--dsw-alias-label-secondary, #8899aa);
+	background-clip: padding-box;
+}
 .dfa-code-input {
-	scrollbar-width: thin;
+	scrollbar-width: auto;
+	scrollbar-color: var(--dsw-alias-scrollbar-hover-l2, var(--dsw-alias-label-caption, #66778c)) transparent;
 }
-.dfa-code-minimap {
-	position: absolute;
-	top: 0;
-	right: 0;
-	bottom: 0;
-	width: 80px;
-	overflow: hidden;
-	border-left: .5px solid var(--dsw-alias-border-l3);
-	background: var(--dsw-alias-bg-page, var(--dsw-alias-bg-layer-1, transparent));
-	cursor: pointer;
-	user-select: none;
-}
-.dfa-code-minimap-rows {
-	position: absolute;
-	inset: 0;
-	overflow: hidden;
-	pointer-events: none;
-}
-.dfa-code-minimap-row {
-	position: absolute;
-	left: 0;
-	right: 0;
-	background: var(--dsw-alias-label-secondary, #7a8699);
-}
-.dfa-code-minimap-indicator {
-	position: absolute;
-	left: 0;
-	width: 100%;
-	box-sizing: border-box;
-	background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 16%, transparent);
-	border-left: 1px solid var(--dsw-alias-state-business-primary);
-	pointer-events: none;
-}
+
 .dfa-code-find {
 	background: color-mix(in srgb, var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-business-primary)) 35%, transparent);
 	border-radius: 2px;
