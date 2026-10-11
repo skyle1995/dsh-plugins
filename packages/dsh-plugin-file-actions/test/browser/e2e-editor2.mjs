@@ -140,6 +140,76 @@ const wrapState = await page.evaluate(() => {
   };
 });
 console.log("WRAP TOGGLE:", JSON.stringify(wrapState, null, 2));
+// 大文件性能：big.js（~8k 行 + 一条 30 万字符超长行）打开、滚动、输入应无卡死/报错
+// 通过 dockkit tab chip 切回「工作区文件」tab
+{
+  let switched = false;
+  for (let attempt = 0; attempt < 10 && !switched; attempt++) {
+    switched = await page.evaluate(() => {
+      const chips = [...document.querySelectorAll("[data-dockkit-tab]")];
+      const chip = chips.find((c) => c.innerText.trim() === "文件");
+      if (!chip) return false;
+      chip.click();
+      return true;
+    });
+    if (!switched) await sleep(600);
+  }
+  await sleep(2000);
+}
+const rowsDump = await page.evaluate(() => ({
+  tabs: [...document.querySelectorAll("[data-sidebar-right-tab] span")].map((e) => e.innerText.trim()).slice(0, 8),
+  rows: [...document.querySelectorAll("[data-files-path]")].map((e) => e.getAttribute("data-files-path")).slice(0, 15),
+  treeState: document.querySelector('[data-files-state="tree"]')?.getAttribute("data-files-state"),
+}));
+console.log("BIG ROWS DUMP:", JSON.stringify(rowsDump));
+{
+  const chipDump = await page.evaluate(() => ({
+    dockkit: [...document.querySelectorAll("[data-dockkit-tab]")].map((e) => ({ text: e.innerText.trim().slice(0, 30), tag: e.tagName, cls: String(e.className).slice(0, 50) })).slice(0, 10),
+    anyFilesText: [...document.querySelectorAll("div,button,span")].filter((e) => e.children.length === 0 && e.innerText.trim() === "工作区文件").length,
+  }));
+  console.log("CHIP DUMP:", JSON.stringify(chipDump));
+}
+let opened = false;
+for (let attempt = 0; attempt < 10 && !opened; attempt++) {
+  opened = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll("[data-files-path]")];
+    const row = rows.find((e) => e.getAttribute("data-files-path").includes("big.js"));
+    if (!row) return false;
+    const rect = row.getBoundingClientRect();
+    row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: rect.left + 60, clientY: rect.top + 10 }));
+    return true;
+  });
+  if (!opened) await sleep(800);
+}
+console.log("BIG CTX:", opened);
+await clickContaining("编辑"); await sleep(6000);
+const t0 = Date.now();
+await page.evaluate(() => {
+  const root = [...document.querySelectorAll(".dfa-editor-root")].find((r) => r.querySelector(".dfa-editor-name")?.textContent === "big.js");
+  const ta = root?.querySelector(".dfa-code-input");
+  if (!ta) return;
+  for (const pos of [100 * 20, 500 * 20, 2000 * 20, 6000 * 20, 100 * 20]) {
+    ta.scrollTop = pos;
+    ta.dispatchEvent(new Event("scroll"));
+  }
+  ta.focus();
+  // 输入一个字符
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
+  setter.call(ta, ta.value + "x");
+  ta.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "x" }));
+});
+await sleep(3000);
+const bigState = await page.evaluate(() => {
+  const root = [...document.querySelectorAll(".dfa-editor-root")].find((r) => r.querySelector(".dfa-editor-name")?.textContent === "big.js");
+  const ta = root?.querySelector(".dfa-code-input");
+  const pre = root?.querySelector(".dfa-code-highlight");
+  return {
+    scrollTop: ta?.scrollTop,
+    preChildren: pre?.children.length,
+    hasLongPlainLine: [...(pre?.children ?? [])].some((c) => c.textContent.length > 100000),
+  };
+});
+console.log("BIG FILE:", JSON.stringify({ elapsedMs: Date.now() - t0, ...bigState }, null, 2));
 await page.screenshot({ path: "/tmp/e2e-editor-scrolled.png" });
 console.log("ERRORS:", JSON.stringify(errors.slice(0, 12), null, 2));
 await browser.close();

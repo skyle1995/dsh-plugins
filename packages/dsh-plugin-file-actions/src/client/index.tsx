@@ -823,6 +823,12 @@ const EDIT_PAD_TOP = 8;
 const EDIT_PAD_LEFT = 12;
 /** 可见窗口上下各多渲染的行数下限（overscan 缓冲，滚动时减少空白与解析抖动）。 */
 const EDIT_OVERSCAN_MIN = 20;
+/** 超过该长度的行跳过 shiki 解析（渲染为纯文本）：压缩代码等超长行是卡顿主因。 */
+const LONG_LINE_MAX = 4000;
+/** wrap 模式整文件高亮的内容上限（超过降级纯文本）。 */
+const WRAP_HIGHLIGHT_MAX = 200000;
+/** 高亮层/行号栏高度上限（防病态行数撑爆布局）。 */
+const MAX_LAYER_HEIGHT = 30000000;
 
 /** 某行（0 基）的 token 序列按查找区间切分渲染。 */
 function renderLineTokens(lineTokens, lineStart, marks) {
@@ -901,11 +907,11 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 		}
 		return starts;
 	}, [highlightContent]);
-	const lineCount = (() => {
+	const lineCount = useMemo(() => {
 		let count = 1;
 		for (let i = 0; i < content.length; i++) if (content.charCodeAt(i) === 10) count += 1;
 		return count;
-	})();
+	}, [content]);
 	// 渲染时直接读 DOM 真相：不依赖测量时机（ResizeObserver/首帧竞态都免疫）。
 	const viewportH = Math.max(viewport.height, inputRef.current?.clientHeight ?? 0, 1);
 	const firstLine = Math.min(Math.floor(scroll.top / EDIT_LINE_HEIGHT), Math.max(lineCount - 1, 0));
@@ -921,14 +927,23 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 	const tokens = useMemo(() => {
 		if (highlight === undefined || highlight === null) return null;
 		if (wrap) {
+			if (highlightContent.length > WRAP_HIGHLIGHT_MAX) return null;
 			const lines = highlight(highlightContent);
 			return lines === undefined ? null : { lines };
 		}
-		const start = lineStarts[renderFirst] ?? 0;
-		const end = (lineStarts[renderLast + 1] ?? highlightContent.length + 1) - 1;
-		const slice = highlightContent.slice(start, Math.max(end, start));
+		// 窗口内超长行替换为空行参与解析（保持行数对齐），渲染时回退纯文本。
+		const sliceLines = [];
+		const longFlags = [];
+		for (let i = renderFirst; i <= renderLast; i++) {
+			const endIndex = lineStarts[i + 1] ?? highlightContent.length + 1;
+			const text = highlightContent.slice(lineStarts[i] ?? 0, endIndex - 1);
+			const long = text.length > LONG_LINE_MAX;
+			sliceLines.push(long ? "" : text);
+			longFlags.push(long);
+		}
+		const slice = sliceLines.join("\n");
 		const lines = highlight(slice);
-		return lines === undefined ? null : { lines };
+		return lines === undefined ? null : { lines: lines.map((line, index) => (longFlags[index] ? null : line)) };
 	}, [highlight, highlightContent, lineStarts, renderFirst, renderLast, wrap]);
 	// 查找命中标记（基于高亮层内容，保证与可见文本对齐）。
 	const marks = useMemo(() => {
@@ -938,7 +953,7 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 	}, [highlightContent, findText, caseSensitive, findIndex]);
 	return h("div", { className: "dfa-code-editor" }, [
 		!wrap && h("div", { className: "dfa-code-gutter", "aria-hidden": "true" }, [
-			h("div", { className: "dfa-code-gutter-canvas", style: { height: EDIT_PAD_TOP + lineCount * EDIT_LINE_HEIGHT, transform: `translateY(${-scroll.top}px)` } },
+			h("div", { className: "dfa-code-gutter-canvas", style: { height: Math.min(EDIT_PAD_TOP + lineCount * EDIT_LINE_HEIGHT, MAX_LAYER_HEIGHT), transform: `translateY(${-scroll.top}px)` } },
 				renderLines.map((i) => h("span", {
 					key: i,
 					className: "dfa-code-gutter-num",
@@ -955,7 +970,7 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 			}) : h("pre", {
 				className: "dfa-code-highlight",
 				"aria-hidden": "true",
-				style: { height: EDIT_PAD_TOP + lineStarts.length * EDIT_LINE_HEIGHT + 48, transform: `translate(${-scroll.left}px, ${-scroll.top}px)` },
+				style: { height: Math.min(EDIT_PAD_TOP + lineStarts.length * EDIT_LINE_HEIGHT + 48, MAX_LAYER_HEIGHT), transform: `translate(${-scroll.left}px, ${-scroll.top}px)` },
 				children: renderLines.map((i) => {
 					const lineTokens = tokens?.lines?.[i - renderFirst];
 					const plain = highlightContent.slice(lineStarts[i] ?? 0, (lineStarts[i + 1] ?? highlightContent.length + 1) - 1);

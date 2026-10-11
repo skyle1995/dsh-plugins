@@ -723,6 +723,9 @@ var EDIT_LINE_HEIGHT = 20;
 var EDIT_PAD_TOP = 8;
 var EDIT_PAD_LEFT = 12;
 var EDIT_OVERSCAN_MIN = 20;
+var LONG_LINE_MAX = 4e3;
+var WRAP_HIGHLIGHT_MAX = 2e5;
+var MAX_LAYER_HEIGHT = 3e7;
 function renderLineTokens(lineTokens, lineStart, marks) {
   const nodes = [];
   let index = lineStart;
@@ -783,11 +786,11 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
     }
     return starts;
   }, [highlightContent]);
-  const lineCount = (() => {
+  const lineCount = (0, import_react.useMemo)(() => {
     let count = 1;
     for (let i = 0; i < content.length; i++) if (content.charCodeAt(i) === 10) count += 1;
     return count;
-  })();
+  }, [content]);
   const viewportH = Math.max(viewport.height, inputRef.current?.clientHeight ?? 0, 1);
   const firstLine = Math.min(Math.floor(scroll.top / EDIT_LINE_HEIGHT), Math.max(lineCount - 1, 0));
   const lastLine = Math.min(lineCount - 1, firstLine + Math.ceil(viewportH / EDIT_LINE_HEIGHT) + 1);
@@ -799,14 +802,22 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
   const tokens = (0, import_react.useMemo)(() => {
     if (highlight === void 0 || highlight === null) return null;
     if (wrap) {
+      if (highlightContent.length > WRAP_HIGHLIGHT_MAX) return null;
       const lines2 = highlight(highlightContent);
       return lines2 === void 0 ? null : { lines: lines2 };
     }
-    const start = lineStarts[renderFirst] ?? 0;
-    const end = (lineStarts[renderLast + 1] ?? highlightContent.length + 1) - 1;
-    const slice = highlightContent.slice(start, Math.max(end, start));
+    const sliceLines = [];
+    const longFlags = [];
+    for (let i = renderFirst; i <= renderLast; i++) {
+      const endIndex = lineStarts[i + 1] ?? highlightContent.length + 1;
+      const text = highlightContent.slice(lineStarts[i] ?? 0, endIndex - 1);
+      const long = text.length > LONG_LINE_MAX;
+      sliceLines.push(long ? "" : text);
+      longFlags.push(long);
+    }
+    const slice = sliceLines.join("\n");
     const lines = highlight(slice);
-    return lines === void 0 ? null : { lines };
+    return lines === void 0 ? null : { lines: lines.map((line, index) => longFlags[index] ? null : line) };
   }, [highlight, highlightContent, lineStarts, renderFirst, renderLast, wrap]);
   const marks = (0, import_react.useMemo)(() => {
     const matches = findMatchesIn(highlightContent, findText, caseSensitive);
@@ -817,7 +828,7 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
     !wrap && (0, import_react.createElement)("div", { className: "dfa-code-gutter", "aria-hidden": "true" }, [
       (0, import_react.createElement)(
         "div",
-        { className: "dfa-code-gutter-canvas", style: { height: EDIT_PAD_TOP + lineCount * EDIT_LINE_HEIGHT, transform: `translateY(${-scroll.top}px)` } },
+        { className: "dfa-code-gutter-canvas", style: { height: Math.min(EDIT_PAD_TOP + lineCount * EDIT_LINE_HEIGHT, MAX_LAYER_HEIGHT), transform: `translateY(${-scroll.top}px)` } },
         renderLines.map((i) => (0, import_react.createElement)("span", {
           key: i,
           className: "dfa-code-gutter-num",
@@ -835,7 +846,7 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
       }) : (0, import_react.createElement)("pre", {
         className: "dfa-code-highlight",
         "aria-hidden": "true",
-        style: { height: EDIT_PAD_TOP + lineStarts.length * EDIT_LINE_HEIGHT + 48, transform: `translate(${-scroll.left}px, ${-scroll.top}px)` },
+        style: { height: Math.min(EDIT_PAD_TOP + lineStarts.length * EDIT_LINE_HEIGHT + 48, MAX_LAYER_HEIGHT), transform: `translate(${-scroll.left}px, ${-scroll.top}px)` },
         children: renderLines.map((i) => {
           const lineTokens = tokens?.lines?.[i - renderFirst];
           const plain = highlightContent.slice(lineStarts[i] ?? 0, (lineStarts[i + 1] ?? highlightContent.length + 1) - 1);
