@@ -858,7 +858,7 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
     (0, import_react.createElement)("div", { className: "dfa-code-gutter", "aria-hidden": "true" }, [
       (0, import_react.createElement)(
         "div",
-        { className: "dfa-code-gutter-canvas", style: { height: EDIT_PAD_TOP + lineCount * EDIT_LINE_HEIGHT } },
+        { className: "dfa-code-gutter-canvas", style: { height: EDIT_PAD_TOP + lineCount * EDIT_LINE_HEIGHT, transform: `translateY(${-scroll.top}px)` } },
         renderLines.map((i) => (0, import_react.createElement)("span", {
           key: i,
           className: "dfa-code-gutter-num",
@@ -871,7 +871,7 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
       (0, import_react.createElement)("pre", {
         className: "dfa-code-highlight",
         "aria-hidden": "true",
-        style: { height: EDIT_PAD_TOP + lineStarts.length * EDIT_LINE_HEIGHT + 48, transform: `translateX(${-scroll.left}px)` },
+        style: { height: EDIT_PAD_TOP + lineStarts.length * EDIT_LINE_HEIGHT + 48, transform: `translate(${-scroll.left}px, ${-scroll.top}px)` },
         children: renderLines.map((i) => {
           const lineTokens = tokens?.lines?.[i - renderFirst];
           const plain = highlightContent.slice(lineStarts[i] ?? 0, (lineStarts[i + 1] ?? highlightContent.length + 1) - 1);

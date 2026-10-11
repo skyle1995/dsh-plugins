@@ -84,12 +84,42 @@ await sleep(800);
 const scrolled = await page.evaluate(() => {
   const ta = document.querySelector(".dfa-code-input");
   const pre = document.querySelector(".dfa-code-highlight");
+  const viewport = document.querySelector(".dfa-code-viewport");
   const spans = [...pre.children];
+  const vr = viewport.getBoundingClientRect();
+  // 可见性验证：渲染窗口里必须有行与视口可见区相交（视觉层）
+  const visible = spans.filter((span) => {
+    const r = span.getBoundingClientRect();
+    return r.bottom > vr.top && r.top < vr.bottom;
+  });
+  // 行号可见性
+  const nums = [...document.querySelectorAll(".dfa-code-gutter-num")].filter((n) => {
+    const r = n.getBoundingClientRect();
+    return r.bottom > vr.top && r.top < vr.bottom;
+  });
+  // minimap 像素验证
+  const canvas = document.querySelector(".dfa-code-minimap-canvas");
+  let painted = 0;
+  if (canvas) {
+    const ctx = canvas.getContext("2d");
+    const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    for (let i = 3; i < data.length; i += 4) if (data[i] !== 0) painted++;
+  }
+  // 对齐验证：滚动后可见行的视口位置 = 视口顶 + top - scrollTop
+  const firstVisible = visible[0];
+  let alignError = null;
+  if (firstVisible) {
+    const expected = vr.top + Number(firstVisible.style.top.replace("px", "")) - ta.scrollTop;
+    alignError = Math.abs(firstVisible.getBoundingClientRect().top - expected);
+  }
   return {
     scrollTop: ta.scrollTop,
     spanCount: spans.length,
-    firstTop: spans[0]?.style.top,
-    firstText: spans[0]?.textContent.slice(0, 50),
+    visibleSpanCount: visible.length,
+    visibleNumCount: nums.length,
+    firstVisibleText: visible[0]?.textContent.slice(0, 50),
+    alignErrorPx: alignError,
+    minimapPaintedPixels: painted,
     indicatorTop: document.querySelector(".dfa-code-minimap-indicator")?.style.top,
   };
 });
