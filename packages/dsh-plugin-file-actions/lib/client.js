@@ -93,6 +93,7 @@ var zh = {
   "edit.menuReplace": "\u66FF\u6362",
   "edit.menuGoto": "\u8DF3\u8F6C\u5230\u884C",
   "edit.pasteFailed": "\u7C98\u8D34\u5931\u8D25\uFF1A\u65E0\u6CD5\u8BFB\u53D6\u526A\u8D34\u677F",
+  "edit.wrap": "\u81EA\u52A8\u6362\u884C",
   "toast.cut": "\u5DF2\u526A\u5207 {count} \u9879\uFF0C\u53F3\u952E\u76EE\u5F55\u6216\u4F7F\u7528\u9876\u90E8\u300C\u7C98\u8D34\u300D\u6309\u94AE\u7C98\u8D34",
   "toast.copied": "\u5DF2\u590D\u5236 {count} \u9879\uFF0C\u53F3\u952E\u76EE\u5F55\u6216\u4F7F\u7528\u9876\u90E8\u300C\u7C98\u8D34\u300D\u6309\u94AE\u7C98\u8D34",
   "toast.pasted": "\u5DF2\u7C98\u8D34 {count} \u9879",
@@ -161,6 +162,7 @@ var en = {
   "edit.menuReplace": "Replace",
   "edit.menuGoto": "Go to line",
   "edit.pasteFailed": "Paste failed: cannot read the clipboard",
+  "edit.wrap": "Wrap",
   "toast.cut": "Cut {count} items \u2014 right-click a directory or use the Paste button to paste",
   "toast.copied": "Copied {count} items \u2014 right-click a directory or use the Paste button to paste",
   "toast.pasted": "Pasted {count} items",
@@ -699,6 +701,24 @@ function markedToken(text, offset, marks, style) {
   if (cursor < text.length) out.push(styledText(text.slice(cursor), style));
   return out;
 }
+function tokenNodes(tokens, content, marks = []) {
+  const lines = tokens ?? content.split("\n").map((line) => [{ text: line, style: null }]);
+  const nodes = [];
+  let index = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? [];
+    for (let j = 0; j < line.length; j++) {
+      const token = line[j];
+      nodes.push(...markedToken(token.text, index, marks, token.style));
+      index += token.text.length;
+    }
+    if (i < lines.length - 1) {
+      nodes.push("\n");
+      index += 1;
+    }
+  }
+  return nodes;
+}
 var EDIT_LINE_HEIGHT = 20;
 var EDIT_PAD_TOP = 8;
 var EDIT_PAD_LEFT = 12;
@@ -712,7 +732,7 @@ function renderLineTokens(lineTokens, lineStart, marks) {
   }
   return nodes;
 }
-function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onOpenReplace, onOpenGoto, findText, caseSensitive, findIndex, inputRef, onContextMenu }) {
+function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onOpenReplace, onOpenGoto, findText, caseSensitive, findIndex, inputRef, onContextMenu, wrap }) {
   const highlight = (0, import_dsh_client_ui_primitives.useCodeHighlighter)(language);
   const [scroll, setScroll] = (0, import_react.useState)({ left: 0, top: 0 });
   const [viewport, setViewport] = (0, import_react.useState)({ width: 0, height: 0 });
@@ -778,19 +798,23 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
   for (let i = renderFirst; i <= renderLast; i++) renderLines.push(i);
   const tokens = (0, import_react.useMemo)(() => {
     if (highlight === void 0 || highlight === null) return null;
+    if (wrap) {
+      const lines2 = highlight(highlightContent);
+      return lines2 === void 0 ? null : { lines: lines2 };
+    }
     const start = lineStarts[renderFirst] ?? 0;
     const end = (lineStarts[renderLast + 1] ?? highlightContent.length + 1) - 1;
     const slice = highlightContent.slice(start, Math.max(end, start));
     const lines = highlight(slice);
     return lines === void 0 ? null : { lines };
-  }, [highlight, highlightContent, lineStarts, renderFirst, renderLast]);
+  }, [highlight, highlightContent, lineStarts, renderFirst, renderLast, wrap]);
   const marks = (0, import_react.useMemo)(() => {
     const matches = findMatchesIn(highlightContent, findText, caseSensitive);
     const current = Math.min(Math.max(findIndex, 0), matches.length - 1);
     return matches.map((match, i) => ({ ...match, current: i === current }));
   }, [highlightContent, findText, caseSensitive, findIndex]);
   return (0, import_react.createElement)("div", { className: "dfa-code-editor" }, [
-    (0, import_react.createElement)("div", { className: "dfa-code-gutter", "aria-hidden": "true" }, [
+    !wrap && (0, import_react.createElement)("div", { className: "dfa-code-gutter", "aria-hidden": "true" }, [
       (0, import_react.createElement)(
         "div",
         { className: "dfa-code-gutter-canvas", style: { height: EDIT_PAD_TOP + lineCount * EDIT_LINE_HEIGHT, transform: `translateY(${-scroll.top}px)` } },
@@ -803,7 +827,12 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
       )
     ]),
     (0, import_react.createElement)("div", { className: "dfa-code-viewport" }, [
-      (0, import_react.createElement)("pre", {
+      wrap ? (0, import_react.createElement)("pre", {
+        className: "dfa-code-highlight dfa-code-wrap",
+        "aria-hidden": "true",
+        style: { transform: `translate(${-scroll.left}px, ${-scroll.top}px)` },
+        children: tokenNodes(tokens?.lines ?? null, highlightContent, marks)
+      }) : (0, import_react.createElement)("pre", {
         className: "dfa-code-highlight",
         "aria-hidden": "true",
         style: { height: EDIT_PAD_TOP + lineStarts.length * EDIT_LINE_HEIGHT + 48, transform: `translate(${-scroll.left}px, ${-scroll.top}px)` },
@@ -821,10 +850,10 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
       }),
       (0, import_react.createElement)("textarea", {
         ref: inputRef,
-        className: "dfa-code-input",
+        className: wrap ? "dfa-code-input dfa-code-input-wrap" : "dfa-code-input",
         value: content,
         spellCheck: false,
-        wrap: "off",
+        wrap: wrap ? "soft" : "off",
         onChange: (event) => onContent(event.currentTarget.value),
         onContextMenu,
         onKeyDown: (event) => {
@@ -867,6 +896,7 @@ function EditorTab(props) {
   const [error, setError] = (0, import_react.useState)(null);
   const [saving, setSaving] = (0, import_react.useState)(false);
   const [confirmingReload, setConfirmingReload] = (0, import_react.useState)(false);
+  const [wrap, setWrap] = (0, import_react.useState)(false);
   const [bar, setBar] = (0, import_react.useState)(null);
   const [findText, setFindText] = (0, import_react.useState)("");
   const [replaceText, setReplaceText] = (0, import_react.useState)("");
@@ -1014,6 +1044,14 @@ function EditorTab(props) {
         editorButton(translate("edit.confirm"), load),
         editorButton(translate("edit.revert"), () => setConfirmingReload(false))
       ] }) : (0, import_react.createElement)(import_react.Fragment, { children: [
+        (0, import_react.createElement)("button", {
+          type: "button",
+          className: wrap ? "dfa-editor-btn dfa-editor-btn-active" : "dfa-editor-btn",
+          "aria-pressed": wrap,
+          title: translate("edit.wrap"),
+          onClick: () => setWrap((value) => !value),
+          children: translate("edit.wrap")
+        }),
         editorButton(translate("edit.reload"), () => {
           if (dirty) setConfirmingReload(true);
           else load();
@@ -1103,6 +1141,7 @@ function EditorTab(props) {
     ]) : (0, import_react.createElement)(HighlightEditor, {
       content,
       language,
+      wrap,
       onContent: setContent,
       onSave: save,
       onOpenFind: openFind,
@@ -1386,6 +1425,11 @@ var CSS = `
 	color: var(--dsw-alias-label-caption);
 	cursor: default;
 }
+.dfa-editor-btn-active,
+.dfa-editor-btn-active:hover {
+	color: var(--dsw-alias-label-primary);
+	background: var(--dsw-alias-interactive-bg-hover);
+}
 .dfa-editor-btn svg {
 	width: 14px;
 	height: 14px;
@@ -1547,6 +1591,20 @@ var CSS = `
 .dfa-code-input::-webkit-scrollbar-thumb:hover {
 	background: var(--dsw-alias-label-secondary, #8899aa);
 	background-clip: padding-box;
+}
+.dfa-code-input-wrap {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	word-break: break-word;
+}
+.dfa-code-wrap {
+	box-sizing: border-box;
+	width: calc(100% - 14px);
+	min-width: calc(100% - 14px);
+	padding: 8px 12px 48px;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	word-break: break-word;
 }
 .dfa-code-input {
 	scrollbar-width: auto;

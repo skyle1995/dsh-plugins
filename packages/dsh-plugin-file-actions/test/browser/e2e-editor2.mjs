@@ -127,6 +127,19 @@ const persisted = await page.evaluate(() => {
   };
 });
 console.log("TAB SWITCH PERSIST:", JSON.stringify(persisted, null, 2));
+// 自动换行开关：点击「自动换行」→ wrap=soft、行号隐藏、换行层生效
+await clickContaining("自动换行"); await sleep(1200);
+const wrapState = await page.evaluate(() => {
+  const ta = document.querySelector(".dfa-code-input");
+  const wrapPre = document.querySelector(".dfa-code-wrap");
+  return {
+    wrapAttr: ta?.getAttribute("wrap"),
+    hasWrapLayer: !!wrapPre,
+    gutterHidden: document.querySelectorAll(".dfa-code-gutter").length === 0,
+    wrapPreStyle: wrapPre ? { whiteSpace: getComputedStyle(wrapPre).whiteSpace, width: getComputedStyle(wrapPre).width } : null,
+  };
+});
+console.log("WRAP TOGGLE:", JSON.stringify(wrapState, null, 2));
 await page.screenshot({ path: "/tmp/e2e-editor-scrolled.png" });
 console.log("ERRORS:", JSON.stringify(errors.slice(0, 12), null, 2));
 await browser.close();

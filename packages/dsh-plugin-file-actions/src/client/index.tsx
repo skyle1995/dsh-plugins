@@ -103,6 +103,7 @@ const zh = {
 	"edit.menuReplace": "替换",
 	"edit.menuGoto": "跳转到行",
 	"edit.pasteFailed": "粘贴失败：无法读取剪贴板",
+	"edit.wrap": "自动换行",
 	"toast.cut": "已剪切 {count} 项，右键目录或使用顶部「粘贴」按钮粘贴",
 	"toast.copied": "已复制 {count} 项，右键目录或使用顶部「粘贴」按钮粘贴",
 	"toast.pasted": "已粘贴 {count} 项",
@@ -172,6 +173,7 @@ const en = {
 	"edit.menuReplace": "Replace",
 	"edit.menuGoto": "Go to line",
 	"edit.pasteFailed": "Paste failed: cannot read the clipboard",
+	"edit.wrap": "Wrap",
 	"toast.cut": "Cut {count} items — right-click a directory or use the Paste button to paste",
 	"toast.copied": "Copied {count} items — right-click a directory or use the Paste button to paste",
 	"toast.pasted": "Pasted {count} items",
@@ -835,7 +837,7 @@ function renderLineTokens(lineTokens, lineStart, marks) {
 
 /** 编辑态实时高亮：透明文字 textarea 叠在 shiki（DSH 自带）高亮层上，滚动/排版完全同步。
  *  行号/高亮层只渲染可见窗口，shiki 也只解析可见窗口（大文件同样有高亮且不卡）。 */
-function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onOpenReplace, onOpenGoto, findText, caseSensitive, findIndex, inputRef, onContextMenu }) {
+function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onOpenReplace, onOpenGoto, findText, caseSensitive, findIndex, inputRef, onContextMenu, wrap }) {
 	const highlight = useCodeHighlighter(language);
 	const [scroll, setScroll] = useState({ left: 0, top: 0 });
 	const [viewport, setViewport] = useState({ width: 0, height: 0 });
@@ -918,12 +920,16 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 	// 只解析渲染窗口（可见区 + 上下缓冲）：大文件高亮成本与文件大小无关。
 	const tokens = useMemo(() => {
 		if (highlight === undefined || highlight === null) return null;
+		if (wrap) {
+			const lines = highlight(highlightContent);
+			return lines === undefined ? null : { lines };
+		}
 		const start = lineStarts[renderFirst] ?? 0;
 		const end = (lineStarts[renderLast + 1] ?? highlightContent.length + 1) - 1;
 		const slice = highlightContent.slice(start, Math.max(end, start));
 		const lines = highlight(slice);
 		return lines === undefined ? null : { lines };
-	}, [highlight, highlightContent, lineStarts, renderFirst, renderLast]);
+	}, [highlight, highlightContent, lineStarts, renderFirst, renderLast, wrap]);
 	// 查找命中标记（基于高亮层内容，保证与可见文本对齐）。
 	const marks = useMemo(() => {
 		const matches = findMatchesIn(highlightContent, findText, caseSensitive);
@@ -931,7 +937,7 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 		return matches.map((match, i) => ({ ...match, current: i === current }));
 	}, [highlightContent, findText, caseSensitive, findIndex]);
 	return h("div", { className: "dfa-code-editor" }, [
-		h("div", { className: "dfa-code-gutter", "aria-hidden": "true" }, [
+		!wrap && h("div", { className: "dfa-code-gutter", "aria-hidden": "true" }, [
 			h("div", { className: "dfa-code-gutter-canvas", style: { height: EDIT_PAD_TOP + lineCount * EDIT_LINE_HEIGHT, transform: `translateY(${-scroll.top}px)` } },
 				renderLines.map((i) => h("span", {
 					key: i,
@@ -941,7 +947,12 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 				}))),
 		]),
 		h("div", { className: "dfa-code-viewport" }, [
-			h("pre", {
+			wrap ? h("pre", {
+				className: "dfa-code-highlight dfa-code-wrap",
+				"aria-hidden": "true",
+				style: { transform: `translate(${-scroll.left}px, ${-scroll.top}px)` },
+				children: tokenNodes(tokens?.lines ?? null, highlightContent, marks),
+			}) : h("pre", {
 				className: "dfa-code-highlight",
 				"aria-hidden": "true",
 				style: { height: EDIT_PAD_TOP + lineStarts.length * EDIT_LINE_HEIGHT + 48, transform: `translate(${-scroll.left}px, ${-scroll.top}px)` },
@@ -961,10 +972,10 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 			}),
 h("textarea", {
 				ref: inputRef,
-				className: "dfa-code-input",
+				className: wrap ? "dfa-code-input dfa-code-input-wrap" : "dfa-code-input",
 				value: content,
 				spellCheck: false,
-				wrap: "off",
+				wrap: wrap ? "soft" : "off",
 				onChange: (event) => onContent(event.currentTarget.value),
 				onContextMenu,
 				onKeyDown: (event) => {
@@ -1009,6 +1020,7 @@ function EditorTab(props) {
 	const [error, setError] = useState(null);
 	const [saving, setSaving] = useState(false);
 	const [confirmingReload, setConfirmingReload] = useState(false);
+	const [wrap, setWrap] = useState(false);
 	const [bar, setBar] = useState(null); // null | "find" | "replace" | "goto"
 	const [findText, setFindText] = useState("");
 	const [replaceText, setReplaceText] = useState("");
@@ -1161,6 +1173,14 @@ function EditorTab(props) {
 				editorButton(translate("edit.confirm"), load),
 				editorButton(translate("edit.revert"), () => setConfirmingReload(false)),
 			] }) : h(Fragment, { children: [
+				h("button", {
+					type: "button",
+					className: wrap ? "dfa-editor-btn dfa-editor-btn-active" : "dfa-editor-btn",
+					"aria-pressed": wrap,
+					title: translate("edit.wrap"),
+					onClick: () => setWrap((value) => !value),
+					children: translate("edit.wrap"),
+				}),
 				editorButton(translate("edit.reload"), () => {
 					if (dirty) setConfirmingReload(true);
 					else load();
@@ -1249,6 +1269,7 @@ function EditorTab(props) {
 			: h(HighlightEditor, {
 				content,
 				language,
+				wrap,
 				onContent: setContent,
 				onSave: save,
 				onOpenFind: openFind,
@@ -1539,6 +1560,11 @@ const CSS = `
 	color: var(--dsw-alias-label-caption);
 	cursor: default;
 }
+.dfa-editor-btn-active,
+.dfa-editor-btn-active:hover {
+	color: var(--dsw-alias-label-primary);
+	background: var(--dsw-alias-interactive-bg-hover);
+}
 .dfa-editor-btn svg {
 	width: 14px;
 	height: 14px;
@@ -1700,6 +1726,20 @@ const CSS = `
 .dfa-code-input::-webkit-scrollbar-thumb:hover {
 	background: var(--dsw-alias-label-secondary, #8899aa);
 	background-clip: padding-box;
+}
+.dfa-code-input-wrap {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	word-break: break-word;
+}
+.dfa-code-wrap {
+	box-sizing: border-box;
+	width: calc(100% - 14px);
+	min-width: calc(100% - 14px);
+	padding: 8px 12px 48px;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	word-break: break-word;
 }
 .dfa-code-input {
 	scrollbar-width: auto;
