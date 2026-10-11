@@ -702,7 +702,6 @@ function markedToken(text, offset, marks, style) {
 var EDIT_LINE_HEIGHT = 20;
 var EDIT_PAD_TOP = 8;
 var EDIT_PAD_LEFT = 12;
-var MINIMAP_WIDTH = 80;
 var EDIT_OVERSCAN_MIN = 20;
 function renderLineTokens(lineTokens, lineStart, marks) {
   const nodes = [];
@@ -832,27 +831,20 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
     }
   }, [tokens, renderFirst, renderLast, highlightContent, lineStarts]);
   const lineColors = colorCacheRef.current.colors;
-  (0, import_react.useEffect)(() => {
-    const canvas = minimapRef.current;
-    if (canvas === null || viewportH <= 0) return;
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.max(1, Math.round(MINIMAP_WIDTH * dpr));
-    canvas.height = Math.max(1, Math.round(viewportH * dpr));
-    const draw = canvas.getContext("2d");
-    if (draw === null) return;
-    draw.scale(dpr, dpr);
-    draw.clearRect(0, 0, MINIMAP_WIDTH, viewportH);
+  const minimapRows = (0, import_react.useMemo)(() => {
     const count = Math.max(lineStarts.length, 1);
-    const perLine = Math.min(viewportH / count, 4);
-    const fallback = (() => {
-      const value = getComputedStyle(document.documentElement).getPropertyValue("--dsw-alias-label-secondary").trim();
-      return value === "" ? "#7a8699" : value;
-    })();
-    for (let i = 0; i < count; i++) {
-      const color = lineColors[i];
-      draw.fillStyle = color !== void 0 && color !== "" ? color : fallback;
-      draw.fillRect(0, Math.floor(i * perLine), MINIMAP_WIDTH, Math.max(1, Math.ceil(perLine)));
+    const blocks = Math.min(count, 3e3);
+    const rows = [];
+    for (let b = 0; b < blocks; b++) {
+      const lineIndex = Math.min(Math.floor(b * count / blocks), count - 1);
+      rows.push({
+        key: b,
+        top: Math.floor(b * viewportH / blocks),
+        height: Math.max(1, Math.ceil(viewportH / blocks)),
+        color: lineColors[lineIndex] ?? ""
+      });
     }
+    return rows;
   }, [lineStarts.length, viewportH, colorVersion]);
   return (0, import_react.createElement)("div", { className: "dfa-code-editor" }, [
     (0, import_react.createElement)("div", { className: "dfa-code-gutter", "aria-hidden": "true" }, [
@@ -903,7 +895,15 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
           draggingRef.current = false;
         }
       }, [
-        (0, import_react.createElement)("canvas", { ref: minimapRef, className: "dfa-code-minimap-canvas" }),
+        (0, import_react.createElement)(
+          "div",
+          { className: "dfa-code-minimap-rows", "aria-hidden": "true" },
+          minimapRows.map((row) => (0, import_react.createElement)("div", {
+            key: row.key,
+            className: "dfa-code-minimap-row",
+            style: { top: row.top, height: row.height, ...row.color === "" ? {} : { background: row.color } }
+          }))
+        ),
         (0, import_react.createElement)("div", { className: "dfa-code-minimap-indicator", style: { top: indicatorTop, height: indicatorHeight } })
       ]),
       (0, import_react.createElement)("textarea", {
@@ -1640,13 +1640,17 @@ var CSS = `
 	cursor: pointer;
 	user-select: none;
 }
-.dfa-code-minimap-canvas {
+.dfa-code-minimap-rows {
 	position: absolute;
-	top: 0;
-	left: 0;
-	width: 80px;
-	height: 100%;
+	inset: 0;
+	overflow: hidden;
 	pointer-events: none;
+}
+.dfa-code-minimap-row {
+	position: absolute;
+	left: 0;
+	right: 0;
+	background: var(--dsw-alias-label-secondary, #7a8699);
 }
 .dfa-code-minimap-indicator {
 	position: absolute;

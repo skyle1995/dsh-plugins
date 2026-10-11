@@ -974,27 +974,23 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 		}
 	}, [tokens, renderFirst, renderLast, highlightContent, lineStarts]);
 	const lineColors = colorCacheRef.current.colors;
-	useEffect(() => {
-		const canvas = minimapRef.current;
-		if (canvas === null || viewportH <= 0) return;
-		const dpr = window.devicePixelRatio || 1;
-		canvas.width = Math.max(1, Math.round(MINIMAP_WIDTH * dpr));
-		canvas.height = Math.max(1, Math.round(viewportH * dpr));
-		const draw = canvas.getContext("2d");
-		if (draw === null) return;
-		draw.scale(dpr, dpr);
-		draw.clearRect(0, 0, MINIMAP_WIDTH, viewportH);
+	// 纯 DOM 行块预览（无 canvas，跨环境确定性渲染）：每行一个色块，
+	// 超长文件合并采样（最多 3000 块），颜色随窗口解析逐屏填充。
+	const minimapRows = useMemo(() => {
 		const count = Math.max(lineStarts.length, 1);
-		const perLine = Math.min(viewportH / count, 4);
-		const fallback = (() => {
-			const value = getComputedStyle(document.documentElement).getPropertyValue("--dsw-alias-label-secondary").trim();
-			return value === "" ? "#7a8699" : value;
-		})();
-		for (let i = 0; i < count; i++) {
-			const color = lineColors[i];
-			draw.fillStyle = color !== undefined && color !== "" ? color : fallback;
-			draw.fillRect(0, Math.floor(i * perLine), MINIMAP_WIDTH, Math.max(1, Math.ceil(perLine)));
+		const blocks = Math.min(count, 3000);
+		const rows = [];
+		for (let b = 0; b < blocks; b++) {
+			const lineIndex = Math.min(Math.floor((b * count) / blocks), count - 1);
+			rows.push({
+				key: b,
+				top: Math.floor((b * viewportH) / blocks),
+				height: Math.max(1, Math.ceil(viewportH / blocks)),
+				color: lineColors[lineIndex] ?? "",
+			});
 		}
+		return rows;
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [lineStarts.length, viewportH, colorVersion]);
 	return h("div", { className: "dfa-code-editor" }, [
 		h("div", { className: "dfa-code-gutter", "aria-hidden": "true" }, [
@@ -1044,7 +1040,12 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 					draggingRef.current = false;
 				},
 			}, [
-				h("canvas", { ref: minimapRef, className: "dfa-code-minimap-canvas" }),
+				h("div", { className: "dfa-code-minimap-rows", "aria-hidden": "true" },
+					minimapRows.map((row) => h("div", {
+						key: row.key,
+						className: "dfa-code-minimap-row",
+						style: { top: row.top, height: row.height, ...(row.color === "" ? {} : { background: row.color }) },
+					}))),
 				h("div", { className: "dfa-code-minimap-indicator", style: { top: indicatorTop, height: indicatorHeight } }),
 			]),
 			h("textarea", {
@@ -1794,13 +1795,17 @@ const CSS = `
 	cursor: pointer;
 	user-select: none;
 }
-.dfa-code-minimap-canvas {
+.dfa-code-minimap-rows {
 	position: absolute;
-	top: 0;
-	left: 0;
-	width: 80px;
-	height: 100%;
+	inset: 0;
+	overflow: hidden;
 	pointer-events: none;
+}
+.dfa-code-minimap-row {
+	position: absolute;
+	left: 0;
+	right: 0;
+	background: var(--dsw-alias-label-secondary, #7a8699);
 }
 .dfa-code-minimap-indicator {
 	position: absolute;

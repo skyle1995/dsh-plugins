@@ -97,14 +97,13 @@ const scrolled = await page.evaluate(() => {
     const r = n.getBoundingClientRect();
     return r.bottom > vr.top && r.top < vr.bottom;
   });
-  // minimap 像素验证
-  const canvas = document.querySelector(".dfa-code-minimap-canvas");
-  let painted = 0;
-  if (canvas) {
-    const ctx = canvas.getContext("2d");
-    const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    for (let i = 3; i < data.length; i += 4) if (data[i] !== 0) painted++;
-  }
+  // minimap 行块验证（DOM 渲染，无 canvas）
+  const rows = [...document.querySelectorAll(".dfa-code-minimap-row")];
+  const coloredRows = rows.filter((row) => {
+    const bg = getComputedStyle(row).backgroundColor;
+    return bg !== "" && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent";
+  }).length;
+  const rowRects = rows.slice(0, 3).map((row) => row.getBoundingClientRect().toJSON());
   // 对齐验证：滚动后可见行的视口位置 = 视口顶 + top - scrollTop
   const firstVisible = visible[0];
   let alignError = null;
@@ -119,7 +118,9 @@ const scrolled = await page.evaluate(() => {
     visibleNumCount: nums.length,
     firstVisibleText: visible[0]?.textContent.slice(0, 50),
     alignErrorPx: alignError,
-    minimapPaintedPixels: painted,
+    minimapRows: rows.length,
+    minimapColoredRows: coloredRows,
+    minimapRowSample: rowRects,
     indicatorTop: document.querySelector(".dfa-code-minimap-indicator")?.style.top,
   };
 });
