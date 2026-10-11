@@ -703,6 +703,7 @@ var EDIT_LINE_HEIGHT = 20;
 var EDIT_PAD_TOP = 8;
 var EDIT_PAD_LEFT = 12;
 var MINIMAP_WIDTH = 80;
+var EDIT_OVERSCAN_MIN = 20;
 function renderLineTokens(lineTokens, lineStart, marks) {
   const nodes = [];
   let index = lineStart;
@@ -785,16 +786,19 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
   };
   const firstLine = Math.min(Math.floor(scroll.top / EDIT_LINE_HEIGHT), Math.max(lineCount - 1, 0));
   const lastLine = Math.min(lineCount - 1, firstLine + Math.ceil(viewportH / EDIT_LINE_HEIGHT) + 1);
-  const visibleLines = [];
-  for (let i = firstLine; i <= lastLine; i++) visibleLines.push(i);
+  const overscan = Math.max(EDIT_OVERSCAN_MIN, Math.ceil(viewportH / EDIT_LINE_HEIGHT / 2));
+  const renderFirst = Math.max(0, firstLine - overscan);
+  const renderLast = Math.min(lineCount - 1, lastLine + overscan);
+  const renderLines = [];
+  for (let i = renderFirst; i <= renderLast; i++) renderLines.push(i);
   const tokens = (0, import_react.useMemo)(() => {
     if (highlight === void 0 || highlight === null) return null;
-    const start = lineStarts[firstLine] ?? 0;
-    const end = (lineStarts[lastLine + 1] ?? highlightContent.length + 1) - 1;
+    const start = lineStarts[renderFirst] ?? 0;
+    const end = (lineStarts[renderLast + 1] ?? highlightContent.length + 1) - 1;
     const slice = highlightContent.slice(start, Math.max(end, start));
     const lines = highlight(slice);
     return lines === void 0 ? null : { lines };
-  }, [highlight, highlightContent, lineStarts, firstLine, lastLine]);
+  }, [highlight, highlightContent, lineStarts, renderFirst, renderLast]);
   const marks = (0, import_react.useMemo)(() => {
     const matches = findMatchesIn(highlightContent, findText, caseSensitive);
     const current = Math.min(Math.max(findIndex, 0), matches.length - 1);
@@ -808,8 +812,8 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
     }
     if (tokens !== null) {
       let changed = false;
-      for (let vi = firstLine; vi <= lastLine && vi < lineStarts.length; vi++) {
-        const line = tokens.lines[vi - firstLine];
+      for (let vi = renderFirst; vi <= renderLast && vi < lineStarts.length; vi++) {
+        const line = tokens.lines[vi - renderFirst];
         if (line !== void 0 && line !== null) {
           let color = "";
           for (const token of line) {
@@ -826,7 +830,7 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
       }
       if (changed) setColorVersion((version) => version + 1);
     }
-  }, [tokens, firstLine, lastLine, highlightContent, lineStarts]);
+  }, [tokens, renderFirst, renderLast, highlightContent, lineStarts]);
   const lineColors = colorCacheRef.current.colors;
   (0, import_react.useEffect)(() => {
     const canvas = minimapRef.current;
@@ -855,7 +859,7 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
       (0, import_react.createElement)(
         "div",
         { className: "dfa-code-gutter-canvas", style: { height: EDIT_PAD_TOP + lineCount * EDIT_LINE_HEIGHT } },
-        visibleLines.map((i) => (0, import_react.createElement)("span", {
+        renderLines.map((i) => (0, import_react.createElement)("span", {
           key: i,
           className: "dfa-code-gutter-num",
           style: { top: EDIT_PAD_TOP + i * EDIT_LINE_HEIGHT },
@@ -868,8 +872,8 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
         className: "dfa-code-highlight",
         "aria-hidden": "true",
         style: { height: EDIT_PAD_TOP + lineStarts.length * EDIT_LINE_HEIGHT + 48, transform: `translateX(${-scroll.left}px)` },
-        children: visibleLines.map((i) => {
-          const lineTokens = tokens?.lines?.[i - firstLine];
+        children: renderLines.map((i) => {
+          const lineTokens = tokens?.lines?.[i - renderFirst];
           const plain = highlightContent.slice(lineStarts[i] ?? 0, (lineStarts[i + 1] ?? highlightContent.length + 1) - 1);
           const line = lineTokens !== void 0 && lineTokens !== null ? renderLineTokens(lineTokens, lineStarts[i] ?? 0, marks) : renderLineTokens([{ text: plain, style: null }], lineStarts[i] ?? 0, marks);
           return (0, import_react.createElement)("span", {

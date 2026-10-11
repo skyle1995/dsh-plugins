@@ -821,6 +821,8 @@ const EDIT_PAD_TOP = 8;
 const EDIT_PAD_LEFT = 12;
 /** 右侧代码缩略预览（minimap）宽度。 */
 const MINIMAP_WIDTH = 80;
+/** 可见窗口上下各多渲染的行数下限（overscan 缓冲，滚动时减少空白与解析抖动）。 */
+const EDIT_OVERSCAN_MIN = 20;
 
 /** 某行（0 基）的 token 序列按查找区间切分渲染。 */
 function renderLineTokens(lineTokens, lineStart, marks) {
@@ -921,17 +923,22 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 	};
 	const firstLine = Math.min(Math.floor(scroll.top / EDIT_LINE_HEIGHT), Math.max(lineCount - 1, 0));
 	const lastLine = Math.min(lineCount - 1, firstLine + Math.ceil(viewportH / EDIT_LINE_HEIGHT) + 1);
-	const visibleLines = [];
-	for (let i = firstLine; i <= lastLine; i++) visibleLines.push(i);
-	// 只解析可见窗口（约一屏行数）：大文件高亮成本与文件大小无关。
+	// overscan：可见窗口上下各多渲染/解析一段缓冲，小距离滚动不产生空白、
+	// 不重算 token（窗口未越出缓冲区时 useMemo 直接复用上次结果）。
+	const overscan = Math.max(EDIT_OVERSCAN_MIN, Math.ceil(viewportH / EDIT_LINE_HEIGHT / 2));
+	const renderFirst = Math.max(0, firstLine - overscan);
+	const renderLast = Math.min(lineCount - 1, lastLine + overscan);
+	const renderLines = [];
+	for (let i = renderFirst; i <= renderLast; i++) renderLines.push(i);
+	// 只解析渲染窗口（可见区 + 上下缓冲）：大文件高亮成本与文件大小无关。
 	const tokens = useMemo(() => {
 		if (highlight === undefined || highlight === null) return null;
-		const start = lineStarts[firstLine] ?? 0;
-		const end = (lineStarts[lastLine + 1] ?? highlightContent.length + 1) - 1;
+		const start = lineStarts[renderFirst] ?? 0;
+		const end = (lineStarts[renderLast + 1] ?? highlightContent.length + 1) - 1;
 		const slice = highlightContent.slice(start, Math.max(end, start));
 		const lines = highlight(slice);
 		return lines === undefined ? null : { lines };
-	}, [highlight, highlightContent, lineStarts, firstLine, lastLine]);
+	}, [highlight, highlightContent, lineStarts, renderFirst, renderLast]);
 	// 查找命中标记（基于高亮层内容，保证与可见文本对齐）。
 	const marks = useMemo(() => {
 		const matches = findMatchesIn(highlightContent, findText, caseSensitive);
@@ -947,8 +954,8 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 		}
 		if (tokens !== null) {
 			let changed = false;
-			for (let vi = firstLine; vi <= lastLine && vi < lineStarts.length; vi++) {
-				const line = tokens.lines[vi - firstLine];
+			for (let vi = renderFirst; vi <= renderLast && vi < lineStarts.length; vi++) {
+				const line = tokens.lines[vi - renderFirst];
 				if (line !== undefined && line !== null) {
 					let color = "";
 					for (const token of line) {
@@ -965,7 +972,7 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 			}
 			if (changed) setColorVersion((version) => version + 1);
 		}
-	}, [tokens, firstLine, lastLine, highlightContent, lineStarts]);
+	}, [tokens, renderFirst, renderLast, highlightContent, lineStarts]);
 	const lineColors = colorCacheRef.current.colors;
 	useEffect(() => {
 		const canvas = minimapRef.current;
@@ -992,7 +999,7 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 	return h("div", { className: "dfa-code-editor" }, [
 		h("div", { className: "dfa-code-gutter", "aria-hidden": "true" }, [
 			h("div", { className: "dfa-code-gutter-canvas", style: { height: EDIT_PAD_TOP + lineCount * EDIT_LINE_HEIGHT } },
-				visibleLines.map((i) => h("span", {
+				renderLines.map((i) => h("span", {
 					key: i,
 					className: "dfa-code-gutter-num",
 					style: { top: EDIT_PAD_TOP + i * EDIT_LINE_HEIGHT },
@@ -1004,8 +1011,8 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 				className: "dfa-code-highlight",
 				"aria-hidden": "true",
 				style: { height: EDIT_PAD_TOP + lineStarts.length * EDIT_LINE_HEIGHT + 48, transform: `translateX(${-scroll.left}px)` },
-				children: visibleLines.map((i) => {
-					const lineTokens = tokens?.lines?.[i - firstLine];
+				children: renderLines.map((i) => {
+					const lineTokens = tokens?.lines?.[i - renderFirst];
 					const plain = highlightContent.slice(lineStarts[i] ?? 0, (lineStarts[i + 1] ?? highlightContent.length + 1) - 1);
 					const line = lineTokens !== undefined && lineTokens !== null
 						? renderLineTokens(lineTokens, lineStarts[i] ?? 0, marks)
