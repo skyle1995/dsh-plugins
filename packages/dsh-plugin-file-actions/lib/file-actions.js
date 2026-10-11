@@ -41,6 +41,18 @@ export function zipNameFor(sourceNames) {
 	return "archive.zip";
 }
 
+/**
+ * 规范化客户端提交的压缩包名：剥掉任何目录部分（防路径穿越），
+ * 缺省 .zip 后缀自动补上；空名 / "." / ".." 返回空串（调用方回退预设名）。
+ */
+export function sanitizeZipName(name) {
+	const value = String(name ?? "").trim().replace(/\\/g, "/");
+	const base = value.split("/").pop() ?? "";
+	if (base === "" || base === "." || base === "..") return "";
+	if (!base.toLowerCase().endsWith(".zip")) return `${base}.zip`;
+	return base;
+}
+
 /** 在目标目录里给压缩包名加 "(2)" 等后缀，避免覆盖既有文件。 */
 export async function uniqueZipPath(destination, name) {
 	const exists = async (candidate) => {
@@ -253,17 +265,16 @@ export class FileActionsService extends Service {
 	}
 
 	/** 压缩：把源打包进目标目录下的 .zip，返回最终文件名与统计。 */
-	async compressEntries({ workspaceRoot, sources, destination }) {
+	async compressEntries({ workspaceRoot, sources, destination, name }) {
 		const root = await this.bindWorkspace(workspaceRoot);
 		const hosts = await this.confineSources(root, sources);
 		const hostDest = await this.confineDirectory(root, destination);
 		const names = sources.map((source) => basename(String(source)));
-		const base = zipNameFor(names);
-		if (!base.toLowerCase().endsWith(".zip")) throw new FileActionsError("file-actions/bad-request", "压缩包名必须以 .zip 结尾");
-		const { path, name } = await uniqueZipPath(hostDest, base);
+		const base = sanitizeZipName(name) || zipNameFor(names);
+		const { path, name: finalName } = await uniqueZipPath(hostDest, base);
 		const { buffer, skipped } = await createZipBuffer(hosts, { maxFileBytes: this.config.maxZipFileBytes });
 		await writeFile(path, buffer);
-		return { name, count: hosts.length, skipped };
+		return { name: finalName, count: hosts.length, skipped };
 	}
 
 	/** 绑定请求的工作区根：解析为宿主绝对路径并校验属于某会话/沙箱根。 */

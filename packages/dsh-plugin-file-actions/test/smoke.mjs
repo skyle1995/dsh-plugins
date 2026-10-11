@@ -175,6 +175,11 @@ if (!zipNames.includes("sub/") || !zipNames.includes("sub/a.txt") || !zipNames.i
 // 再次压缩应自动改名 sub (2).zip
 const zipped2 = await actions.compressEntries({ workspaceRoot: workspace, sources: [join(workspace, "dest", "sub")], destination: join(workspace, "dest") });
 if (zipped2.name !== "sub (2).zip") throw new Error("压缩包命名去重不符：" + zipped2.name);
+// 自定义压缩包名：剥离目录部分（防穿越）、自动补 .zip 后缀
+const zipped3 = await actions.compressEntries({ workspaceRoot: workspace, sources: [join(workspace, "dest", "sub")], destination: join(workspace, "dest"), name: "../我的包" });
+console.log("compress(name):", zipped3.name);
+if (zipped3.name !== "我的包.zip") throw new Error("自定义压缩包名不符：" + zipped3.name);
+if (!(await exists(join(workspace, "dest", "我的包.zip")))) throw new Error("自定义压缩包未生成");
 
 // ─── 4) 删除 ───────────────────────────────────────────────────────────────
 const deleted = await actions.deleteEntries({ workspaceRoot: workspace, paths: [join(workspace, "dest", "sub")] });

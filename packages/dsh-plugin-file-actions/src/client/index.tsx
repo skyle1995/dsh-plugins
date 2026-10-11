@@ -26,6 +26,8 @@ import {
 	IconTrashOutlineRegular,
 	Menu,
 	MenuItemButton,
+	Modal,
+	Button,
 	RiskConfirmation,
 	modalSelector,
 	writeClipboard,
@@ -56,6 +58,10 @@ const zh = {
 	"delete.acknowledge": "我已知晓删除不可恢复",
 	"delete.cancel": "取消",
 	"delete.confirm": "删除",
+	"compress.title": "压缩为 ZIP",
+	"compress.description": "压缩包文件名（可修改）：",
+	"compress.cancel": "取消",
+	"compress.confirm": "压缩",
 	"toast.cut": "已剪切 {count} 项，右键目录或使用顶部「粘贴」按钮粘贴",
 	"toast.copied": "已复制 {count} 项，右键目录或使用顶部「粘贴」按钮粘贴",
 	"toast.pasted": "已粘贴 {count} 项",
@@ -88,6 +94,10 @@ const en = {
 	"delete.acknowledge": "I understand this cannot be undone",
 	"delete.cancel": "Cancel",
 	"delete.confirm": "Delete",
+	"compress.title": "Compress to ZIP",
+	"compress.description": "Archive file name (editable):",
+	"compress.cancel": "Cancel",
+	"compress.confirm": "Compress",
 	"toast.cut": "Cut {count} items — right-click a directory or use the Paste button to paste",
 	"toast.copied": "Copied {count} items — right-click a directory or use the Paste button to paste",
 	"toast.pasted": "Pasted {count} items",
@@ -111,6 +121,7 @@ function format(text, params) {
  *             entry: "file" | "directory" | null, scope: "row" | "body",
  *             workspaceRoot: string }} MenuState
  * @typedef {{ paths: string[], workspaceRoot: string }} DeleteRequest
+ * @typedef {{ paths: string[], workspaceRoot: string, name: string }} CompressRequest
  * @typedef {{ id: number, text: string, kind: "ok" | "error" }} ToastItem
  */
 const state = {
@@ -118,6 +129,7 @@ const state = {
 	selection: /** @type {Set<string>} */ (new Set()),
 	menu: /** @type {MenuState | null} */ (null),
 	deleteRequest: /** @type {DeleteRequest | null} */ (null),
+	compressRequest: /** @type {CompressRequest | null} */ (null),
 	toasts: /** @type {ToastItem[]} */ ([]),
 	treeVisible: false,
 };
@@ -135,6 +147,7 @@ function setState(patch) {
 		&& next.selection === state.selection
 		&& next.menu === state.menu
 		&& next.deleteRequest === state.deleteRequest
+		&& next.compressRequest === state.compressRequest
 		&& next.toasts === state.toasts
 		&& next.treeVisible === state.treeVisible
 	) return;
@@ -274,16 +287,27 @@ function settleDelete() {
 	setState({ deleteRequest: null });
 }
 
-/** 把一组路径放进剪切/复制缓冲。 */
+function requestCompress(request) {
+	setState({ compressRequest: request });
+}
+
+function settleCompress() {
+	if (state.compressRequest === null) return;
+	setState({ compressRequest: null });
+}
+
+/** 把一组路径放进剪切/复制缓冲（操作完成即清除多选）。 */
 function stagePaths(paths, mode, workspaceRoot = currentTreeRoot()) {
 	if (workspaceRoot === null || paths.length === 0) return;
 	setClipboard({ mode, paths: [...paths], workspaceRoot });
+	clearSelection();
 	pushToast(t(mode === "cut" ? "toast.cut" : "toast.copied", { count: paths.length }));
 }
 
-/** 复制路径到系统剪贴板。 */
+/** 复制路径到系统剪贴板（写入成功后清除多选）。 */
 function copyPaths(paths) {
 	void writeClipboard(paths.join("\n")).then((ok) => {
+		if (ok) clearSelection();
 		pushToast(ok ? t("toast.pathCopied") : t("toast.clipboardFailed"), ok ? "ok" : "error");
 	});
 }
@@ -301,11 +325,30 @@ function pasteInto(destination, workspaceRoot) {
 	});
 }
 
-/** 压缩一组路径（打包进第一个源的父目录）。 */
+/** 压缩包预设命名：单源 `<名>.zip`，多源 `archive.zip`（与宿主端一致）。 */
+function presetZipName(paths) {
+	if (paths.length === 1) return `${basenameOf(paths[0])}.zip`;
+	return "archive.zip";
+}
+
+/** 压缩一组路径：先弹命名输入框（自动填充预设名），确认后打包。 */
 function compressPaths(paths, workspaceRoot = currentTreeRoot()) {
 	if (paths.length === 0 || workspaceRoot === null) return;
-	const destination = dirnameOf(paths[0]);
-	api("compress", { workspaceRoot, sources: paths, destination }).then((payload) => {
+	requestCompress({ paths: [...paths], workspaceRoot, name: presetZipName(paths) });
+}
+
+/** 命名确认后真正发压缩请求（成功后清除多选）。 */
+function performCompress(request, rawName) {
+	let name = String(rawName ?? "").trim();
+	if (name === "") name = request.name;
+	if (!/\.zip$/i.test(name)) name += ".zip";
+	api("compress", {
+		workspaceRoot: request.workspaceRoot,
+		sources: request.paths,
+		destination: dirnameOf(request.paths[0]),
+		name,
+	}).then((payload) => {
+		clearSelection();
 		pushToast(payload.skipped > 0 ? t("toast.compressedSkipped", { name: payload.name, skipped: payload.skipped }) : t("toast.compressed", { name: payload.name }));
 	}).catch((error) => {
 		pushToast(error.message, "error");
@@ -320,10 +363,7 @@ function deletePaths(paths, workspaceRoot = currentTreeRoot()) {
 
 function performDelete(request) {
 	api("delete", { workspaceRoot: request.workspaceRoot, paths: request.paths }).then((payload) => {
-		const next = new Set(state.selection);
-		for (const path of request.paths) next.delete(path);
-		setState({ selection: next });
-		syncSelectionMarks();
+		clearSelection();
 		pushToast(t("toast.deleted", { count: payload.count }));
 	}).catch((error) => {
 		pushToast(error.message, "error");
@@ -493,6 +533,56 @@ function DeleteConfirm() {
 	});
 }
 
+// ─── 压缩命名输入框 ───────────────────────────────────────────────────────
+function CompressDialog() {
+	const request = useStore((s) => s.compressRequest);
+	const [name, setName] = useState("");
+	const inputRef = useRef(null);
+	useEffect(() => {
+		if (request === null) return;
+		setName(request.name);
+		const frame = requestAnimationFrame(() => {
+			const input = inputRef.current;
+			if (input !== null) {
+				input.focus();
+				input.select();
+			}
+		});
+		return () => cancelAnimationFrame(frame);
+	}, [request]);
+	const confirm = () => {
+		const pending = request;
+		settleCompress();
+		if (pending !== null) performCompress(pending, name);
+	};
+	return h(Modal, {
+		open: request !== null,
+		title: t("compress.title"),
+		onClose: settleCompress,
+		footer: h(Fragment, { children: [
+			h(Button, { variant: "outline", onClick: settleCompress, children: t("compress.cancel") }),
+			h(Button, { variant: "primary", disabled: name.trim() === "", onClick: confirm, children: t("compress.confirm") }),
+		] }),
+		children: h("div", { className: "dfa-compress" }, [
+			h("p", { className: "dfa-compress-desc", children: t("compress.description") }),
+			h("input", {
+				ref: inputRef,
+				className: "dfa-compress-input",
+				type: "text",
+				value: name,
+				spellCheck: false,
+				onChange: (event) => setName(event.currentTarget.value),
+				onKeyDown: (event) => {
+					if (event.key === "Enter" && name.trim() !== "") {
+						event.preventDefault();
+						confirm();
+					}
+				},
+			}),
+		]),
+	});
+}
+
 // ─── Toast 堆栈 ───────────────────────────────────────────────────────────
 function ToastStack() {
 	const toasts = useStore((s) => s.toasts);
@@ -618,6 +708,29 @@ const CSS = `
 	width: 15px;
 	height: 15px;
 }
+.dfa-compress-desc {
+	margin: 0 0 10px;
+	color: var(--dsw-alias-label-secondary);
+	font-size: 13px;
+	line-height: 1.5;
+}
+.dfa-compress-input {
+	box-sizing: border-box;
+	width: 100%;
+	height: 32px;
+	padding: 0 10px;
+	border: .5px solid var(--dsw-alias-border-l4);
+	border-radius: var(--dsw-radius-md);
+	background: transparent;
+	color: var(--dsw-alias-label-primary);
+	font: inherit;
+	font-size: 13px;
+	line-height: 1.5;
+	outline: none;
+}
+.dfa-compress-input:focus {
+	border-color: var(--dsw-alias-state-business-primary);
+}
 .dfa-toasts {
 	position: fixed;
 	right: 20px;
@@ -706,6 +819,12 @@ export function apply(ctx) {
 		locale: NS,
 		inject: () => ({}),
 	}, DeleteConfirm));
+	ctx.slots.inject("shell.overlay", () => ctx.slots.register({
+		name: "shell.overlay",
+		id: "file-actions-compress-dialog",
+		locale: NS,
+		inject: () => ({}),
+	}, CompressDialog));
 	ctx.slots.inject("shell.overlay", () => ctx.slots.register({
 		name: "shell.overlay",
 		id: "file-actions-toasts",

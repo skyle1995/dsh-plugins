@@ -24,6 +24,8 @@ export interface FileActionsRequest {
 	paths?: string[];
 	/** 目标目录（复制/移动/压缩）。 */
 	destination?: string;
+	/** 压缩包文件名（可选；自动剥离目录部分并补 .zip 后缀）。 */
+	name?: string;
 }
 
 /**
@@ -46,3 +48,5 @@ export declare class FileActionsService extends Service {
 export default FileActionsService;
 export const FILE_ACTIONS_API: string;
 export const DEFAULT_MAX_ZIP_FILE_BYTES: number;
+export declare function zipNameFor(sourceNames: string[]): string;
+export declare function sanitizeZipName(name: unknown): string;

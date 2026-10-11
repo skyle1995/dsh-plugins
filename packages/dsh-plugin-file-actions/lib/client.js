@@ -54,6 +54,10 @@ var zh = {
   "delete.acknowledge": "\u6211\u5DF2\u77E5\u6653\u5220\u9664\u4E0D\u53EF\u6062\u590D",
   "delete.cancel": "\u53D6\u6D88",
   "delete.confirm": "\u5220\u9664",
+  "compress.title": "\u538B\u7F29\u4E3A ZIP",
+  "compress.description": "\u538B\u7F29\u5305\u6587\u4EF6\u540D\uFF08\u53EF\u4FEE\u6539\uFF09\uFF1A",
+  "compress.cancel": "\u53D6\u6D88",
+  "compress.confirm": "\u538B\u7F29",
   "toast.cut": "\u5DF2\u526A\u5207 {count} \u9879\uFF0C\u53F3\u952E\u76EE\u5F55\u6216\u4F7F\u7528\u9876\u90E8\u300C\u7C98\u8D34\u300D\u6309\u94AE\u7C98\u8D34",
   "toast.copied": "\u5DF2\u590D\u5236 {count} \u9879\uFF0C\u53F3\u952E\u76EE\u5F55\u6216\u4F7F\u7528\u9876\u90E8\u300C\u7C98\u8D34\u300D\u6309\u94AE\u7C98\u8D34",
   "toast.pasted": "\u5DF2\u7C98\u8D34 {count} \u9879",
@@ -85,6 +89,10 @@ var en = {
   "delete.acknowledge": "I understand this cannot be undone",
   "delete.cancel": "Cancel",
   "delete.confirm": "Delete",
+  "compress.title": "Compress to ZIP",
+  "compress.description": "Archive file name (editable):",
+  "compress.cancel": "Cancel",
+  "compress.confirm": "Compress",
   "toast.cut": "Cut {count} items \u2014 right-click a directory or use the Paste button to paste",
   "toast.copied": "Copied {count} items \u2014 right-click a directory or use the Paste button to paste",
   "toast.pasted": "Pasted {count} items",
@@ -116,6 +124,10 @@ var state = {
     /** @type {DeleteRequest | null} */
     null
   ),
+  compressRequest: (
+    /** @type {CompressRequest | null} */
+    null
+  ),
   toasts: (
     /** @type {ToastItem[]} */
     []
@@ -129,7 +141,7 @@ function notify() {
 }
 function setState(patch) {
   const next = { ...state, ...patch };
-  if (next.clipboard === state.clipboard && next.selection === state.selection && next.menu === state.menu && next.deleteRequest === state.deleteRequest && next.toasts === state.toasts && next.treeVisible === state.treeVisible) return;
+  if (next.clipboard === state.clipboard && next.selection === state.selection && next.menu === state.menu && next.deleteRequest === state.deleteRequest && next.compressRequest === state.compressRequest && next.toasts === state.toasts && next.treeVisible === state.treeVisible) return;
   Object.assign(state, next);
   notify();
 }
@@ -180,6 +192,9 @@ function dirnameOf(path) {
   const index = normalized.lastIndexOf("/");
   if (index <= 0) return normalized.startsWith("/") ? "/" : normalized;
   return normalized.slice(0, index);
+}
+function basenameOf(path) {
+  return String(path).replace(/[/\\]+$/, "").split("/").pop() ?? String(path);
 }
 async function api(operation, body) {
   const response = await fetch(`${API}/${operation}`, {
@@ -236,13 +251,22 @@ function settleDelete() {
   if (state.deleteRequest === null) return;
   setState({ deleteRequest: null });
 }
+function requestCompress(request) {
+  setState({ compressRequest: request });
+}
+function settleCompress() {
+  if (state.compressRequest === null) return;
+  setState({ compressRequest: null });
+}
 function stagePaths(paths, mode, workspaceRoot = currentTreeRoot()) {
   if (workspaceRoot === null || paths.length === 0) return;
   setClipboard({ mode, paths: [...paths], workspaceRoot });
+  clearSelection();
   pushToast(t(mode === "cut" ? "toast.cut" : "toast.copied", { count: paths.length }));
 }
 function copyPaths(paths) {
   void (0, import_dsh_client_ui_primitives.writeClipboard)(paths.join("\n")).then((ok) => {
+    if (ok) clearSelection();
     pushToast(ok ? t("toast.pathCopied") : t("toast.clipboardFailed"), ok ? "ok" : "error");
   });
 }
@@ -257,10 +281,25 @@ function pasteInto(destination, workspaceRoot) {
     pushToast(error.message, "error");
   });
 }
+function presetZipName(paths) {
+  if (paths.length === 1) return `${basenameOf(paths[0])}.zip`;
+  return "archive.zip";
+}
 function compressPaths(paths, workspaceRoot = currentTreeRoot()) {
   if (paths.length === 0 || workspaceRoot === null) return;
-  const destination = dirnameOf(paths[0]);
-  api("compress", { workspaceRoot, sources: paths, destination }).then((payload) => {
+  requestCompress({ paths: [...paths], workspaceRoot, name: presetZipName(paths) });
+}
+function performCompress(request, rawName) {
+  let name = String(rawName ?? "").trim();
+  if (name === "") name = request.name;
+  if (!/\.zip$/i.test(name)) name += ".zip";
+  api("compress", {
+    workspaceRoot: request.workspaceRoot,
+    sources: request.paths,
+    destination: dirnameOf(request.paths[0]),
+    name
+  }).then((payload) => {
+    clearSelection();
     pushToast(payload.skipped > 0 ? t("toast.compressedSkipped", { name: payload.name, skipped: payload.skipped }) : t("toast.compressed", { name: payload.name }));
   }).catch((error) => {
     pushToast(error.message, "error");
@@ -272,10 +311,7 @@ function deletePaths(paths, workspaceRoot = currentTreeRoot()) {
 }
 function performDelete(request) {
   api("delete", { workspaceRoot: request.workspaceRoot, paths: request.paths }).then((payload) => {
-    const next = new Set(state.selection);
-    for (const path of request.paths) next.delete(path);
-    setState({ selection: next });
-    syncSelectionMarks();
+    clearSelection();
     pushToast(t("toast.deleted", { count: payload.count }));
   }).catch((error) => {
     pushToast(error.message, "error");
@@ -434,6 +470,54 @@ function DeleteConfirm() {
     }
   });
 }
+function CompressDialog() {
+  const request = useStore((s) => s.compressRequest);
+  const [name, setName] = (0, import_react.useState)("");
+  const inputRef = (0, import_react.useRef)(null);
+  (0, import_react.useEffect)(() => {
+    if (request === null) return;
+    setName(request.name);
+    const frame = requestAnimationFrame(() => {
+      const input = inputRef.current;
+      if (input !== null) {
+        input.focus();
+        input.select();
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [request]);
+  const confirm = () => {
+    const pending = request;
+    settleCompress();
+    if (pending !== null) performCompress(pending, name);
+  };
+  return (0, import_react.createElement)(import_dsh_client_ui_primitives.Modal, {
+    open: request !== null,
+    title: t("compress.title"),
+    onClose: settleCompress,
+    footer: (0, import_react.createElement)(import_react.Fragment, { children: [
+      (0, import_react.createElement)(import_dsh_client_ui_primitives.Button, { variant: "outline", onClick: settleCompress, children: t("compress.cancel") }),
+      (0, import_react.createElement)(import_dsh_client_ui_primitives.Button, { variant: "primary", disabled: name.trim() === "", onClick: confirm, children: t("compress.confirm") })
+    ] }),
+    children: (0, import_react.createElement)("div", { className: "dfa-compress" }, [
+      (0, import_react.createElement)("p", { className: "dfa-compress-desc", children: t("compress.description") }),
+      (0, import_react.createElement)("input", {
+        ref: inputRef,
+        className: "dfa-compress-input",
+        type: "text",
+        value: name,
+        spellCheck: false,
+        onChange: (event) => setName(event.currentTarget.value),
+        onKeyDown: (event) => {
+          if (event.key === "Enter" && name.trim() !== "") {
+            event.preventDefault();
+            confirm();
+          }
+        }
+      })
+    ])
+  });
+}
 function ToastStack() {
   const toasts = useStore((s) => s.toasts);
   if (toasts.length === 0) return null;
@@ -556,6 +640,29 @@ var CSS = `
 	width: 15px;
 	height: 15px;
 }
+.dfa-compress-desc {
+	margin: 0 0 10px;
+	color: var(--dsw-alias-label-secondary);
+	font-size: 13px;
+	line-height: 1.5;
+}
+.dfa-compress-input {
+	box-sizing: border-box;
+	width: 100%;
+	height: 32px;
+	padding: 0 10px;
+	border: .5px solid var(--dsw-alias-border-l4);
+	border-radius: var(--dsw-radius-md);
+	background: transparent;
+	color: var(--dsw-alias-label-primary);
+	font: inherit;
+	font-size: 13px;
+	line-height: 1.5;
+	outline: none;
+}
+.dfa-compress-input:focus {
+	border-color: var(--dsw-alias-state-business-primary);
+}
 .dfa-toasts {
 	position: fixed;
 	right: 20px;
@@ -641,6 +748,12 @@ function apply(ctx) {
     locale: NS,
     inject: () => ({})
   }, DeleteConfirm));
+  ctx.slots.inject("shell.overlay", () => ctx.slots.register({
+    name: "shell.overlay",
+    id: "file-actions-compress-dialog",
+    locale: NS,
+    inject: () => ({})
+  }, CompressDialog));
   ctx.slots.inject("shell.overlay", () => ctx.slots.register({
     name: "shell.overlay",
     id: "file-actions-toasts",
