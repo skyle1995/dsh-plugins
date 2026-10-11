@@ -13,7 +13,7 @@
  *   <li data-files-entry="file|directory|other" data-files-path="<绝对路径>">
  *   <div data-files-state="tree" data-files-root="<工作区根>"> 为树根。
  */
-import { createElement as h, Fragment, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { createElement as h, Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
 	IconArchiveOutlineRegular,
 	IconCheckCircleFillRegular,
@@ -25,7 +25,9 @@ import {
 	IconLinkOutlineRegular,
 	IconTrashOutlineRegular,
 	IconWarningOutlineRegular,
-	CodeBlock,
+	IconCheckOutlineRegular,
+	IconRefreshOutlineRegular,
+	useCodeHighlighter,
 	languageForPath,
 	Menu,
 	MenuItemButton,
@@ -38,6 +40,9 @@ import {
 
 const NS = "dsh-plugin-file-actions";
 const API = "/api/dsh-file-actions";
+/** 右侧栏控制器与 tab 类型注册表（apply 时注入）。 */
+let sidebarRight = null;
+let sidebarRightTabs = null;
 /** 我们自己的 DOM 标记：全局监听器据此跳过自身 UI。 */
 const OWN_UI = "[data-dfa-ui], .dfa-menu";
 
@@ -66,20 +71,19 @@ const zh = {
 	"compress.cancel": "取消",
 	"compress.confirm": "压缩",
 	"menu.edit": "编辑",
-	"edit.title": "编辑文件",
-	"edit.editing": "编辑",
-	"edit.preview": "预览",
+	"edit.title": "编辑",
 	"edit.loading": "加载中…",
 	"edit.format": "格式化",
-	"edit.formatUnsupported": "该文件类型暂不支持一键格式化",
 	"edit.revert": "恢复原始",
 	"edit.save": "保存",
-	"edit.cancel": "取消",
+	"edit.reload": "重新加载",
+	"edit.reloadConfirm": "重新加载会放弃未保存的修改，继续？",
+	"edit.confirm": "确认",
 	"edit.saved": "已保存 {name}",
 	"edit.formatted": "已格式化",
-	"edit.dirtyWarning": "有未保存的修改，确定放弃并关闭吗？",
-	"edit.discard": "放弃修改",
-	"edit.keepEditing": "继续编辑",
+	"edit.closedUnsaved": "已关闭未保存的编辑：{name}",
+	"edit.unavailable": "无法解析该编辑地址",
+	"edit.unknownFormat": "该文件类型暂不支持一键格式化",
 	"toast.cut": "已剪切 {count} 项，右键目录或使用顶部「粘贴」按钮粘贴",
 	"toast.copied": "已复制 {count} 项，右键目录或使用顶部「粘贴」按钮粘贴",
 	"toast.pasted": "已粘贴 {count} 项",
@@ -117,20 +121,19 @@ const en = {
 	"compress.cancel": "Cancel",
 	"compress.confirm": "Compress",
 	"menu.edit": "Edit",
-	"edit.title": "Edit file",
-	"edit.editing": "Edit",
-	"edit.preview": "Preview",
+	"edit.title": "Edit",
 	"edit.loading": "Loading…",
 	"edit.format": "Format",
-	"edit.formatUnsupported": "One-click formatting is not supported for this file type",
 	"edit.revert": "Revert",
 	"edit.save": "Save",
-	"edit.cancel": "Cancel",
+	"edit.reload": "Reload",
+	"edit.reloadConfirm": "Reloading discards unsaved changes. Continue?",
+	"edit.confirm": "Confirm",
 	"edit.saved": "Saved {name}",
 	"edit.formatted": "Formatted",
-	"edit.dirtyWarning": "You have unsaved changes. Discard them and close?",
-	"edit.discard": "Discard changes",
-	"edit.keepEditing": "Keep editing",
+	"edit.closedUnsaved": "Closed with unsaved changes: {name}",
+	"edit.unavailable": "Cannot parse this editor address",
+	"edit.unknownFormat": "One-click formatting is not supported for this file type",
 	"toast.cut": "Cut {count} items — right-click a directory or use the Paste button to paste",
 	"toast.copied": "Copied {count} items — right-click a directory or use the Paste button to paste",
 	"toast.pasted": "Pasted {count} items",
@@ -155,7 +158,6 @@ function format(text, params) {
  *             workspaceRoot: string }} MenuState
  * @typedef {{ paths: string[], workspaceRoot: string }} DeleteRequest
  * @typedef {{ paths: string[], workspaceRoot: string, name: string }} CompressRequest
- * @typedef {{ path: string, workspaceRoot: string }} EditRequest
  * @typedef {{ id: number, text: string, kind: "ok" | "error" }} ToastItem
  */
 const state = {
@@ -164,7 +166,6 @@ const state = {
 	menu: /** @type {MenuState | null} */ (null),
 	deleteRequest: /** @type {DeleteRequest | null} */ (null),
 	compressRequest: /** @type {CompressRequest | null} */ (null),
-	editRequest: /** @type {EditRequest | null} */ (null),
 	toasts: /** @type {ToastItem[]} */ ([]),
 	treeVisible: false,
 };
@@ -183,7 +184,6 @@ function setState(patch) {
 		&& next.menu === state.menu
 		&& next.deleteRequest === state.deleteRequest
 		&& next.compressRequest === state.compressRequest
-		&& next.editRequest === state.editRequest
 		&& next.toasts === state.toasts
 		&& next.treeVisible === state.treeVisible
 	) return;
@@ -332,19 +332,18 @@ function settleCompress() {
 	setState({ compressRequest: null });
 }
 
-function requestEdit(request) {
-	setState({ editRequest: request });
-}
-
-function settleEdit() {
-	if (state.editRequest === null) return;
-	setState({ editRequest: null });
-}
-
-/** 打开文本编辑弹窗（单选文件右键菜单最上方的「编辑」）。 */
+/** 在右侧栏打开文件编辑 tab（单选文件右键菜单最上方的「编辑」）。 */
 function openEdit(path, workspaceRoot = currentTreeRoot()) {
 	if (workspaceRoot === null || path === null || path === "") return;
-	requestEdit({ path, workspaceRoot });
+	if (sidebarRight === null) {
+		pushToast(t("edit.unavailable"), "error");
+		return;
+	}
+	try {
+		sidebarRight.openResource(editAddress(workspaceRoot, path), { kind: EDIT_KIND });
+	} catch (error) {
+		pushToast(error.message, "error");
+	}
 }
 
 /** 把一组路径放进剪切/复制缓冲（操作完成即清除多选）。 */
@@ -642,7 +641,30 @@ function CompressDialog() {
 	});
 }
 
-// ─── 文本编辑弹窗 ─────────────────────────────────────────────────────────
+// ─── 文件编辑 Tab（右侧栏）────────────────────────────────────────────────
+/** 编辑 tab 的地址格式：dsh-resource://file-edit/<wsRoot>/<path>（各段 URL 编码）。 */
+const EDIT_KIND = "file-editor";
+const EDIT_ID = "dsh-plugin-file-actions";
+const EDIT_PREFIX = "dsh-resource://file-edit/";
+
+function editAddress(workspaceRoot, path) {
+	return `${EDIT_PREFIX}${encodeURIComponent(workspaceRoot)}/${encodeURIComponent(path)}`;
+}
+
+function parseEditAddress(address) {
+	const rest = String(address).slice(EDIT_PREFIX.length);
+	const sep = rest.indexOf("/");
+	if (sep < 0) return null;
+	try {
+		return {
+			workspaceRoot: decodeURIComponent(rest.slice(0, sep)),
+			path: decodeURIComponent(rest.slice(sep + 1)),
+		};
+	} catch {
+		return null;
+	}
+}
+
 /** 对选区跨行做缩进/反缩进；无选区时在光标处插入两个空格。 */
 function applyIndent(content, textarea, delta) {
 	const start = textarea.selectionStart ?? content.length;
@@ -667,136 +689,193 @@ function applyIndent(content, textarea, delta) {
 	return next;
 }
 
-function EditDialog() {
-	const request = useStore((s) => s.editRequest);
+/** 把高亮 token 行渲染为与 textarea 完全对齐的 pre 内容。 */
+function tokenNodes(tokens, content) {
+	const lines = tokens ?? content.split("\n").map((line) => [{ text: line, style: null }]);
+	const nodes = [];
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i] ?? [];
+		for (let j = 0; j < line.length; j++) {
+			const token = line[j];
+			if (token.style !== null && token.style !== undefined) nodes.push(h("span", { style: token.style }, token.text));
+			else nodes.push(token.text);
+		}
+		if (i < lines.length - 1) nodes.push("\n");
+	}
+	return nodes;
+}
+
+/** 编辑态实时高亮：透明文字 textarea 叠在 shiki 高亮层上，滚动/排版完全同步。 */
+function HighlightEditor({ content, language, onContent, onSave, onFormat, saveEnabled }) {
+	const highlight = useCodeHighlighter(language);
+	const [scroll, setScroll] = useState({ left: 0, top: 0 });
+	// 防抖高亮：输入流畅，高亮层稍后跟上（大文件不卡键）。
+	const [highlightContent, setHighlightContent] = useState(content);
+	useEffect(() => {
+		const timer = setTimeout(() => setHighlightContent(content), 120);
+		return () => clearTimeout(timer);
+	}, [content]);
+	const tokens = useMemo(() => highlight?.(highlightContent) ?? null, [highlight, highlightContent]);
+	const lineCount = content.split("\n").length;
+	const gutterText = Array.from({ length: lineCount }, (_, i) => String(i + 1)).join("\n");
+	const textareaRef = useRef(null);
+	return h("div", { className: "dfa-code-editor" }, [
+		h("div", {
+			className: "dfa-code-gutter",
+			"aria-hidden": "true",
+			style: { transform: `translateY(${-scroll.top}px)` },
+			children: gutterText,
+		}),
+		h("div", { className: "dfa-code-viewport" }, [
+			h("pre", {
+				className: "dfa-code-highlight",
+				"aria-hidden": "true",
+				style: { transform: `translate(${-scroll.left}px, ${-scroll.top}px)` },
+				children: tokenNodes(tokens, highlightContent),
+			}),
+			h("textarea", {
+				ref: textareaRef,
+				className: "dfa-code-input",
+				value: content,
+				spellCheck: false,
+				wrap: "off",
+				onChange: (event) => onContent(event.currentTarget.value),
+				onScroll: (event) => setScroll({ left: event.currentTarget.scrollLeft, top: event.currentTarget.scrollTop }),
+				onKeyDown: (event) => {
+					if (event.key === "Tab") {
+						event.preventDefault();
+						const el = event.currentTarget;
+						onContent(applyIndent(content, el, event.shiftKey ? -2 : 2));
+						return;
+					}
+					if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+						event.preventDefault();
+						onSave();
+					}
+				},
+			}),
+		]),
+	]);
+}
+
+/** 右侧栏「文件编辑」tab 主体：工具栏 + 高亮编辑器。 */
+function EditorTab(props) {
+	const translate = props.t ?? t;
+	const { useTabInfo } = props;
+	const { tab } = useTabInfo();
+	const parsed = parseEditAddress(tab.contentId);
 	const [content, setContent] = useState("");
 	const [original, setOriginal] = useState("");
 	const [loaded, setLoaded] = useState(false);
-	const [view, setView] = useState("edit");
-	const [confirmingClose, setConfirmingClose] = useState(false);
+	const [error, setError] = useState(null);
 	const [saving, setSaving] = useState(false);
-	const textareaRef = useRef(null);
-	const gutterRef = useRef(null);
-	useEffect(() => {
-		if (request === null) return;
-		setContent("");
-		setOriginal("");
+	const [confirmingReload, setConfirmingReload] = useState(false);
+	const dirtyRef = useRef(false);
+	const dirty = content !== original;
+	dirtyRef.current = dirty;
+	const name = parsed === null ? "" : basenameOf(parsed.path);
+
+	const load = () => {
+		if (parsed === null) return;
 		setLoaded(false);
-		setView("edit");
-		setConfirmingClose(false);
-		api("read", { workspaceRoot: request.workspaceRoot, path: request.path }).then((payload) => {
+		setError(null);
+		setConfirmingReload(false);
+		api("read", { workspaceRoot: parsed.workspaceRoot, path: parsed.path }).then((payload) => {
 			setContent(payload.content);
 			setOriginal(payload.content);
 			setLoaded(true);
-		}).catch((error) => {
-			pushToast(error.message, "error");
-			settleEdit();
+		}).catch((readError) => {
+			setError(readError.message);
 		});
-	}, [request]);
-	if (request === null) return null;
-	const dirty = content !== original;
-	const name = basenameOf(request.path);
-	const lineCount = content.split("\n").length;
-	const gutterText = Array.from({ length: lineCount }, (_, i) => String(i + 1)).join("\n");
-	const requestClose = () => {
-		if (dirty && !confirmingClose) {
-			setConfirmingClose(true);
-			return;
-		}
-		settleEdit();
 	};
+	useEffect(() => {
+		load();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [parsed?.workspaceRoot, parsed?.path]);
+	useEffect(() => {
+		tab.actions.bindCommands({ refresh: load });
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [tab.actions]);
+	// 关闭 tab 时若还有未保存修改，提示用户。
+	useEffect(() => () => {
+		if (dirtyRef.current && name !== "") pushToast(translate("edit.closedUnsaved", { name }));
+	}, []);
+
 	const save = () => {
-		if (!loaded || saving) return;
+		if (parsed === null || !loaded || saving) return;
 		setSaving(true);
-		api("save", { workspaceRoot: request.workspaceRoot, path: request.path, content }).then((payload) => {
+		api("save", { workspaceRoot: parsed.workspaceRoot, path: parsed.path, content }).then(() => {
 			setSaving(false);
 			setOriginal(content);
-			settleEdit();
-			pushToast(t("edit.saved", { name }));
-		}).catch((error) => {
+			pushToast(translate("edit.saved", { name }));
+		}).catch((saveError) => {
 			setSaving(false);
-			pushToast(error.message, "error");
+			pushToast(saveError.message, "error");
 		});
 	};
 	const format = () => {
-		if (!loaded) return;
-		api("format", { workspaceRoot: request.workspaceRoot, path: request.path, content }).then((payload) => {
+		if (parsed === null || !loaded) return;
+		api("format", { workspaceRoot: parsed.workspaceRoot, path: parsed.path, content }).then((payload) => {
 			setContent(payload.content);
-			setView("edit");
-			pushToast(t("edit.formatted"));
-		}).catch((error) => {
-			pushToast(error.message, "error");
+			pushToast(translate("edit.formatted"));
+		}).catch((formatError) => {
+			pushToast(formatError.message, "error");
 		});
 	};
-	return h(Modal, {
-		open: true,
-		title: `${t("edit.title")} · ${name}`,
-		description: request.path,
-		className: "dfa-edit-dialog",
-		onClose: requestClose,
-		footer: confirmingClose ? h(Fragment, { children: [
-			h(Button, { variant: "outline", onClick: () => setConfirmingClose(false), children: t("edit.keepEditing") }),
-			h(Button, { variant: "primary", onClick: settleEdit, children: t("edit.discard") }),
-		] }) : h(Fragment, { children: [
-			h(Button, { variant: "outline", onClick: requestClose, children: t("edit.cancel") }),
-			h(Button, { variant: "outline", disabled: !loaded || !dirty, onClick: () => setContent(original), children: t("edit.revert") }),
-			h(Button, { variant: "outline", disabled: !loaded, onClick: format, children: t("edit.format") }),
-			h(Button, { variant: "primary", disabled: !loaded || !dirty || saving, onClick: save, children: t("edit.save") }),
-		] }),
-		children: confirmingClose ? h("div", { className: "dfa-edit-dirty" }, [
-			h(IconWarningOutlineRegular, { size: 18, className: "dfa-edit-dirty-icon" }),
-			h("p", { children: t("edit.dirtyWarning") }),
-		]) : h(Fragment, { children: [
-			h("div", { className: "dfa-edit-toolbar" }, [
-				h("div", { className: "dfa-edit-toggle", role: "tablist" }, [
-					toggleButton(view === "edit", t("edit.editing"), () => setView("edit")),
-					toggleButton(view === "preview", t("edit.preview"), () => setView("preview")),
-				]),
-			]),
-			!loaded ? h("p", { className: "dfa-edit-loading", children: t("edit.loading") })
-				: view === "edit" ? h("div", { className: "dfa-edit-body" }, [
-					h("div", { ref: gutterRef, className: "dfa-edit-gutter", "aria-hidden": "true", children: gutterText }),
-					h("textarea", {
-						ref: textareaRef,
-						className: "dfa-edit-textarea",
-						value: content,
-						spellCheck: false,
-						wrap: "off",
-						onChange: (event) => setContent(event.currentTarget.value),
-						onScroll: (event) => {
-							const gutter = gutterRef.current;
-							if (gutter !== null) gutter.scrollTop = event.currentTarget.scrollTop;
-						},
-						onKeyDown: (event) => {
-							if (event.key === "Tab") {
-								event.preventDefault();
-								const el = event.currentTarget;
-								setContent(applyIndent(content, el, event.shiftKey ? -2 : 2));
-								return;
-							}
-							if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
-								event.preventDefault();
-								save();
-							}
-						},
-					}),
-				])
-				: h("div", { className: "dfa-edit-preview" },
-					h(CodeBlock, { code: content, lang: languageForPath(request.path) ?? "plaintext", lineNumbers: true, showHeader: false, wrap: true }),
-				),
-		] }),
+	if (parsed === null) return h("div", { className: "dfa-editor-status" },
+		h("p", { className: "dfa-editor-status-line", children: translate("edit.unavailable") }));
+	const language = languageForPath(parsed.path) ?? "plaintext";
+	return h("div", { className: "dfa-editor-root", "data-dfa-ui": "editor" }, [
+		h("div", { className: "dfa-editor-header" }, [
+			h("span", { className: "dfa-editor-name", title: parsed.path, children: name }),
+			dirty && h("span", { className: "dfa-editor-dirty", children: "•" }),
+			h("span", { className: "dfa-editor-spacer" }),
+			confirmingReload ? h(Fragment, { children: [
+				h("span", { className: "dfa-editor-confirm", children: translate("edit.reloadConfirm") }),
+				editorButton(translate("edit.confirm"), load),
+				editorButton(translate("edit.revert"), () => setConfirmingReload(false)),
+			] }) : h(Fragment, { children: [
+				editorButton(translate("edit.reload"), () => {
+					if (dirty) setConfirmingReload(true);
+					else load();
+				}, h(IconRefreshOutlineRegular, { size: 14 })),
+				editorButton(translate("edit.format"), format, h(IconEditOutlineRegular, { size: 14 }), !loaded),
+				editorButton(translate("edit.revert"), () => setContent(original), h(IconCloseOutlineRegular, { size: 14 }), !loaded || !dirty),
+				editorButton(translate("edit.save"), save, h(IconCheckOutlineRegular, { size: 14 }), !loaded || !dirty || saving, true),
+			] }),
+		]),
+		!loaded && error === null ? h("div", { className: "dfa-editor-status" },
+			h("p", { className: "dfa-editor-status-line", children: translate("edit.loading") }))
+			: error !== null ? h("div", { className: "dfa-editor-status" }, [
+				h("p", { className: "dfa-editor-status-line", children: error }),
+				h("button", { type: "button", className: "dfa-editor-retry", onClick: load, children: translate("edit.reload") }),
+			])
+			: h(HighlightEditor, {
+				content,
+				language,
+				onContent: setContent,
+				onSave: save,
+			}),
+	]);
+}
+
+function editorButton(label, onClick, icon = null, disabled = false, primary = false) {
+	return h("button", {
+		type: "button",
+		className: primary ? "dfa-editor-btn dfa-editor-btn-primary" : "dfa-editor-btn",
+		disabled,
+		onClick,
+		children: [icon, label].filter(Boolean),
 	});
 }
 
-function toggleButton(active, label, onClick) {
-	return h("button", {
-		type: "button",
-		role: "tab",
-		"aria-selected": active,
-		className: active ? "dfa-edit-toggle-btn dfa-edit-toggle-active" : "dfa-edit-toggle-btn",
-		onClick,
-		children: label,
-	});
+/** 右侧栏「文件编辑」tab 的标题 chip。 */
+function EditorTabTitle({ useTabInfo }) {
+	const { tab } = useTabInfo();
+	return h(Fragment, { children: [
+		h(IconEditOutlineRegular, { size: 14, className: "dfa-tab-title-icon" }),
+		h("span", { children: tab.title }),
+	] });
 }
 
 // ─── Toast 堆栈 ───────────────────────────────────────────────────────────
@@ -947,113 +1026,201 @@ const CSS = `
 .dfa-compress-input:focus {
 	border-color: var(--dsw-alias-state-business-primary);
 }
-.dfa-edit-dialog {
-	width: min(920px, calc(100vw - 64px));
-	max-width: none;
-}
-.dfa-edit-toolbar {
+.dfa-editor-root {
+	flex-direction: column;
+	flex: auto;
+	height: 100%;
+	min-height: 0;
 	display: flex;
-	align-items: center;
-	gap: 8px;
-	margin-bottom: 10px;
+	background: var(--dsw-alias-bg-page, transparent);
 }
-.dfa-edit-toggle {
+.dfa-editor-header {
+	box-sizing: border-box;
+	border-bottom: .5px solid var(--dsw-alias-border-l3);
+	flex: none;
+	align-items: center;
+	gap: 6px;
+	height: 38px;
+	padding: 0 6px 0 14px;
+	display: flex;
+	min-width: 0;
+}
+.dfa-editor-name {
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	min-width: 0;
+	overflow: hidden;
+	color: var(--dsw-alias-label-primary);
+	font-size: var(--dsh-content-font-size-secondary, 13px);
+}
+.dfa-editor-dirty {
+	color: var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-business-primary));
+	font-size: 14px;
+	flex: none;
+	line-height: 1;
+}
+.dfa-editor-spacer {
+	flex: auto;
+}
+.dfa-editor-confirm {
+	color: var(--dsw-alias-label-secondary);
+	font-size: 12px;
+	white-space: nowrap;
+}
+.dfa-editor-btn {
 	display: inline-flex;
 	align-items: center;
-	gap: 2px;
-	padding: 2px;
-	border: .5px solid var(--dsw-alias-border-l3);
-	border-radius: var(--dsw-radius-md);
-}
-.dfa-edit-toggle-btn {
+	gap: 5px;
+	height: 28px;
 	border: none;
+	border-radius: var(--dsw-radius-sm);
 	background: transparent;
 	color: var(--dsw-alias-label-secondary);
 	cursor: pointer;
 	font: inherit;
 	font-size: 13px;
-	padding: 3px 12px;
-	border-radius: var(--dsw-radius-sm);
-	line-height: 1.5;
+	padding: 0 8px;
+	line-height: 1;
+	white-space: nowrap;
 }
-.dfa-edit-toggle-btn:hover {
+.dfa-editor-btn:hover:not(:disabled) {
 	color: var(--dsw-alias-label-primary);
 	background: var(--dsw-alias-interactive-bg-hover);
 }
-.dfa-edit-toggle-active,
-.dfa-edit-toggle-active:hover {
-	color: var(--dsw-alias-label-primary);
+.dfa-editor-btn:disabled {
+	color: var(--dsw-alias-label-caption);
+	cursor: default;
+}
+.dfa-editor-btn svg {
+	width: 14px;
+	height: 14px;
+	flex: none;
+}
+.dfa-editor-btn-primary {
+	background: var(--dsw-alias-state-business-primary);
+	color: var(--dsw-alias-text-on-business, #fff);
+}
+.dfa-editor-btn-primary:hover:not(:disabled) {
+	background: var(--dsw-alias-state-business-hover, var(--dsw-alias-state-business-primary));
+	color: var(--dsw-alias-text-on-business, #fff);
+}
+.dfa-editor-btn-primary:disabled {
 	background: var(--dsw-alias-interactive-bg-hover);
+	color: var(--dsw-alias-label-caption);
 }
-.dfa-edit-loading {
-	margin: 24px 0;
-	color: var(--dsw-alias-label-tertiary);
-	font-size: 13px;
-	text-align: center;
-}
-.dfa-edit-body {
+.dfa-editor-status {
+	box-sizing: border-box;
+	flex-direction: column;
+	justify-content: center;
+	align-items: center;
+	gap: 10px;
+	height: 100%;
+	padding: 12px 10px;
 	display: flex;
-	height: min(62vh, 560px);
-	min-height: 220px;
-	border: .5px solid var(--dsw-alias-border-l3);
-	border-radius: var(--dsw-radius-md);
-	overflow: hidden;
-	background: var(--dsw-alias-bg-page, transparent);
 }
-.dfa-edit-gutter {
+.dfa-editor-status-line {
+	color: var(--dsw-alias-label-secondary);
+	font-size: var(--dsh-content-font-size-secondary, 13px);
+	margin: 0;
+	line-height: 1.6;
+	text-align: center;
+	overflow-wrap: anywhere;
+}
+.dfa-editor-retry {
+	height: 32px;
+	color: var(--dsw-alias-label-primary);
+	font-size: var(--dsh-content-font-size-secondary, 13px);
+	border: .5px solid var(--dsw-alias-border-l2);
+	border-radius: var(--dsw-radius-md);
+	cursor: pointer;
+	background: transparent;
+	flex: none;
+	align-items: center;
+	gap: 6px;
+	padding: 0 14px 0 12px;
+	font-family: inherit;
+	display: inline-flex;
+}
+.dfa-editor-retry:hover {
+	background: var(--dsw-alias-interactive-bg-hover);
+}
+.dfa-tab-title-icon {
+	flex: none;
+	color: var(--dsw-alias-label-secondary);
+}
+.dfa-code-editor {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	border-top: none;
+	overflow: hidden;
+}
+.dfa-code-gutter {
 	flex: none;
 	width: 44px;
 	overflow: hidden;
-	padding: 8px 6px 8px 0;
 	box-sizing: border-box;
+	padding: 8px 6px 8px 0;
 	text-align: right;
 	color: var(--dsw-alias-label-caption);
 	font-family: var(--dsh-font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
-	font-size: 12px;
+	font-size: 13px;
 	line-height: 1.6;
 	user-select: none;
 	white-space: pre;
 	border-right: .5px solid var(--dsw-alias-border-l3);
+	background: var(--dsw-alias-bg-layer-1, transparent);
 }
-.dfa-edit-textarea {
+.dfa-code-viewport {
 	flex: 1;
 	min-width: 0;
-	border: none;
-	outline: none;
-	resize: none;
-	padding: 8px 12px;
-	background: transparent;
-	color: var(--dsw-alias-label-primary);
+	min-height: 0;
+	position: relative;
+	overflow: hidden;
+}
+.dfa-code-highlight,
+.dfa-code-input {
+	margin: 0;
+	padding: 8px 12px 48px;
+	border: 0;
 	font-family: var(--dsh-font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
 	font-size: 13px;
 	line-height: 1.6;
+	letter-spacing: normal;
 	white-space: pre;
-	overflow: auto;
 	tab-size: 2;
+	word-break: normal;
+	overflow-wrap: normal;
 }
-.dfa-edit-preview {
-	max-height: min(62vh, 560px);
-	min-height: 220px;
-	overflow: auto;
-	border: .5px solid var(--dsw-alias-border-l3);
-	border-radius: var(--dsw-radius-md);
-}
-.dfa-edit-dirty {
-	display: flex;
-	align-items: flex-start;
-	gap: 10px;
-	padding: 4px 2px;
+.dfa-code-highlight {
+	position: absolute;
+	top: 0;
+	left: 0;
+	min-width: 100%;
+	box-sizing: border-box;
+	pointer-events: none;
 	color: var(--dsw-alias-label-primary);
 }
-.dfa-edit-dirty-icon {
-	flex: none;
-	margin-top: 2px;
-	color: var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-business-primary));
+.dfa-code-input {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	box-sizing: border-box;
+	resize: none;
+	overflow: auto;
+	outline: none;
+	background: transparent;
+	color: transparent;
+	-webkit-text-fill-color: transparent;
+	caret-color: var(--dsw-alias-label-primary);
 }
-.dfa-edit-dirty p {
-	margin: 0;
-	font-size: 13px;
-	line-height: 1.6;
+.dfa-code-input::selection {
+	background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 28%, transparent);
+}
+.dfa-code-input::placeholder {
+	color: var(--dsw-alias-label-caption);
+	-webkit-text-fill-color: var(--dsw-alias-label-caption);
 }
 .dfa-toasts {
 	position: fixed;
@@ -1149,12 +1316,30 @@ export function apply(ctx) {
 		locale: NS,
 		inject: () => ({}),
 	}, CompressDialog));
-	ctx.slots.inject("shell.overlay", () => ctx.slots.register({
-		name: "shell.overlay",
-		id: "file-actions-edit-dialog",
+	sidebarRight = ctx.sidebarRight;
+	sidebarRightTabs = ctx.sidebarRightTabs;
+	// 文件编辑 tab 类型：仅在显式指定 kind 时打开（patterns 只匹配本插件的
+	// file-edit 地址，不影响普通文件点击 → 官方预览）。
+	ctx.effect(() => sidebarRightTabs.register({
+		id: EDIT_ID,
+		kind: EDIT_KIND,
+		patterns: ["dsh-resource://file-edit/**"],
+		priority: "fallback",
+		canOpen: (address) => String(address).startsWith(EDIT_PREFIX),
+		title: (address) => parseEditAddress(address)?.path !== undefined ? basenameOf(parseEditAddress(address).path) : "Edit",
+	}), "file-actions: editor tab type");
+	ctx.effect(() => ctx.slots.inject("sidebar.right.pane.tab", () => ctx.slots.register({
+		name: "sidebar.right.pane.tab",
+		key: EDIT_ID,
 		locale: NS,
 		inject: () => ({}),
-	}, EditDialog));
+	}, EditorTab)), "file-actions: editor tab body");
+	ctx.effect(() => ctx.slots.inject("sidebar.right.pane.tab.title", () => ctx.slots.register({
+		name: "sidebar.right.pane.tab.title",
+		key: EDIT_ID,
+		locale: NS,
+		inject: () => ({}),
+	}, EditorTabTitle)), "file-actions: editor tab title");
 	ctx.slots.inject("shell.overlay", () => ctx.slots.register({
 		name: "shell.overlay",
 		id: "file-actions-toasts",
@@ -1287,4 +1472,4 @@ export function apply(ctx) {
 }
 
 /** 浏览器依赖注入面（服务名；包级依赖见 package.json 的 dsh.client.inject）。 */
-export const inject = ["slots", "locale"];
+export const inject = ["slots", "locale", "sidebarRightTabs", "sidebarRight"];

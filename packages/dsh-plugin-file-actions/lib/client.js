@@ -33,6 +33,8 @@ var import_react = require("react");
 var import_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 var NS = "dsh-plugin-file-actions";
 var API = "/api/dsh-file-actions";
+var sidebarRight = null;
+var sidebarRightTabs = null;
 var OWN_UI = "[data-dfa-ui], .dfa-menu";
 var zh = {
   "menu.paste": "\u7C98\u8D34",
@@ -59,20 +61,19 @@ var zh = {
   "compress.cancel": "\u53D6\u6D88",
   "compress.confirm": "\u538B\u7F29",
   "menu.edit": "\u7F16\u8F91",
-  "edit.title": "\u7F16\u8F91\u6587\u4EF6",
-  "edit.editing": "\u7F16\u8F91",
-  "edit.preview": "\u9884\u89C8",
+  "edit.title": "\u7F16\u8F91",
   "edit.loading": "\u52A0\u8F7D\u4E2D\u2026",
   "edit.format": "\u683C\u5F0F\u5316",
-  "edit.formatUnsupported": "\u8BE5\u6587\u4EF6\u7C7B\u578B\u6682\u4E0D\u652F\u6301\u4E00\u952E\u683C\u5F0F\u5316",
   "edit.revert": "\u6062\u590D\u539F\u59CB",
   "edit.save": "\u4FDD\u5B58",
-  "edit.cancel": "\u53D6\u6D88",
+  "edit.reload": "\u91CD\u65B0\u52A0\u8F7D",
+  "edit.reloadConfirm": "\u91CD\u65B0\u52A0\u8F7D\u4F1A\u653E\u5F03\u672A\u4FDD\u5B58\u7684\u4FEE\u6539\uFF0C\u7EE7\u7EED\uFF1F",
+  "edit.confirm": "\u786E\u8BA4",
   "edit.saved": "\u5DF2\u4FDD\u5B58 {name}",
   "edit.formatted": "\u5DF2\u683C\u5F0F\u5316",
-  "edit.dirtyWarning": "\u6709\u672A\u4FDD\u5B58\u7684\u4FEE\u6539\uFF0C\u786E\u5B9A\u653E\u5F03\u5E76\u5173\u95ED\u5417\uFF1F",
-  "edit.discard": "\u653E\u5F03\u4FEE\u6539",
-  "edit.keepEditing": "\u7EE7\u7EED\u7F16\u8F91",
+  "edit.closedUnsaved": "\u5DF2\u5173\u95ED\u672A\u4FDD\u5B58\u7684\u7F16\u8F91\uFF1A{name}",
+  "edit.unavailable": "\u65E0\u6CD5\u89E3\u6790\u8BE5\u7F16\u8F91\u5730\u5740",
+  "edit.unknownFormat": "\u8BE5\u6587\u4EF6\u7C7B\u578B\u6682\u4E0D\u652F\u6301\u4E00\u952E\u683C\u5F0F\u5316",
   "toast.cut": "\u5DF2\u526A\u5207 {count} \u9879\uFF0C\u53F3\u952E\u76EE\u5F55\u6216\u4F7F\u7528\u9876\u90E8\u300C\u7C98\u8D34\u300D\u6309\u94AE\u7C98\u8D34",
   "toast.copied": "\u5DF2\u590D\u5236 {count} \u9879\uFF0C\u53F3\u952E\u76EE\u5F55\u6216\u4F7F\u7528\u9876\u90E8\u300C\u7C98\u8D34\u300D\u6309\u94AE\u7C98\u8D34",
   "toast.pasted": "\u5DF2\u7C98\u8D34 {count} \u9879",
@@ -109,20 +110,19 @@ var en = {
   "compress.cancel": "Cancel",
   "compress.confirm": "Compress",
   "menu.edit": "Edit",
-  "edit.title": "Edit file",
-  "edit.editing": "Edit",
-  "edit.preview": "Preview",
+  "edit.title": "Edit",
   "edit.loading": "Loading\u2026",
   "edit.format": "Format",
-  "edit.formatUnsupported": "One-click formatting is not supported for this file type",
   "edit.revert": "Revert",
   "edit.save": "Save",
-  "edit.cancel": "Cancel",
+  "edit.reload": "Reload",
+  "edit.reloadConfirm": "Reloading discards unsaved changes. Continue?",
+  "edit.confirm": "Confirm",
   "edit.saved": "Saved {name}",
   "edit.formatted": "Formatted",
-  "edit.dirtyWarning": "You have unsaved changes. Discard them and close?",
-  "edit.discard": "Discard changes",
-  "edit.keepEditing": "Keep editing",
+  "edit.closedUnsaved": "Closed with unsaved changes: {name}",
+  "edit.unavailable": "Cannot parse this editor address",
+  "edit.unknownFormat": "One-click formatting is not supported for this file type",
   "toast.cut": "Cut {count} items \u2014 right-click a directory or use the Paste button to paste",
   "toast.copied": "Copied {count} items \u2014 right-click a directory or use the Paste button to paste",
   "toast.pasted": "Pasted {count} items",
@@ -158,10 +158,6 @@ var state = {
     /** @type {CompressRequest | null} */
     null
   ),
-  editRequest: (
-    /** @type {EditRequest | null} */
-    null
-  ),
   toasts: (
     /** @type {ToastItem[]} */
     []
@@ -175,7 +171,7 @@ function notify() {
 }
 function setState(patch) {
   const next = { ...state, ...patch };
-  if (next.clipboard === state.clipboard && next.selection === state.selection && next.menu === state.menu && next.deleteRequest === state.deleteRequest && next.compressRequest === state.compressRequest && next.editRequest === state.editRequest && next.toasts === state.toasts && next.treeVisible === state.treeVisible) return;
+  if (next.clipboard === state.clipboard && next.selection === state.selection && next.menu === state.menu && next.deleteRequest === state.deleteRequest && next.compressRequest === state.compressRequest && next.toasts === state.toasts && next.treeVisible === state.treeVisible) return;
   Object.assign(state, next);
   notify();
 }
@@ -292,16 +288,17 @@ function settleCompress() {
   if (state.compressRequest === null) return;
   setState({ compressRequest: null });
 }
-function requestEdit(request) {
-  setState({ editRequest: request });
-}
-function settleEdit() {
-  if (state.editRequest === null) return;
-  setState({ editRequest: null });
-}
 function openEdit(path, workspaceRoot = currentTreeRoot()) {
   if (workspaceRoot === null || path === null || path === "") return;
-  requestEdit({ path, workspaceRoot });
+  if (sidebarRight === null) {
+    pushToast(t("edit.unavailable"), "error");
+    return;
+  }
+  try {
+    sidebarRight.openResource(editAddress(workspaceRoot, path), { kind: EDIT_KIND });
+  } catch (error) {
+    pushToast(error.message, "error");
+  }
 }
 function stagePaths(paths, mode, workspaceRoot = currentTreeRoot()) {
   if (workspaceRoot === null || paths.length === 0) return;
@@ -571,6 +568,25 @@ function CompressDialog() {
     ])
   });
 }
+var EDIT_KIND = "file-editor";
+var EDIT_ID = "dsh-plugin-file-actions";
+var EDIT_PREFIX = "dsh-resource://file-edit/";
+function editAddress(workspaceRoot, path) {
+  return `${EDIT_PREFIX}${encodeURIComponent(workspaceRoot)}/${encodeURIComponent(path)}`;
+}
+function parseEditAddress(address) {
+  const rest = String(address).slice(EDIT_PREFIX.length);
+  const sep = rest.indexOf("/");
+  if (sep < 0) return null;
+  try {
+    return {
+      workspaceRoot: decodeURIComponent(rest.slice(0, sep)),
+      path: decodeURIComponent(rest.slice(sep + 1))
+    };
+  } catch {
+    return null;
+  }
+}
 function applyIndent(content, textarea, delta) {
   const start = textarea.selectionStart ?? content.length;
   const end = textarea.selectionEnd ?? start;
@@ -593,135 +609,183 @@ function applyIndent(content, textarea, delta) {
   });
   return next;
 }
-function EditDialog() {
-  const request = useStore((s) => s.editRequest);
+function tokenNodes(tokens, content) {
+  const lines = tokens ?? content.split("\n").map((line) => [{ text: line, style: null }]);
+  const nodes = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? [];
+    for (let j = 0; j < line.length; j++) {
+      const token = line[j];
+      if (token.style !== null && token.style !== void 0) nodes.push((0, import_react.createElement)("span", { style: token.style }, token.text));
+      else nodes.push(token.text);
+    }
+    if (i < lines.length - 1) nodes.push("\n");
+  }
+  return nodes;
+}
+function HighlightEditor({ content, language, onContent, onSave, onFormat, saveEnabled }) {
+  const highlight = (0, import_dsh_client_ui_primitives.useCodeHighlighter)(language);
+  const [scroll, setScroll] = (0, import_react.useState)({ left: 0, top: 0 });
+  const [highlightContent, setHighlightContent] = (0, import_react.useState)(content);
+  (0, import_react.useEffect)(() => {
+    const timer = setTimeout(() => setHighlightContent(content), 120);
+    return () => clearTimeout(timer);
+  }, [content]);
+  const tokens = (0, import_react.useMemo)(() => highlight?.(highlightContent) ?? null, [highlight, highlightContent]);
+  const lineCount = content.split("\n").length;
+  const gutterText = Array.from({ length: lineCount }, (_, i) => String(i + 1)).join("\n");
+  const textareaRef = (0, import_react.useRef)(null);
+  return (0, import_react.createElement)("div", { className: "dfa-code-editor" }, [
+    (0, import_react.createElement)("div", {
+      className: "dfa-code-gutter",
+      "aria-hidden": "true",
+      style: { transform: `translateY(${-scroll.top}px)` },
+      children: gutterText
+    }),
+    (0, import_react.createElement)("div", { className: "dfa-code-viewport" }, [
+      (0, import_react.createElement)("pre", {
+        className: "dfa-code-highlight",
+        "aria-hidden": "true",
+        style: { transform: `translate(${-scroll.left}px, ${-scroll.top}px)` },
+        children: tokenNodes(tokens, highlightContent)
+      }),
+      (0, import_react.createElement)("textarea", {
+        ref: textareaRef,
+        className: "dfa-code-input",
+        value: content,
+        spellCheck: false,
+        wrap: "off",
+        onChange: (event) => onContent(event.currentTarget.value),
+        onScroll: (event) => setScroll({ left: event.currentTarget.scrollLeft, top: event.currentTarget.scrollTop }),
+        onKeyDown: (event) => {
+          if (event.key === "Tab") {
+            event.preventDefault();
+            const el = event.currentTarget;
+            onContent(applyIndent(content, el, event.shiftKey ? -2 : 2));
+            return;
+          }
+          if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+            event.preventDefault();
+            onSave();
+          }
+        }
+      })
+    ])
+  ]);
+}
+function EditorTab(props) {
+  const translate = props.t ?? t;
+  const { useTabInfo } = props;
+  const { tab } = useTabInfo();
+  const parsed = parseEditAddress(tab.contentId);
   const [content, setContent] = (0, import_react.useState)("");
   const [original, setOriginal] = (0, import_react.useState)("");
   const [loaded, setLoaded] = (0, import_react.useState)(false);
-  const [view, setView] = (0, import_react.useState)("edit");
-  const [confirmingClose, setConfirmingClose] = (0, import_react.useState)(false);
+  const [error, setError] = (0, import_react.useState)(null);
   const [saving, setSaving] = (0, import_react.useState)(false);
-  const textareaRef = (0, import_react.useRef)(null);
-  const gutterRef = (0, import_react.useRef)(null);
-  (0, import_react.useEffect)(() => {
-    if (request === null) return;
-    setContent("");
-    setOriginal("");
+  const [confirmingReload, setConfirmingReload] = (0, import_react.useState)(false);
+  const dirtyRef = (0, import_react.useRef)(false);
+  const dirty = content !== original;
+  dirtyRef.current = dirty;
+  const name = parsed === null ? "" : basenameOf(parsed.path);
+  const load = () => {
+    if (parsed === null) return;
     setLoaded(false);
-    setView("edit");
-    setConfirmingClose(false);
-    api("read", { workspaceRoot: request.workspaceRoot, path: request.path }).then((payload) => {
+    setError(null);
+    setConfirmingReload(false);
+    api("read", { workspaceRoot: parsed.workspaceRoot, path: parsed.path }).then((payload) => {
       setContent(payload.content);
       setOriginal(payload.content);
       setLoaded(true);
-    }).catch((error) => {
-      pushToast(error.message, "error");
-      settleEdit();
+    }).catch((readError) => {
+      setError(readError.message);
     });
-  }, [request]);
-  if (request === null) return null;
-  const dirty = content !== original;
-  const name = basenameOf(request.path);
-  const lineCount = content.split("\n").length;
-  const gutterText = Array.from({ length: lineCount }, (_, i) => String(i + 1)).join("\n");
-  const requestClose = () => {
-    if (dirty && !confirmingClose) {
-      setConfirmingClose(true);
-      return;
-    }
-    settleEdit();
   };
+  (0, import_react.useEffect)(() => {
+    load();
+  }, [parsed?.workspaceRoot, parsed?.path]);
+  (0, import_react.useEffect)(() => {
+    tab.actions.bindCommands({ refresh: load });
+  }, [tab.actions]);
+  (0, import_react.useEffect)(() => () => {
+    if (dirtyRef.current && name !== "") pushToast(translate("edit.closedUnsaved", { name }));
+  }, []);
   const save = () => {
-    if (!loaded || saving) return;
+    if (parsed === null || !loaded || saving) return;
     setSaving(true);
-    api("save", { workspaceRoot: request.workspaceRoot, path: request.path, content }).then((payload) => {
+    api("save", { workspaceRoot: parsed.workspaceRoot, path: parsed.path, content }).then(() => {
       setSaving(false);
       setOriginal(content);
-      settleEdit();
-      pushToast(t("edit.saved", { name }));
-    }).catch((error) => {
+      pushToast(translate("edit.saved", { name }));
+    }).catch((saveError) => {
       setSaving(false);
-      pushToast(error.message, "error");
+      pushToast(saveError.message, "error");
     });
   };
   const format2 = () => {
-    if (!loaded) return;
-    api("format", { workspaceRoot: request.workspaceRoot, path: request.path, content }).then((payload) => {
+    if (parsed === null || !loaded) return;
+    api("format", { workspaceRoot: parsed.workspaceRoot, path: parsed.path, content }).then((payload) => {
       setContent(payload.content);
-      setView("edit");
-      pushToast(t("edit.formatted"));
-    }).catch((error) => {
-      pushToast(error.message, "error");
+      pushToast(translate("edit.formatted"));
+    }).catch((formatError) => {
+      pushToast(formatError.message, "error");
     });
   };
-  return (0, import_react.createElement)(import_dsh_client_ui_primitives.Modal, {
-    open: true,
-    title: `${t("edit.title")} \xB7 ${name}`,
-    description: request.path,
-    className: "dfa-edit-dialog",
-    onClose: requestClose,
-    footer: confirmingClose ? (0, import_react.createElement)(import_react.Fragment, { children: [
-      (0, import_react.createElement)(import_dsh_client_ui_primitives.Button, { variant: "outline", onClick: () => setConfirmingClose(false), children: t("edit.keepEditing") }),
-      (0, import_react.createElement)(import_dsh_client_ui_primitives.Button, { variant: "primary", onClick: settleEdit, children: t("edit.discard") })
-    ] }) : (0, import_react.createElement)(import_react.Fragment, { children: [
-      (0, import_react.createElement)(import_dsh_client_ui_primitives.Button, { variant: "outline", onClick: requestClose, children: t("edit.cancel") }),
-      (0, import_react.createElement)(import_dsh_client_ui_primitives.Button, { variant: "outline", disabled: !loaded || !dirty, onClick: () => setContent(original), children: t("edit.revert") }),
-      (0, import_react.createElement)(import_dsh_client_ui_primitives.Button, { variant: "outline", disabled: !loaded, onClick: format2, children: t("edit.format") }),
-      (0, import_react.createElement)(import_dsh_client_ui_primitives.Button, { variant: "primary", disabled: !loaded || !dirty || saving, onClick: save, children: t("edit.save") })
-    ] }),
-    children: confirmingClose ? (0, import_react.createElement)("div", { className: "dfa-edit-dirty" }, [
-      (0, import_react.createElement)(import_dsh_client_ui_primitives.IconWarningOutlineRegular, { size: 18, className: "dfa-edit-dirty-icon" }),
-      (0, import_react.createElement)("p", { children: t("edit.dirtyWarning") })
-    ]) : (0, import_react.createElement)(import_react.Fragment, { children: [
-      (0, import_react.createElement)("div", { className: "dfa-edit-toolbar" }, [
-        (0, import_react.createElement)("div", { className: "dfa-edit-toggle", role: "tablist" }, [
-          toggleButton(view === "edit", t("edit.editing"), () => setView("edit")),
-          toggleButton(view === "preview", t("edit.preview"), () => setView("preview"))
-        ])
-      ]),
-      !loaded ? (0, import_react.createElement)("p", { className: "dfa-edit-loading", children: t("edit.loading") }) : view === "edit" ? (0, import_react.createElement)("div", { className: "dfa-edit-body" }, [
-        (0, import_react.createElement)("div", { ref: gutterRef, className: "dfa-edit-gutter", "aria-hidden": "true", children: gutterText }),
-        (0, import_react.createElement)("textarea", {
-          ref: textareaRef,
-          className: "dfa-edit-textarea",
-          value: content,
-          spellCheck: false,
-          wrap: "off",
-          onChange: (event) => setContent(event.currentTarget.value),
-          onScroll: (event) => {
-            const gutter = gutterRef.current;
-            if (gutter !== null) gutter.scrollTop = event.currentTarget.scrollTop;
-          },
-          onKeyDown: (event) => {
-            if (event.key === "Tab") {
-              event.preventDefault();
-              const el = event.currentTarget;
-              setContent(applyIndent(content, el, event.shiftKey ? -2 : 2));
-              return;
-            }
-            if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
-              event.preventDefault();
-              save();
-            }
-          }
-        })
-      ]) : (0, import_react.createElement)(
-        "div",
-        { className: "dfa-edit-preview" },
-        (0, import_react.createElement)(import_dsh_client_ui_primitives.CodeBlock, { code: content, lang: (0, import_dsh_client_ui_primitives.languageForPath)(request.path) ?? "plaintext", lineNumbers: true, showHeader: false, wrap: true })
-      )
-    ] })
-  });
+  if (parsed === null) return (0, import_react.createElement)(
+    "div",
+    { className: "dfa-editor-status" },
+    (0, import_react.createElement)("p", { className: "dfa-editor-status-line", children: translate("edit.unavailable") })
+  );
+  const language = (0, import_dsh_client_ui_primitives.languageForPath)(parsed.path) ?? "plaintext";
+  return (0, import_react.createElement)("div", { className: "dfa-editor-root", "data-dfa-ui": "editor" }, [
+    (0, import_react.createElement)("div", { className: "dfa-editor-header" }, [
+      (0, import_react.createElement)("span", { className: "dfa-editor-name", title: parsed.path, children: name }),
+      dirty && (0, import_react.createElement)("span", { className: "dfa-editor-dirty", children: "\u2022" }),
+      (0, import_react.createElement)("span", { className: "dfa-editor-spacer" }),
+      confirmingReload ? (0, import_react.createElement)(import_react.Fragment, { children: [
+        (0, import_react.createElement)("span", { className: "dfa-editor-confirm", children: translate("edit.reloadConfirm") }),
+        editorButton(translate("edit.confirm"), load),
+        editorButton(translate("edit.revert"), () => setConfirmingReload(false))
+      ] }) : (0, import_react.createElement)(import_react.Fragment, { children: [
+        editorButton(translate("edit.reload"), () => {
+          if (dirty) setConfirmingReload(true);
+          else load();
+        }, (0, import_react.createElement)(import_dsh_client_ui_primitives.IconRefreshOutlineRegular, { size: 14 })),
+        editorButton(translate("edit.format"), format2, (0, import_react.createElement)(import_dsh_client_ui_primitives.IconEditOutlineRegular, { size: 14 }), !loaded),
+        editorButton(translate("edit.revert"), () => setContent(original), (0, import_react.createElement)(import_dsh_client_ui_primitives.IconCloseOutlineRegular, { size: 14 }), !loaded || !dirty),
+        editorButton(translate("edit.save"), save, (0, import_react.createElement)(import_dsh_client_ui_primitives.IconCheckOutlineRegular, { size: 14 }), !loaded || !dirty || saving, true)
+      ] })
+    ]),
+    !loaded && error === null ? (0, import_react.createElement)(
+      "div",
+      { className: "dfa-editor-status" },
+      (0, import_react.createElement)("p", { className: "dfa-editor-status-line", children: translate("edit.loading") })
+    ) : error !== null ? (0, import_react.createElement)("div", { className: "dfa-editor-status" }, [
+      (0, import_react.createElement)("p", { className: "dfa-editor-status-line", children: error }),
+      (0, import_react.createElement)("button", { type: "button", className: "dfa-editor-retry", onClick: load, children: translate("edit.reload") })
+    ]) : (0, import_react.createElement)(HighlightEditor, {
+      content,
+      language,
+      onContent: setContent,
+      onSave: save
+    })
+  ]);
 }
-function toggleButton(active, label, onClick) {
+function editorButton(label, onClick, icon = null, disabled = false, primary = false) {
   return (0, import_react.createElement)("button", {
     type: "button",
-    role: "tab",
-    "aria-selected": active,
-    className: active ? "dfa-edit-toggle-btn dfa-edit-toggle-active" : "dfa-edit-toggle-btn",
+    className: primary ? "dfa-editor-btn dfa-editor-btn-primary" : "dfa-editor-btn",
+    disabled,
     onClick,
-    children: label
+    children: [icon, label].filter(Boolean)
   });
+}
+function EditorTabTitle({ useTabInfo }) {
+  const { tab } = useTabInfo();
+  return (0, import_react.createElement)(import_react.Fragment, { children: [
+    (0, import_react.createElement)(import_dsh_client_ui_primitives.IconEditOutlineRegular, { size: 14, className: "dfa-tab-title-icon" }),
+    (0, import_react.createElement)("span", { children: tab.title })
+  ] });
 }
 function ToastStack() {
   const toasts = useStore((s) => s.toasts);
@@ -868,113 +932,201 @@ var CSS = `
 .dfa-compress-input:focus {
 	border-color: var(--dsw-alias-state-business-primary);
 }
-.dfa-edit-dialog {
-	width: min(920px, calc(100vw - 64px));
-	max-width: none;
-}
-.dfa-edit-toolbar {
+.dfa-editor-root {
+	flex-direction: column;
+	flex: auto;
+	height: 100%;
+	min-height: 0;
 	display: flex;
-	align-items: center;
-	gap: 8px;
-	margin-bottom: 10px;
+	background: var(--dsw-alias-bg-page, transparent);
 }
-.dfa-edit-toggle {
+.dfa-editor-header {
+	box-sizing: border-box;
+	border-bottom: .5px solid var(--dsw-alias-border-l3);
+	flex: none;
+	align-items: center;
+	gap: 6px;
+	height: 38px;
+	padding: 0 6px 0 14px;
+	display: flex;
+	min-width: 0;
+}
+.dfa-editor-name {
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	min-width: 0;
+	overflow: hidden;
+	color: var(--dsw-alias-label-primary);
+	font-size: var(--dsh-content-font-size-secondary, 13px);
+}
+.dfa-editor-dirty {
+	color: var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-business-primary));
+	font-size: 14px;
+	flex: none;
+	line-height: 1;
+}
+.dfa-editor-spacer {
+	flex: auto;
+}
+.dfa-editor-confirm {
+	color: var(--dsw-alias-label-secondary);
+	font-size: 12px;
+	white-space: nowrap;
+}
+.dfa-editor-btn {
 	display: inline-flex;
 	align-items: center;
-	gap: 2px;
-	padding: 2px;
-	border: .5px solid var(--dsw-alias-border-l3);
-	border-radius: var(--dsw-radius-md);
-}
-.dfa-edit-toggle-btn {
+	gap: 5px;
+	height: 28px;
 	border: none;
+	border-radius: var(--dsw-radius-sm);
 	background: transparent;
 	color: var(--dsw-alias-label-secondary);
 	cursor: pointer;
 	font: inherit;
 	font-size: 13px;
-	padding: 3px 12px;
-	border-radius: var(--dsw-radius-sm);
-	line-height: 1.5;
+	padding: 0 8px;
+	line-height: 1;
+	white-space: nowrap;
 }
-.dfa-edit-toggle-btn:hover {
+.dfa-editor-btn:hover:not(:disabled) {
 	color: var(--dsw-alias-label-primary);
 	background: var(--dsw-alias-interactive-bg-hover);
 }
-.dfa-edit-toggle-active,
-.dfa-edit-toggle-active:hover {
-	color: var(--dsw-alias-label-primary);
+.dfa-editor-btn:disabled {
+	color: var(--dsw-alias-label-caption);
+	cursor: default;
+}
+.dfa-editor-btn svg {
+	width: 14px;
+	height: 14px;
+	flex: none;
+}
+.dfa-editor-btn-primary {
+	background: var(--dsw-alias-state-business-primary);
+	color: var(--dsw-alias-text-on-business, #fff);
+}
+.dfa-editor-btn-primary:hover:not(:disabled) {
+	background: var(--dsw-alias-state-business-hover, var(--dsw-alias-state-business-primary));
+	color: var(--dsw-alias-text-on-business, #fff);
+}
+.dfa-editor-btn-primary:disabled {
 	background: var(--dsw-alias-interactive-bg-hover);
+	color: var(--dsw-alias-label-caption);
 }
-.dfa-edit-loading {
-	margin: 24px 0;
-	color: var(--dsw-alias-label-tertiary);
-	font-size: 13px;
-	text-align: center;
-}
-.dfa-edit-body {
+.dfa-editor-status {
+	box-sizing: border-box;
+	flex-direction: column;
+	justify-content: center;
+	align-items: center;
+	gap: 10px;
+	height: 100%;
+	padding: 12px 10px;
 	display: flex;
-	height: min(62vh, 560px);
-	min-height: 220px;
-	border: .5px solid var(--dsw-alias-border-l3);
-	border-radius: var(--dsw-radius-md);
-	overflow: hidden;
-	background: var(--dsw-alias-bg-page, transparent);
 }
-.dfa-edit-gutter {
+.dfa-editor-status-line {
+	color: var(--dsw-alias-label-secondary);
+	font-size: var(--dsh-content-font-size-secondary, 13px);
+	margin: 0;
+	line-height: 1.6;
+	text-align: center;
+	overflow-wrap: anywhere;
+}
+.dfa-editor-retry {
+	height: 32px;
+	color: var(--dsw-alias-label-primary);
+	font-size: var(--dsh-content-font-size-secondary, 13px);
+	border: .5px solid var(--dsw-alias-border-l2);
+	border-radius: var(--dsw-radius-md);
+	cursor: pointer;
+	background: transparent;
+	flex: none;
+	align-items: center;
+	gap: 6px;
+	padding: 0 14px 0 12px;
+	font-family: inherit;
+	display: inline-flex;
+}
+.dfa-editor-retry:hover {
+	background: var(--dsw-alias-interactive-bg-hover);
+}
+.dfa-tab-title-icon {
+	flex: none;
+	color: var(--dsw-alias-label-secondary);
+}
+.dfa-code-editor {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	border-top: none;
+	overflow: hidden;
+}
+.dfa-code-gutter {
 	flex: none;
 	width: 44px;
 	overflow: hidden;
-	padding: 8px 6px 8px 0;
 	box-sizing: border-box;
+	padding: 8px 6px 8px 0;
 	text-align: right;
 	color: var(--dsw-alias-label-caption);
 	font-family: var(--dsh-font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
-	font-size: 12px;
+	font-size: 13px;
 	line-height: 1.6;
 	user-select: none;
 	white-space: pre;
 	border-right: .5px solid var(--dsw-alias-border-l3);
+	background: var(--dsw-alias-bg-layer-1, transparent);
 }
-.dfa-edit-textarea {
+.dfa-code-viewport {
 	flex: 1;
 	min-width: 0;
-	border: none;
-	outline: none;
-	resize: none;
-	padding: 8px 12px;
-	background: transparent;
-	color: var(--dsw-alias-label-primary);
+	min-height: 0;
+	position: relative;
+	overflow: hidden;
+}
+.dfa-code-highlight,
+.dfa-code-input {
+	margin: 0;
+	padding: 8px 12px 48px;
+	border: 0;
 	font-family: var(--dsh-font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
 	font-size: 13px;
 	line-height: 1.6;
+	letter-spacing: normal;
 	white-space: pre;
-	overflow: auto;
 	tab-size: 2;
+	word-break: normal;
+	overflow-wrap: normal;
 }
-.dfa-edit-preview {
-	max-height: min(62vh, 560px);
-	min-height: 220px;
-	overflow: auto;
-	border: .5px solid var(--dsw-alias-border-l3);
-	border-radius: var(--dsw-radius-md);
-}
-.dfa-edit-dirty {
-	display: flex;
-	align-items: flex-start;
-	gap: 10px;
-	padding: 4px 2px;
+.dfa-code-highlight {
+	position: absolute;
+	top: 0;
+	left: 0;
+	min-width: 100%;
+	box-sizing: border-box;
+	pointer-events: none;
 	color: var(--dsw-alias-label-primary);
 }
-.dfa-edit-dirty-icon {
-	flex: none;
-	margin-top: 2px;
-	color: var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-business-primary));
+.dfa-code-input {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	box-sizing: border-box;
+	resize: none;
+	overflow: auto;
+	outline: none;
+	background: transparent;
+	color: transparent;
+	-webkit-text-fill-color: transparent;
+	caret-color: var(--dsw-alias-label-primary);
 }
-.dfa-edit-dirty p {
-	margin: 0;
-	font-size: 13px;
-	line-height: 1.6;
+.dfa-code-input::selection {
+	background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 28%, transparent);
+}
+.dfa-code-input::placeholder {
+	color: var(--dsw-alias-label-caption);
+	-webkit-text-fill-color: var(--dsw-alias-label-caption);
 }
 .dfa-toasts {
 	position: fixed;
@@ -1067,12 +1219,28 @@ function apply(ctx) {
     locale: NS,
     inject: () => ({})
   }, CompressDialog));
-  ctx.slots.inject("shell.overlay", () => ctx.slots.register({
-    name: "shell.overlay",
-    id: "file-actions-edit-dialog",
+  sidebarRight = ctx.sidebarRight;
+  sidebarRightTabs = ctx.sidebarRightTabs;
+  ctx.effect(() => sidebarRightTabs.register({
+    id: EDIT_ID,
+    kind: EDIT_KIND,
+    patterns: ["dsh-resource://file-edit/**"],
+    priority: "fallback",
+    canOpen: (address) => String(address).startsWith(EDIT_PREFIX),
+    title: (address) => parseEditAddress(address)?.path !== void 0 ? basenameOf(parseEditAddress(address).path) : "Edit"
+  }), "file-actions: editor tab type");
+  ctx.effect(() => ctx.slots.inject("sidebar.right.pane.tab", () => ctx.slots.register({
+    name: "sidebar.right.pane.tab",
+    key: EDIT_ID,
     locale: NS,
     inject: () => ({})
-  }, EditDialog));
+  }, EditorTab)), "file-actions: editor tab body");
+  ctx.effect(() => ctx.slots.inject("sidebar.right.pane.tab.title", () => ctx.slots.register({
+    name: "sidebar.right.pane.tab.title",
+    key: EDIT_ID,
+    locale: NS,
+    inject: () => ({})
+  }, EditorTabTitle)), "file-actions: editor tab title");
   ctx.slots.inject("shell.overlay", () => ctx.slots.register({
     name: "shell.overlay",
     id: "file-actions-toasts",
@@ -1197,7 +1365,7 @@ function apply(ctx) {
     };
   }, "file-actions: global listeners");
 }
-var inject = ["slots", "locale"];
+var inject = ["slots", "locale", "sidebarRightTabs", "sidebarRight"];
 
     return module.exports;
   }
