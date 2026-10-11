@@ -306,6 +306,14 @@ function ContextMenu() {
       align,
       listClassName: "dfa-menu",
       onClose: closeMenu,
+      getAnchorRect: () => ({
+        left: menu.x,
+        top: menu.y,
+        right: menu.x,
+        bottom: menu.y,
+        width: 0,
+        height: 0
+      }),
       anchor: (0, import_react.createElement)("span", { style: { position: "fixed", left: menu.x, top: menu.y, width: 0, height: 0 } }),
       children: [
         pasteTarget !== null && (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, {

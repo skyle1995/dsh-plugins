@@ -356,6 +356,14 @@ function ContextMenu() {
 			align,
 			listClassName: "dfa-menu",
 			onClose: closeMenu,
+			getAnchorRect: () => ({
+				left: menu.x,
+				top: menu.y,
+				right: menu.x,
+				bottom: menu.y,
+				width: 0,
+				height: 0,
+			}),
 			anchor: h("span", { style: { position: "fixed", left: menu.x, top: menu.y, width: 0, height: 0 } }),
 			children: [
 				pasteTarget !== null && h(MenuItemButton, {
