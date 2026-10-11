@@ -705,28 +705,48 @@ function parseEditAddress(address) {
 	}
 }
 
-/** 对选区跨行做缩进/反缩进；无选区时在光标处插入两个空格。 */
+/** 对选区跨行做缩进/反缩进；无选区时在光标处插入两个空格。
+ *  返回新内容与新选区（React 提交后由调用方恢复，避免受控 textarea 重置光标）。 */
 function applyIndent(content, textarea, delta) {
 	const start = textarea.selectionStart ?? content.length;
 	const end = textarea.selectionEnd ?? start;
 	if (start === end) {
-		const next = content.slice(0, start) + "  " + content.slice(end);
-		queueMicrotask(() => {
-			textarea.selectionStart = textarea.selectionEnd = start + 2;
-		});
-		return next;
+		return {
+			next: content.slice(0, start) + "  " + content.slice(end),
+			selStart: start + 2,
+			selEnd: start + 2,
+		};
 	}
 	const lineStart = content.lastIndexOf("\n", start - 1) + 1;
 	const rawEnd = content.indexOf("\n", end - 1);
 	const blockEnd = rawEnd === -1 ? content.length : rawEnd;
 	const block = content.slice(lineStart, blockEnd);
-	const shifted = delta > 0 ? block.replace(/^/gm, "  ") : block.replace(/^ {1,2}/gm, "");
-	const next = content.slice(0, lineStart) + shifted + content.slice(blockEnd);
-	queueMicrotask(() => {
-		textarea.selectionStart = start + (start > lineStart ? delta : 0);
-		textarea.selectionEnd = start + (start > lineStart ? delta : 0) + shifted.length - (start === lineStart ? 0 : block.length - (end - start));
-	});
-	return next;
+	const lines = block.split("\n");
+	// 每行的位移：缩进 +2；反缩进去掉最多 2 个行首空格。
+	const shifts = lines.map((line) => (delta > 0 ? 2 : -Math.min(2, /^ */.exec(line)[0].length)));
+	const shifted = lines.map((line, i) => (delta > 0 ? "  " + line : line.replace(/^ {1,2}/, ""))).join("\n");
+	// start/end 所在行（block 内，0 基）：数换行符。
+	const beforeStart = block.slice(0, start - lineStart);
+	const beforeEnd = block.slice(0, end - lineStart);
+	const lineA = (beforeStart.match(/\n/g) ?? []).length;
+	const lineB = (beforeEnd.match(/\n/g) ?? []).length;
+	const startAtLineStart = start === lineStart || content.charCodeAt(start - 1) === 10;
+	// 选区起点：恰在行首时，该行插入发生在起点之后，起点不动；否则随本行位移。
+	const selStart = start + (startAtLineStart ? 0 : shifts[lineA]);
+	// 选区终点：a..b 各行的插入点都落在 [start, end] 内，全部计入。
+	let selEnd = start + (end - start);
+	for (let i = lineA; i <= lineB; i++) selEnd += shifts[i];
+	return { next: content.slice(0, lineStart) + shifted + content.slice(blockEnd), selStart, selEnd };
+}
+
+/** React 提交后再恢复 textarea 选区（双 rAF，受控 textarea 值重置后仍有效）。 */
+function setSelectionAfterCommit(element, start, end) {
+	requestAnimationFrame(() => requestAnimationFrame(() => {
+		if (element !== null) {
+			element.setSelectionRange(start, end);
+			element.focus();
+		}
+	}));
 }
 
 /** 文本中的查找匹配（不区分大小写可选），按出现顺序返回区间。 */
@@ -803,6 +823,8 @@ const EDIT_PAD_TOP = 8;
 const EDIT_PAD_LEFT = 12;
 /** 超过该字符数（约 200KB）关闭语法高亮，纯文本编辑（防大文件卡顿）。 */
 const HIGHLIGHT_MAX_CHARS = 200000;
+/** 右侧代码缩略预览（minimap）宽度。 */
+const MINIMAP_WIDTH = 80;
 
 /** 某行（0 基）的 token 序列按查找区间切分渲染。 */
 function renderLineTokens(lineTokens, lineStart, marks) {
@@ -863,6 +885,60 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 		for (let i = 0; i < content.length; i++) if (content.charCodeAt(i) === 10) count += 1;
 		return count;
 	})();
+	// minimap：每行取首个有颜色的 token 作缩略色（无高亮时全用主题默认色）。
+	const minimapRef = useRef(null);
+	const draggingRef = useRef(false);
+	const lineColors = useMemo(() => {
+		if (tokens === null) return null;
+		const colors = new Array(tokens.length).fill("");
+		for (let i = 0; i < tokens.length; i++) {
+			const line = tokens[i] ?? [];
+			for (const token of line) {
+				if (token.style !== null && token.style !== undefined && token.style.color) {
+					colors[i] = token.style.color;
+					break;
+				}
+			}
+		}
+		return colors;
+	}, [tokens]);
+	useEffect(() => {
+		const canvas = minimapRef.current;
+		if (canvas === null || viewport.height <= 0) return;
+		const dpr = window.devicePixelRatio || 1;
+		canvas.width = Math.max(1, Math.round(MINIMAP_WIDTH * dpr));
+		canvas.height = Math.max(1, Math.round(viewport.height * dpr));
+		const draw = canvas.getContext("2d");
+		if (draw === null) return;
+		draw.scale(dpr, dpr);
+		draw.clearRect(0, 0, MINIMAP_WIDTH, viewport.height);
+		const count = Math.max(lineStarts.length, 1);
+		const perLine = Math.min(viewport.height / count, 4);
+		const fallback = (() => {
+			const value = getComputedStyle(document.documentElement).getPropertyValue("--dsw-alias-label-secondary").trim();
+			return value === "" ? "#7a8699" : value;
+		})();
+		for (let i = 0; i < count; i++) {
+			const color = lineColors?.[i];
+			draw.fillStyle = color !== undefined && color !== "" ? color : fallback;
+			draw.fillRect(0, Math.floor(i * perLine), MINIMAP_WIDTH, Math.max(1, Math.ceil(perLine)));
+		}
+	}, [lineColors, viewport.height, lineStarts.length]);
+	const scrollHeightTotal = EDIT_PAD_TOP + lineCount * EDIT_LINE_HEIGHT + 48;
+	const viewportH = Math.max(viewport.height, 1);
+	const scrollMax = Math.max(scrollHeightTotal - viewportH, 0);
+	const indicatorHeight = Math.max((viewportH * viewportH) / scrollHeightTotal, 24);
+	const indicatorTop = scrollMax > 0 ? (scroll.top / scrollMax) * (viewportH - indicatorHeight) : 0;
+	const scrollMinimapTo = (clientY) => {
+		const el = inputRef.current;
+		if (el === null || minimapRef.current === null) return;
+		const rect = minimapRef.current.getBoundingClientRect();
+		if (rect.height <= 0) return;
+		const y = clientY - rect.top;
+		const travel = Math.max(viewportH - indicatorHeight, 1);
+		const target = ((y - indicatorHeight / 2) / travel) * scrollMax;
+		el.scrollTop = Math.max(0, Math.min(target, scrollMax));
+	};
 	const firstLine = Math.min(Math.floor(scroll.top / EDIT_LINE_HEIGHT), Math.max(lineCount - 1, 0));
 	const visibleCount = Math.ceil(viewport.height / EDIT_LINE_HEIGHT) + 1;
 	const lastLine = Math.min(lineCount - 1, firstLine + visibleCount);
@@ -897,6 +973,28 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 					});
 				}),
 			}),
+			h("div", {
+				className: "dfa-code-minimap",
+				"aria-hidden": "true",
+				onPointerDown: (event) => {
+					event.preventDefault();
+					draggingRef.current = true;
+					event.currentTarget.setPointerCapture?.(event.pointerId);
+					scrollMinimapTo(event.clientY);
+				},
+				onPointerMove: (event) => {
+					if (draggingRef.current) scrollMinimapTo(event.clientY);
+				},
+				onPointerUp: () => {
+					draggingRef.current = false;
+				},
+				onPointerCancel: () => {
+					draggingRef.current = false;
+				},
+			}, [
+				h("canvas", { ref: minimapRef, className: "dfa-code-minimap-canvas" }),
+				h("div", { className: "dfa-code-minimap-indicator", style: { top: indicatorTop, height: indicatorHeight } }),
+			]),
 			h("textarea", {
 				ref: inputRef,
 				className: "dfa-code-input",
@@ -910,7 +1008,9 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 					if (event.key === "Tab") {
 						event.preventDefault();
 						const el = event.currentTarget;
-						onContent(applyIndent(content, el, event.shiftKey ? -2 : 2));
+						const { next, selStart, selEnd } = applyIndent(content, el, event.shiftKey ? -2 : 2);
+						onContent(next);
+						setSelectionAfterCommit(el, selStart, selEnd);
 						return;
 					}
 					const mod = event.metaKey || event.ctrlKey;
@@ -999,13 +1099,7 @@ function EditorTab(props) {
 		const next = content.slice(0, match.start) + replaceText + content.slice(match.end);
 		setContent(next);
 		setFindIndex(currentMatch);
-		requestAnimationFrame(() => {
-			const el = inputRef.current;
-			if (el !== null) {
-				el.setSelectionRange(match.start, match.start + replaceText.length);
-				el.focus();
-			}
-		});
+		setSelectionAfterCommit(inputRef.current, match.start, match.start + replaceText.length);
 	};
 	const replaceAll = () => {
 		if (findText === "") return;
@@ -1084,10 +1178,7 @@ function EditorTab(props) {
 			const start = el.selectionStart ?? el.value.length;
 			const end = el.selectionEnd ?? start;
 			setContent(content.slice(0, start) + text + content.slice(end));
-			requestAnimationFrame(() => {
-				el.setSelectionRange(start + text.length, start + text.length);
-				el.focus();
-			});
+			setSelectionAfterCommit(el, start + text.length, start + text.length);
 		}).catch(() => {
 			pushToast(translate("edit.pasteFailed"), "error");
 		});
@@ -1603,8 +1694,11 @@ const CSS = `
 }
 .dfa-code-input {
 	position: absolute;
-	inset: 0;
-	width: 100%;
+	left: 0;
+	top: 0;
+	right: 80px;
+	bottom: 0;
+	width: auto;
 	height: 100%;
 	box-sizing: border-box;
 	resize: none;
@@ -1632,6 +1726,42 @@ const CSS = `
 .dfa-code-input::placeholder {
 	color: var(--dsw-alias-label-caption);
 	-webkit-text-fill-color: var(--dsw-alias-label-caption);
+}
+.dfa-code-input::-webkit-scrollbar {
+	width: 0;
+	height: 12px;
+}
+.dfa-code-input {
+	scrollbar-width: thin;
+}
+.dfa-code-minimap {
+	position: absolute;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	width: 80px;
+	overflow: hidden;
+	border-left: .5px solid var(--dsw-alias-border-l3);
+	background: var(--dsw-alias-bg-page, var(--dsw-alias-bg-layer-1, transparent));
+	cursor: pointer;
+	user-select: none;
+}
+.dfa-code-minimap-canvas {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 80px;
+	height: 100%;
+	pointer-events: none;
+}
+.dfa-code-minimap-indicator {
+	position: absolute;
+	left: 0;
+	width: 100%;
+	box-sizing: border-box;
+	background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 16%, transparent);
+	border-left: 1px solid var(--dsw-alias-state-business-primary);
+	pointer-events: none;
 }
 .dfa-code-find {
 	background: color-mix(in srgb, var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-business-primary)) 35%, transparent);
