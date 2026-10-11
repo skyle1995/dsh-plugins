@@ -103,7 +103,6 @@ const zh = {
 	"edit.menuReplace": "替换",
 	"edit.menuGoto": "跳转到行",
 	"edit.pasteFailed": "粘贴失败：无法读取剪贴板",
-	"edit.largeFileNote": "文件过大，已关闭语法高亮",
 	"toast.cut": "已剪切 {count} 项，右键目录或使用顶部「粘贴」按钮粘贴",
 	"toast.copied": "已复制 {count} 项，右键目录或使用顶部「粘贴」按钮粘贴",
 	"toast.pasted": "已粘贴 {count} 项",
@@ -173,7 +172,6 @@ const en = {
 	"edit.menuReplace": "Replace",
 	"edit.menuGoto": "Go to line",
 	"edit.pasteFailed": "Paste failed: cannot read the clipboard",
-	"edit.largeFileNote": "Highlighting disabled for this large file",
 	"toast.cut": "Cut {count} items — right-click a directory or use the Paste button to paste",
 	"toast.copied": "Copied {count} items — right-click a directory or use the Paste button to paste",
 	"toast.pasted": "Pasted {count} items",
@@ -821,8 +819,6 @@ const EDIT_FONT_SIZE = 13;
 const EDIT_LINE_HEIGHT = 20;
 const EDIT_PAD_TOP = 8;
 const EDIT_PAD_LEFT = 12;
-/** 超过该字符数（约 200KB）关闭语法高亮，纯文本编辑（防大文件卡顿）。 */
-const HIGHLIGHT_MAX_CHARS = 200000;
 /** 右侧代码缩略预览（minimap）宽度。 */
 const MINIMAP_WIDTH = 80;
 
@@ -838,18 +834,20 @@ function renderLineTokens(lineTokens, lineStart, marks) {
 }
 
 /** 编辑态实时高亮：透明文字 textarea 叠在 shiki（DSH 自带）高亮层上，滚动/排版完全同步。
- *  行号与高亮层都只渲染可见区域（虚拟化），大文件不卡；超大文件自动降级纯文本。 */
-function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onOpenReplace, onOpenGoto, findText, caseSensitive, findIndex, inputRef, onContextMenu, heavy }) {
+ *  行号/高亮层只渲染可见窗口，shiki 也只解析可见窗口（大文件同样有高亮且不卡）。 */
+function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onOpenReplace, onOpenGoto, findText, caseSensitive, findIndex, inputRef, onContextMenu }) {
 	const highlight = useCodeHighlighter(language);
 	const [scroll, setScroll] = useState({ left: 0, top: 0 });
 	const [viewport, setViewport] = useState({ width: 0, height: 0 });
-	const viewportHRef = useRef(0);
+	const [colorVersion, setColorVersion] = useState(0);
+	const minimapRef = useRef(null);
+	const draggingRef = useRef(false);
+	const colorCacheRef = useRef({ content: "", colors: [] });
 	useEffect(() => {
 		const el = inputRef.current;
 		if (el === null) return;
 		const measure = () => {
 			const h = el.clientHeight;
-			viewportHRef.current = h;
 			setViewport((current) => (
 				Math.abs(current.height - h) > 1 || Math.abs(current.width - el.clientWidth) > 1
 					? { width: el.clientWidth, height: h }
@@ -880,22 +878,12 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 			window.removeEventListener("resize", measure);
 		};
 	}, []);
-	// 防抖高亮：输入流畅，高亮层稍后跟上（大文件不卡键）。
+	// 防抖高亮：输入流畅，高亮层稍后跟上。
 	const [highlightContent, setHighlightContent] = useState(content);
 	useEffect(() => {
 		const timer = setTimeout(() => setHighlightContent(content), 120);
 		return () => clearTimeout(timer);
 	}, [content]);
-	const tokens = useMemo(() => {
-		if (heavy) return null;
-		return highlight?.(highlightContent) ?? null;
-	}, [highlight, highlightContent, heavy]);
-	// 查找命中标记（基于高亮层内容，保证与可见文本对齐）。
-	const marks = useMemo(() => {
-		const matches = findMatchesIn(highlightContent, findText, caseSensitive);
-		const current = Math.min(Math.max(findIndex, 0), matches.length - 1);
-		return matches.map((match, i) => ({ ...match, current: i === current }));
-	}, [highlightContent, findText, caseSensitive, findIndex]);
 	// 行首偏移（供命中标记换算全局偏移）。
 	const lineStarts = useMemo(() => {
 		const starts = [0];
@@ -912,48 +900,9 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 		for (let i = 0; i < content.length; i++) if (content.charCodeAt(i) === 10) count += 1;
 		return count;
 	})();
-	// minimap：每行取首个有颜色的 token 作缩略色（无高亮时全用主题默认色）。
-	const minimapRef = useRef(null);
-	const draggingRef = useRef(false);
-	const lineColors = useMemo(() => {
-		if (tokens === null) return null;
-		const colors = new Array(tokens.length).fill("");
-		for (let i = 0; i < tokens.length; i++) {
-			const line = tokens[i] ?? [];
-			for (const token of line) {
-				if (token.style !== null && token.style !== undefined && token.style.color) {
-					colors[i] = token.style.color;
-					break;
-				}
-			}
-		}
-		return colors;
-	}, [tokens]);
-	useEffect(() => {
-		const canvas = minimapRef.current;
-		if (canvas === null || viewportH <= 0) return;
-		const dpr = window.devicePixelRatio || 1;
-		canvas.width = Math.max(1, Math.round(MINIMAP_WIDTH * dpr));
-		canvas.height = Math.max(1, Math.round(viewportH * dpr));
-		const draw = canvas.getContext("2d");
-		if (draw === null) return;
-		draw.scale(dpr, dpr);
-		draw.clearRect(0, 0, MINIMAP_WIDTH, viewportH);
-		const count = Math.max(lineStarts.length, 1);
-		const perLine = Math.min(viewportH / count, 4);
-		const fallback = (() => {
-			const value = getComputedStyle(document.documentElement).getPropertyValue("--dsw-alias-label-secondary").trim();
-			return value === "" ? "#7a8699" : value;
-		})();
-		for (let i = 0; i < count; i++) {
-			const color = lineColors?.[i];
-			draw.fillStyle = color !== undefined && color !== "" ? color : fallback;
-			draw.fillRect(0, Math.floor(i * perLine), MINIMAP_WIDTH, Math.max(1, Math.ceil(perLine)));
-		}
-	}, [lineColors, lineStarts.length, viewportH]);
-	const scrollHeightTotal = EDIT_PAD_TOP + lineCount * EDIT_LINE_HEIGHT + 48;
 	// 渲染时直接读 DOM 真相：不依赖测量时机（ResizeObserver/首帧竞态都免疫）。
 	const viewportH = Math.max(viewport.height, inputRef.current?.clientHeight ?? 0, 1);
+	const scrollHeightTotal = EDIT_PAD_TOP + lineCount * EDIT_LINE_HEIGHT + 48;
 	const scrollMax = Math.max(scrollHeightTotal - viewportH, 0);
 	const indicatorHeight = Math.max((viewportH * viewportH) / scrollHeightTotal, 24);
 	const indicatorTop = scrollMax > 0 ? (scroll.top / scrollMax) * (viewportH - indicatorHeight) : 0;
@@ -971,10 +920,75 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 		el.scrollTop = Math.max(0, Math.min(target, liveMax));
 	};
 	const firstLine = Math.min(Math.floor(scroll.top / EDIT_LINE_HEIGHT), Math.max(lineCount - 1, 0));
-	const visibleCount = Math.ceil(viewportH / EDIT_LINE_HEIGHT) + 1;
-	const lastLine = Math.min(lineCount - 1, firstLine + visibleCount);
+	const lastLine = Math.min(lineCount - 1, firstLine + Math.ceil(viewportH / EDIT_LINE_HEIGHT) + 1);
 	const visibleLines = [];
 	for (let i = firstLine; i <= lastLine; i++) visibleLines.push(i);
+	// 只解析可见窗口（约一屏行数）：大文件高亮成本与文件大小无关。
+	const tokens = useMemo(() => {
+		if (highlight === undefined || highlight === null) return null;
+		const start = lineStarts[firstLine] ?? 0;
+		const end = (lineStarts[lastLine + 1] ?? highlightContent.length + 1) - 1;
+		const slice = highlightContent.slice(start, Math.max(end, start));
+		const lines = highlight(slice);
+		return lines === undefined ? null : { lines };
+	}, [highlight, highlightContent, lineStarts, firstLine, lastLine]);
+	// 查找命中标记（基于高亮层内容，保证与可见文本对齐）。
+	const marks = useMemo(() => {
+		const matches = findMatchesIn(highlightContent, findText, caseSensitive);
+		const current = Math.min(Math.max(findIndex, 0), matches.length - 1);
+		return matches.map((match, i) => ({ ...match, current: i === current }));
+	}, [highlightContent, findText, caseSensitive, findIndex]);
+	// minimap 行色缓存：窗口解析逐屏累积，未访问行用主题默认色。
+	useEffect(() => {
+		const cache = colorCacheRef.current;
+		if (cache.content !== highlightContent) {
+			cache.content = highlightContent;
+			cache.colors = new Array(lineStarts.length).fill("");
+		}
+		if (tokens !== null) {
+			let changed = false;
+			for (let vi = firstLine; vi <= lastLine && vi < lineStarts.length; vi++) {
+				const line = tokens.lines[vi - firstLine];
+				if (line !== undefined && line !== null) {
+					let color = "";
+					for (const token of line) {
+						if (token.style !== null && token.style !== undefined && token.style.color) {
+							color = token.style.color;
+							break;
+						}
+					}
+					if (cache.colors[vi] !== color) {
+						cache.colors[vi] = color;
+						changed = true;
+					}
+				}
+			}
+			if (changed) setColorVersion((version) => version + 1);
+		}
+	}, [tokens, firstLine, lastLine, highlightContent, lineStarts]);
+	const lineColors = colorCacheRef.current.colors;
+	useEffect(() => {
+		const canvas = minimapRef.current;
+		if (canvas === null || viewportH <= 0) return;
+		const dpr = window.devicePixelRatio || 1;
+		canvas.width = Math.max(1, Math.round(MINIMAP_WIDTH * dpr));
+		canvas.height = Math.max(1, Math.round(viewportH * dpr));
+		const draw = canvas.getContext("2d");
+		if (draw === null) return;
+		draw.scale(dpr, dpr);
+		draw.clearRect(0, 0, MINIMAP_WIDTH, viewportH);
+		const count = Math.max(lineStarts.length, 1);
+		const perLine = Math.min(viewportH / count, 4);
+		const fallback = (() => {
+			const value = getComputedStyle(document.documentElement).getPropertyValue("--dsw-alias-label-secondary").trim();
+			return value === "" ? "#7a8699" : value;
+		})();
+		for (let i = 0; i < count; i++) {
+			const color = lineColors[i];
+			draw.fillStyle = color !== undefined && color !== "" ? color : fallback;
+			draw.fillRect(0, Math.floor(i * perLine), MINIMAP_WIDTH, Math.max(1, Math.ceil(perLine)));
+		}
+	}, [lineStarts.length, viewportH, colorVersion]);
 	return h("div", { className: "dfa-code-editor" }, [
 		h("div", { className: "dfa-code-gutter", "aria-hidden": "true" }, [
 			h("div", { className: "dfa-code-gutter-canvas", style: { height: EDIT_PAD_TOP + lineCount * EDIT_LINE_HEIGHT } },
@@ -991,7 +1005,7 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
 				"aria-hidden": "true",
 				style: { height: EDIT_PAD_TOP + lineStarts.length * EDIT_LINE_HEIGHT + 48, transform: `translateX(${-scroll.left}px)` },
 				children: visibleLines.map((i) => {
-					const lineTokens = tokens?.[i];
+					const lineTokens = tokens?.lines?.[i - firstLine];
 					const plain = highlightContent.slice(lineStarts[i] ?? 0, (lineStarts[i + 1] ?? highlightContent.length + 1) - 1);
 					const line = lineTokens !== undefined && lineTokens !== null
 						? renderLineTokens(lineTokens, lineStarts[i] ?? 0, marks)
@@ -1216,13 +1230,11 @@ function EditorTab(props) {
 	if (parsed === null) return h("div", { className: "dfa-editor-status" },
 		h("p", { className: "dfa-editor-status-line", children: translate("edit.unavailable") }));
 	const language = languageForPath(parsed.path) ?? "plaintext";
-	const heavy = content.length > HIGHLIGHT_MAX_CHARS;
 	const menuSide = menuAt === null || menuAt.y < window.innerHeight * 0.6 ? "bottom" : "top";
 	const menuAlign = menuAt === null || menuAt.x + 200 <= window.innerWidth - 12 ? "start" : "end";
 	return h("div", { className: "dfa-editor-root", "data-dfa-ui": "editor" }, [
 		h("div", { className: "dfa-editor-header" }, [
 			h("span", { className: "dfa-editor-name", title: parsed.path, children: name }),
-			heavy && h("span", { className: "dfa-editor-note", title: translate("edit.largeFileNote"), children: translate("edit.largeFileNote") }),
 			dirty && h("span", { className: "dfa-editor-dirty", children: "•" }),
 			h("span", { className: "dfa-editor-spacer" }),
 			confirmingReload ? h(Fragment, { children: [
@@ -1318,7 +1330,6 @@ function EditorTab(props) {
 			: h(HighlightEditor, {
 				content,
 				language,
-				heavy,
 				onContent: setContent,
 				onSave: save,
 				onOpenFind: openFind,

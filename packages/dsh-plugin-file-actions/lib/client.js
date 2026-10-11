@@ -93,7 +93,6 @@ var zh = {
   "edit.menuReplace": "\u66FF\u6362",
   "edit.menuGoto": "\u8DF3\u8F6C\u5230\u884C",
   "edit.pasteFailed": "\u7C98\u8D34\u5931\u8D25\uFF1A\u65E0\u6CD5\u8BFB\u53D6\u526A\u8D34\u677F",
-  "edit.largeFileNote": "\u6587\u4EF6\u8FC7\u5927\uFF0C\u5DF2\u5173\u95ED\u8BED\u6CD5\u9AD8\u4EAE",
   "toast.cut": "\u5DF2\u526A\u5207 {count} \u9879\uFF0C\u53F3\u952E\u76EE\u5F55\u6216\u4F7F\u7528\u9876\u90E8\u300C\u7C98\u8D34\u300D\u6309\u94AE\u7C98\u8D34",
   "toast.copied": "\u5DF2\u590D\u5236 {count} \u9879\uFF0C\u53F3\u952E\u76EE\u5F55\u6216\u4F7F\u7528\u9876\u90E8\u300C\u7C98\u8D34\u300D\u6309\u94AE\u7C98\u8D34",
   "toast.pasted": "\u5DF2\u7C98\u8D34 {count} \u9879",
@@ -162,7 +161,6 @@ var en = {
   "edit.menuReplace": "Replace",
   "edit.menuGoto": "Go to line",
   "edit.pasteFailed": "Paste failed: cannot read the clipboard",
-  "edit.largeFileNote": "Highlighting disabled for this large file",
   "toast.cut": "Cut {count} items \u2014 right-click a directory or use the Paste button to paste",
   "toast.copied": "Copied {count} items \u2014 right-click a directory or use the Paste button to paste",
   "toast.pasted": "Pasted {count} items",
@@ -704,7 +702,6 @@ function markedToken(text, offset, marks, style) {
 var EDIT_LINE_HEIGHT = 20;
 var EDIT_PAD_TOP = 8;
 var EDIT_PAD_LEFT = 12;
-var HIGHLIGHT_MAX_CHARS = 2e5;
 var MINIMAP_WIDTH = 80;
 function renderLineTokens(lineTokens, lineStart, marks) {
   const nodes = [];
@@ -715,17 +712,19 @@ function renderLineTokens(lineTokens, lineStart, marks) {
   }
   return nodes;
 }
-function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onOpenReplace, onOpenGoto, findText, caseSensitive, findIndex, inputRef, onContextMenu, heavy }) {
+function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onOpenReplace, onOpenGoto, findText, caseSensitive, findIndex, inputRef, onContextMenu }) {
   const highlight = (0, import_dsh_client_ui_primitives.useCodeHighlighter)(language);
   const [scroll, setScroll] = (0, import_react.useState)({ left: 0, top: 0 });
   const [viewport, setViewport] = (0, import_react.useState)({ width: 0, height: 0 });
-  const viewportHRef = (0, import_react.useRef)(0);
+  const [colorVersion, setColorVersion] = (0, import_react.useState)(0);
+  const minimapRef = (0, import_react.useRef)(null);
+  const draggingRef = (0, import_react.useRef)(false);
+  const colorCacheRef = (0, import_react.useRef)({ content: "", colors: [] });
   (0, import_react.useEffect)(() => {
     const el = inputRef.current;
     if (el === null) return;
     const measure = () => {
       const h2 = el.clientHeight;
-      viewportHRef.current = h2;
       setViewport((current) => Math.abs(current.height - h2) > 1 || Math.abs(current.width - el.clientWidth) > 1 ? { width: el.clientWidth, height: h2 } : current);
     };
     const onScrollNative = () => {
@@ -751,15 +750,6 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
     const timer = setTimeout(() => setHighlightContent(content), 120);
     return () => clearTimeout(timer);
   }, [content]);
-  const tokens = (0, import_react.useMemo)(() => {
-    if (heavy) return null;
-    return highlight?.(highlightContent) ?? null;
-  }, [highlight, highlightContent, heavy]);
-  const marks = (0, import_react.useMemo)(() => {
-    const matches = findMatchesIn(highlightContent, findText, caseSensitive);
-    const current = Math.min(Math.max(findIndex, 0), matches.length - 1);
-    return matches.map((match, i) => ({ ...match, current: i === current }));
-  }, [highlightContent, findText, caseSensitive, findIndex]);
   const lineStarts = (0, import_react.useMemo)(() => {
     const starts = [0];
     for (let i = 0; ; ) {
@@ -775,46 +765,8 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
     for (let i = 0; i < content.length; i++) if (content.charCodeAt(i) === 10) count += 1;
     return count;
   })();
-  const minimapRef = (0, import_react.useRef)(null);
-  const draggingRef = (0, import_react.useRef)(false);
-  const lineColors = (0, import_react.useMemo)(() => {
-    if (tokens === null) return null;
-    const colors = new Array(tokens.length).fill("");
-    for (let i = 0; i < tokens.length; i++) {
-      const line = tokens[i] ?? [];
-      for (const token of line) {
-        if (token.style !== null && token.style !== void 0 && token.style.color) {
-          colors[i] = token.style.color;
-          break;
-        }
-      }
-    }
-    return colors;
-  }, [tokens]);
-  (0, import_react.useEffect)(() => {
-    const canvas = minimapRef.current;
-    if (canvas === null || viewportH <= 0) return;
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.max(1, Math.round(MINIMAP_WIDTH * dpr));
-    canvas.height = Math.max(1, Math.round(viewportH * dpr));
-    const draw = canvas.getContext("2d");
-    if (draw === null) return;
-    draw.scale(dpr, dpr);
-    draw.clearRect(0, 0, MINIMAP_WIDTH, viewportH);
-    const count = Math.max(lineStarts.length, 1);
-    const perLine = Math.min(viewportH / count, 4);
-    const fallback = (() => {
-      const value = getComputedStyle(document.documentElement).getPropertyValue("--dsw-alias-label-secondary").trim();
-      return value === "" ? "#7a8699" : value;
-    })();
-    for (let i = 0; i < count; i++) {
-      const color = lineColors?.[i];
-      draw.fillStyle = color !== void 0 && color !== "" ? color : fallback;
-      draw.fillRect(0, Math.floor(i * perLine), MINIMAP_WIDTH, Math.max(1, Math.ceil(perLine)));
-    }
-  }, [lineColors, lineStarts.length, viewportH]);
-  const scrollHeightTotal = EDIT_PAD_TOP + lineCount * EDIT_LINE_HEIGHT + 48;
   const viewportH = Math.max(viewport.height, inputRef.current?.clientHeight ?? 0, 1);
+  const scrollHeightTotal = EDIT_PAD_TOP + lineCount * EDIT_LINE_HEIGHT + 48;
   const scrollMax = Math.max(scrollHeightTotal - viewportH, 0);
   const indicatorHeight = Math.max(viewportH * viewportH / scrollHeightTotal, 24);
   const indicatorTop = scrollMax > 0 ? scroll.top / scrollMax * (viewportH - indicatorHeight) : 0;
@@ -832,10 +784,72 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
     el.scrollTop = Math.max(0, Math.min(target, liveMax));
   };
   const firstLine = Math.min(Math.floor(scroll.top / EDIT_LINE_HEIGHT), Math.max(lineCount - 1, 0));
-  const visibleCount = Math.ceil(viewportH / EDIT_LINE_HEIGHT) + 1;
-  const lastLine = Math.min(lineCount - 1, firstLine + visibleCount);
+  const lastLine = Math.min(lineCount - 1, firstLine + Math.ceil(viewportH / EDIT_LINE_HEIGHT) + 1);
   const visibleLines = [];
   for (let i = firstLine; i <= lastLine; i++) visibleLines.push(i);
+  const tokens = (0, import_react.useMemo)(() => {
+    if (highlight === void 0 || highlight === null) return null;
+    const start = lineStarts[firstLine] ?? 0;
+    const end = (lineStarts[lastLine + 1] ?? highlightContent.length + 1) - 1;
+    const slice = highlightContent.slice(start, Math.max(end, start));
+    const lines = highlight(slice);
+    return lines === void 0 ? null : { lines };
+  }, [highlight, highlightContent, lineStarts, firstLine, lastLine]);
+  const marks = (0, import_react.useMemo)(() => {
+    const matches = findMatchesIn(highlightContent, findText, caseSensitive);
+    const current = Math.min(Math.max(findIndex, 0), matches.length - 1);
+    return matches.map((match, i) => ({ ...match, current: i === current }));
+  }, [highlightContent, findText, caseSensitive, findIndex]);
+  (0, import_react.useEffect)(() => {
+    const cache = colorCacheRef.current;
+    if (cache.content !== highlightContent) {
+      cache.content = highlightContent;
+      cache.colors = new Array(lineStarts.length).fill("");
+    }
+    if (tokens !== null) {
+      let changed = false;
+      for (let vi = firstLine; vi <= lastLine && vi < lineStarts.length; vi++) {
+        const line = tokens.lines[vi - firstLine];
+        if (line !== void 0 && line !== null) {
+          let color = "";
+          for (const token of line) {
+            if (token.style !== null && token.style !== void 0 && token.style.color) {
+              color = token.style.color;
+              break;
+            }
+          }
+          if (cache.colors[vi] !== color) {
+            cache.colors[vi] = color;
+            changed = true;
+          }
+        }
+      }
+      if (changed) setColorVersion((version) => version + 1);
+    }
+  }, [tokens, firstLine, lastLine, highlightContent, lineStarts]);
+  const lineColors = colorCacheRef.current.colors;
+  (0, import_react.useEffect)(() => {
+    const canvas = minimapRef.current;
+    if (canvas === null || viewportH <= 0) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.max(1, Math.round(MINIMAP_WIDTH * dpr));
+    canvas.height = Math.max(1, Math.round(viewportH * dpr));
+    const draw = canvas.getContext("2d");
+    if (draw === null) return;
+    draw.scale(dpr, dpr);
+    draw.clearRect(0, 0, MINIMAP_WIDTH, viewportH);
+    const count = Math.max(lineStarts.length, 1);
+    const perLine = Math.min(viewportH / count, 4);
+    const fallback = (() => {
+      const value = getComputedStyle(document.documentElement).getPropertyValue("--dsw-alias-label-secondary").trim();
+      return value === "" ? "#7a8699" : value;
+    })();
+    for (let i = 0; i < count; i++) {
+      const color = lineColors[i];
+      draw.fillStyle = color !== void 0 && color !== "" ? color : fallback;
+      draw.fillRect(0, Math.floor(i * perLine), MINIMAP_WIDTH, Math.max(1, Math.ceil(perLine)));
+    }
+  }, [lineStarts.length, viewportH, colorVersion]);
   return (0, import_react.createElement)("div", { className: "dfa-code-editor" }, [
     (0, import_react.createElement)("div", { className: "dfa-code-gutter", "aria-hidden": "true" }, [
       (0, import_react.createElement)(
@@ -855,7 +869,7 @@ function HighlightEditor({ content, language, onContent, onSave, onOpenFind, onO
         "aria-hidden": "true",
         style: { height: EDIT_PAD_TOP + lineStarts.length * EDIT_LINE_HEIGHT + 48, transform: `translateX(${-scroll.left}px)` },
         children: visibleLines.map((i) => {
-          const lineTokens = tokens?.[i];
+          const lineTokens = tokens?.lines?.[i - firstLine];
           const plain = highlightContent.slice(lineStarts[i] ?? 0, (lineStarts[i + 1] ?? highlightContent.length + 1) - 1);
           const line = lineTokens !== void 0 && lineTokens !== null ? renderLineTokens(lineTokens, lineStarts[i] ?? 0, marks) : renderLineTokens([{ text: plain, style: null }], lineStarts[i] ?? 0, marks);
           return (0, import_react.createElement)("span", {
@@ -1071,13 +1085,11 @@ function EditorTab(props) {
     (0, import_react.createElement)("p", { className: "dfa-editor-status-line", children: translate("edit.unavailable") })
   );
   const language = (0, import_dsh_client_ui_primitives.languageForPath)(parsed.path) ?? "plaintext";
-  const heavy = content.length > HIGHLIGHT_MAX_CHARS;
   const menuSide = menuAt === null || menuAt.y < window.innerHeight * 0.6 ? "bottom" : "top";
   const menuAlign = menuAt === null || menuAt.x + 200 <= window.innerWidth - 12 ? "start" : "end";
   return (0, import_react.createElement)("div", { className: "dfa-editor-root", "data-dfa-ui": "editor" }, [
     (0, import_react.createElement)("div", { className: "dfa-editor-header" }, [
       (0, import_react.createElement)("span", { className: "dfa-editor-name", title: parsed.path, children: name }),
-      heavy && (0, import_react.createElement)("span", { className: "dfa-editor-note", title: translate("edit.largeFileNote"), children: translate("edit.largeFileNote") }),
       dirty && (0, import_react.createElement)("span", { className: "dfa-editor-dirty", children: "\u2022" }),
       (0, import_react.createElement)("span", { className: "dfa-editor-spacer" }),
       confirmingReload ? (0, import_react.createElement)(import_react.Fragment, { children: [
@@ -1174,7 +1186,6 @@ function EditorTab(props) {
     ]) : (0, import_react.createElement)(HighlightEditor, {
       content,
       language,
-      heavy,
       onContent: setContent,
       onSave: save,
       onOpenFind: openFind,
