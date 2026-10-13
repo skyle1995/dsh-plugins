@@ -25,13 +25,15 @@ const zh = {
 	presetNeeds: "需填写：{keys}",
 	presetPrefilled: "已把预设「{name}」填入表单，请补全 {keys} 后保存。",
 	presetAddOk: "「{name}」已添加。",
+	tabInstalled: "已安装",
+	tabPresets: "预设",
 	add: "添加服务器",
 	edit: "编辑",
 	save: "保存",
 	cancel: "取消",
 	refresh: "刷新",
 	loading: "正在加载…",
-	empty: "还没有配置 MCP 服务器。",
+	empty: "还没有配置 MCP 服务器，到「预设」页一键添加。",
 	loadError: "读取列表失败：{message}",
 	stateFile: "状态文件：{file}",
 	corrupt: "状态文件损坏：{message}",
@@ -89,13 +91,15 @@ const en = {
 	presetNeeds: "Needs: {keys}",
 	presetPrefilled: "Preset “{name}” loaded into the form; fill in {keys} and save.",
 	presetAddOk: "“{name}” added.",
+	tabInstalled: "Installed",
+	tabPresets: "Presets",
 	add: "Add server",
 	edit: "Edit",
 	save: "Save",
 	cancel: "Cancel",
 	refresh: "Refresh",
 	loading: "Loading…",
-	empty: "No MCP servers configured yet.",
+	empty: "No MCP servers configured yet; add one from the Presets tab.",
 	loadError: "Failed to load the list: {message}",
 	stateFile: "State file: {file}",
 	corrupt: "State file is corrupt: {message}",
@@ -244,6 +248,10 @@ const css = `
 .dmc-select{appearance:auto;box-sizing:border-box;border:.5px solid var(--dsw-alias-border-l2,#ccc);background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#222);font:inherit;border-radius:8px;outline:none;padding:5px 10px;font-size:13px;line-height:20px;min-width:0;width:100%}
 .dmc-form-actions{display:flex;gap:8px;justify-content:flex-end}
 .dmc-section-label{margin:0;font-size:13px;font-weight:600;color:var(--dsw-alias-label-secondary,#555)}
+.dmc-tabs{display:flex;gap:4px;border-bottom:1px solid var(--dsw-alias-border-l3,#ddd);margin-bottom:4px}
+.dmc-tab{appearance:none;border:none;background:transparent;color:var(--dsw-alias-label-tertiary,#777);font:inherit;font-size:13px;line-height:1.6;padding:6px 12px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.dmc-tab:hover{color:var(--dsw-alias-label-primary,#222)}
+.dmc-tab-on{color:var(--dsw-alias-state-business-primary,#3b6ef5);border-bottom-color:var(--dsw-alias-state-business-primary,#3b6ef5);font-weight:600}
 .dmc-presets{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .dmc-preset{display:flex;flex-direction:column;gap:6px;border:1px solid var(--dsw-alias-border-l3,#ddd);border-radius:12px;padding:10px 12px;min-width:0}
 .dmc-preset-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
@@ -262,6 +270,8 @@ function McpSection({ t }) {
 	const [editing, setEditing] = useState(null);
 	const [form, setForm] = useState(null);
 	const [formError, setFormError] = useState(null);
+	/** 显式选择的标签页；null = 未手动选择（有已安装时默认「已安装」，否则「预设」）。 */
+	const [tab, setTab] = useState(null);
 
 	/** 把接口快照写入列表状态（保存/启停/删除后免一次刷新）。 */
 	function applySnapshot(payload) {
@@ -323,6 +333,7 @@ function McpSection({ t }) {
 		try {
 			const payload = await api("/operation", { method: "POST", body: JSON.stringify({ operation: "save", server: preset.server }) });
 			applySnapshot(payload);
+			setTab("installed");
 			setNotice({ kind: "ok", text: format(t("presetAddOk"), { name: preset.name }) });
 		} catch (error) {
 			setNotice({ kind: "error", text: format(t("opFailed"), { message: error.message }) });
@@ -548,6 +559,9 @@ function McpSection({ t }) {
 						h("span", { key: "id", className: "dmc-badge" }, entry.id)))));
 	}
 
+	const hasInstalled = data.servers.length > 0 || data.manual.length > 0;
+	const activeTab = tab ?? (data.status === "ok" && !hasInstalled ? "presets" : "installed");
+
 	const body = data.status === "loading"
 		? h("p", { className: "dmc-subtitle" }, t("loading"))
 		: data.status === "error"
@@ -555,19 +569,22 @@ function McpSection({ t }) {
 			: h(Fragment, null,
 				data.corrupt !== null ? h("p", { className: "dmc-notice dmc-notice-err" }, format(t("corrupt"), { message: data.corrupt })) : null,
 				form !== null ? renderForm() : null,
-				data.presets.length > 0 ? h(Fragment, null,
-					h("p", { className: "dmc-section-label" }, t("presets")),
-					h("p", { className: "dmc-subtitle" }, t("presetsHint")),
-					h("div", { className: "dmc-presets" }, data.presets.map(renderPresetCard))) : null,
-				data.servers.length === 0 && data.manual.length === 0
-					? h("p", { className: "dmc-subtitle" }, t("empty"))
+				h("div", { className: "dmc-tabs" },
+					h("button", { className: `dmc-tab ${activeTab === "installed" ? "dmc-tab-on" : ""}`, onClick: () => setTab("installed") }, `${t("tabInstalled")}（${data.servers.length + data.manual.length}）`),
+					h("button", { className: `dmc-tab ${activeTab === "presets" ? "dmc-tab-on" : ""}`, onClick: () => setTab("presets") }, `${t("tabPresets")}（${data.presets.length}）`)),
+				activeTab === "presets"
+					? h(Fragment, null,
+						h("p", { className: "dmc-subtitle" }, t("presetsHint")),
+						h("div", { className: "dmc-presets" }, data.presets.map(renderPresetCard)))
 					: h(Fragment, null,
-						h("p", { className: "dmc-section-label" }, t("managed")),
-						h("div", { className: "dmc-list" }, data.servers.map(renderServerRow))),
-				data.manual.length > 0 ? h(Fragment, null,
-					h("p", { className: "dmc-section-label" }, t("manual")),
-					h("p", { className: "dmc-subtitle" }, t("manualHint")),
-					h("div", { className: "dmc-list" }, data.manual.map(renderManualRow))) : null);
+						!hasInstalled ? h("p", { className: "dmc-subtitle" }, t("empty")) : null,
+						data.servers.length > 0 ? h(Fragment, null,
+							h("p", { className: "dmc-section-label" }, t("managed")),
+							h("div", { className: "dmc-list" }, data.servers.map(renderServerRow))) : null,
+						data.manual.length > 0 ? h(Fragment, null,
+							h("p", { className: "dmc-section-label" }, t("manual")),
+							h("p", { className: "dmc-subtitle" }, t("manualHint")),
+							h("div", { className: "dmc-list" }, data.manual.map(renderManualRow))) : null));
 
 	return h(Fragment, null,
 		h("style", null, css),

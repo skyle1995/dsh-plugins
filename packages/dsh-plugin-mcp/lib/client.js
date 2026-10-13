@@ -46,13 +46,15 @@ var zh = {
   presetNeeds: "\u9700\u586B\u5199\uFF1A{keys}",
   presetPrefilled: "\u5DF2\u628A\u9884\u8BBE\u300C{name}\u300D\u586B\u5165\u8868\u5355\uFF0C\u8BF7\u8865\u5168 {keys} \u540E\u4FDD\u5B58\u3002",
   presetAddOk: "\u300C{name}\u300D\u5DF2\u6DFB\u52A0\u3002",
+  tabInstalled: "\u5DF2\u5B89\u88C5",
+  tabPresets: "\u9884\u8BBE",
   add: "\u6DFB\u52A0\u670D\u52A1\u5668",
   edit: "\u7F16\u8F91",
   save: "\u4FDD\u5B58",
   cancel: "\u53D6\u6D88",
   refresh: "\u5237\u65B0",
   loading: "\u6B63\u5728\u52A0\u8F7D\u2026",
-  empty: "\u8FD8\u6CA1\u6709\u914D\u7F6E MCP \u670D\u52A1\u5668\u3002",
+  empty: "\u8FD8\u6CA1\u6709\u914D\u7F6E MCP \u670D\u52A1\u5668\uFF0C\u5230\u300C\u9884\u8BBE\u300D\u9875\u4E00\u952E\u6DFB\u52A0\u3002",
   loadError: "\u8BFB\u53D6\u5217\u8868\u5931\u8D25\uFF1A{message}",
   stateFile: "\u72B6\u6001\u6587\u4EF6\uFF1A{file}",
   corrupt: "\u72B6\u6001\u6587\u4EF6\u635F\u574F\uFF1A{message}",
@@ -109,13 +111,15 @@ var en = {
   presetNeeds: "Needs: {keys}",
   presetPrefilled: "Preset \u201C{name}\u201D loaded into the form; fill in {keys} and save.",
   presetAddOk: "\u201C{name}\u201D added.",
+  tabInstalled: "Installed",
+  tabPresets: "Presets",
   add: "Add server",
   edit: "Edit",
   save: "Save",
   cancel: "Cancel",
   refresh: "Refresh",
   loading: "Loading\u2026",
-  empty: "No MCP servers configured yet.",
+  empty: "No MCP servers configured yet; add one from the Presets tab.",
   loadError: "Failed to load the list: {message}",
   stateFile: "State file: {file}",
   corrupt: "State file is corrupt: {message}",
@@ -251,6 +255,10 @@ var css = `
 .dmc-select{appearance:auto;box-sizing:border-box;border:.5px solid var(--dsw-alias-border-l2,#ccc);background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#222);font:inherit;border-radius:8px;outline:none;padding:5px 10px;font-size:13px;line-height:20px;min-width:0;width:100%}
 .dmc-form-actions{display:flex;gap:8px;justify-content:flex-end}
 .dmc-section-label{margin:0;font-size:13px;font-weight:600;color:var(--dsw-alias-label-secondary,#555)}
+.dmc-tabs{display:flex;gap:4px;border-bottom:1px solid var(--dsw-alias-border-l3,#ddd);margin-bottom:4px}
+.dmc-tab{appearance:none;border:none;background:transparent;color:var(--dsw-alias-label-tertiary,#777);font:inherit;font-size:13px;line-height:1.6;padding:6px 12px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.dmc-tab:hover{color:var(--dsw-alias-label-primary,#222)}
+.dmc-tab-on{color:var(--dsw-alias-state-business-primary,#3b6ef5);border-bottom-color:var(--dsw-alias-state-business-primary,#3b6ef5);font-weight:600}
 .dmc-presets{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .dmc-preset{display:flex;flex-direction:column;gap:6px;border:1px solid var(--dsw-alias-border-l3,#ddd);border-radius:12px;padding:10px 12px;min-width:0}
 .dmc-preset-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
@@ -267,6 +275,7 @@ function McpSection({ t }) {
   const [editing, setEditing] = (0, import_react.useState)(null);
   const [form, setForm] = (0, import_react.useState)(null);
   const [formError, setFormError] = (0, import_react.useState)(null);
+  const [tab, setTab] = (0, import_react.useState)(null);
   function applySnapshot(payload) {
     setData((previous) => ({
       ...previous,
@@ -314,6 +323,7 @@ function McpSection({ t }) {
     try {
       const payload = await api("/operation", { method: "POST", body: JSON.stringify({ operation: "save", server: preset.server }) });
       applySnapshot(payload);
+      setTab("installed");
       setNotice({ kind: "ok", text: format(t("presetAddOk"), { name: preset.name }) });
     } catch (error) {
       setNotice({ kind: "error", text: format(t("opFailed"), { message: error.message }) });
@@ -600,31 +610,42 @@ function McpSection({ t }) {
       )
     );
   }
+  const hasInstalled = data.servers.length > 0 || data.manual.length > 0;
+  const activeTab = tab ?? (data.status === "ok" && !hasInstalled ? "presets" : "installed");
   const body = data.status === "loading" ? (0, import_react.createElement)("p", { className: "dmc-subtitle" }, t("loading")) : data.status === "error" ? (0, import_react.createElement)("p", { className: "dmc-subtitle" }, format(t("loadError"), { message: data.message })) : (0, import_react.createElement)(
     import_react.Fragment,
     null,
     data.corrupt !== null ? (0, import_react.createElement)("p", { className: "dmc-notice dmc-notice-err" }, format(t("corrupt"), { message: data.corrupt })) : null,
     form !== null ? renderForm() : null,
-    data.presets.length > 0 ? (0, import_react.createElement)(
+    (0, import_react.createElement)(
+      "div",
+      { className: "dmc-tabs" },
+      (0, import_react.createElement)("button", { className: `dmc-tab ${activeTab === "installed" ? "dmc-tab-on" : ""}`, onClick: () => setTab("installed") }, `${t("tabInstalled")}\uFF08${data.servers.length + data.manual.length}\uFF09`),
+      (0, import_react.createElement)("button", { className: `dmc-tab ${activeTab === "presets" ? "dmc-tab-on" : ""}`, onClick: () => setTab("presets") }, `${t("tabPresets")}\uFF08${data.presets.length}\uFF09`)
+    ),
+    activeTab === "presets" ? (0, import_react.createElement)(
       import_react.Fragment,
       null,
-      (0, import_react.createElement)("p", { className: "dmc-section-label" }, t("presets")),
       (0, import_react.createElement)("p", { className: "dmc-subtitle" }, t("presetsHint")),
       (0, import_react.createElement)("div", { className: "dmc-presets" }, data.presets.map(renderPresetCard))
-    ) : null,
-    data.servers.length === 0 && data.manual.length === 0 ? (0, import_react.createElement)("p", { className: "dmc-subtitle" }, t("empty")) : (0, import_react.createElement)(
+    ) : (0, import_react.createElement)(
       import_react.Fragment,
       null,
-      (0, import_react.createElement)("p", { className: "dmc-section-label" }, t("managed")),
-      (0, import_react.createElement)("div", { className: "dmc-list" }, data.servers.map(renderServerRow))
-    ),
-    data.manual.length > 0 ? (0, import_react.createElement)(
-      import_react.Fragment,
-      null,
-      (0, import_react.createElement)("p", { className: "dmc-section-label" }, t("manual")),
-      (0, import_react.createElement)("p", { className: "dmc-subtitle" }, t("manualHint")),
-      (0, import_react.createElement)("div", { className: "dmc-list" }, data.manual.map(renderManualRow))
-    ) : null
+      !hasInstalled ? (0, import_react.createElement)("p", { className: "dmc-subtitle" }, t("empty")) : null,
+      data.servers.length > 0 ? (0, import_react.createElement)(
+        import_react.Fragment,
+        null,
+        (0, import_react.createElement)("p", { className: "dmc-section-label" }, t("managed")),
+        (0, import_react.createElement)("div", { className: "dmc-list" }, data.servers.map(renderServerRow))
+      ) : null,
+      data.manual.length > 0 ? (0, import_react.createElement)(
+        import_react.Fragment,
+        null,
+        (0, import_react.createElement)("p", { className: "dmc-section-label" }, t("manual")),
+        (0, import_react.createElement)("p", { className: "dmc-subtitle" }, t("manualHint")),
+        (0, import_react.createElement)("div", { className: "dmc-list" }, data.manual.map(renderManualRow))
+      ) : null
+    )
   );
   return (0, import_react.createElement)(
     import_react.Fragment,

@@ -20,7 +20,11 @@ dsh plugin --profile <profile> add \
 
 ## 使用
 
-- **热门预设（一键添加）**：分区顶部内置 14 个常用官方 MCP 服务器预设
+分区用两个标签页分页展示：**「已安装」**（受管服务器 + 手工 cordis.patch.yml
+条目）与**「预设」**（一键添加）。没有已安装服务器时默认落在预设页；预设
+直存成功后自动切回已安装页。
+
+- **热门预设（一键添加）**：内置 14 个常用官方 MCP 服务器预设
   （GitHub、Filesystem、Memory、Sequential Thinking、Time、Fetch、Brave Search、
   Puppeteer、GitLab、Slack、Sentry、PostgreSQL、SQLite、Everything）。
   - 零配置预设（Memory / Time / Fetch 等）点「一键添加」直接保存并生效；
