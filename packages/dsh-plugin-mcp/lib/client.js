@@ -39,6 +39,13 @@ var zh = {
   managed: "\u5DF2\u7BA1\u7406",
   manual: "cordis.patch.yml \u624B\u5DE5\u914D\u7F6E\uFF08\u53EA\u8BFB\uFF09",
   manualHint: "\u4EE5\u4E0B\u6761\u76EE\u76F4\u63A5\u5199\u5728 profile \u7684 cordis.patch.yml \u4E2D\uFF0C\u8BF7\u5230\u914D\u7F6E\u6587\u4EF6\u91CC\u4FEE\u6539\u3002",
+  presets: "\u70ED\u95E8\u9884\u8BBE",
+  presetsHint: "\u4E00\u952E\u6DFB\u52A0\u5E38\u7528 MCP \u670D\u52A1\u5668\uFF1B\u9700\u8981\u5BC6\u94A5 / \u8DEF\u5F84\u7684\u4F1A\u5148\u586B\u5165\u8868\u5355\uFF0C\u8865\u5168\u540E\u518D\u4FDD\u5B58\u3002",
+  presetAdd: "\u4E00\u952E\u6DFB\u52A0",
+  presetAdded: "\u5DF2\u6DFB\u52A0",
+  presetNeeds: "\u9700\u586B\u5199\uFF1A{keys}",
+  presetPrefilled: "\u5DF2\u628A\u9884\u8BBE\u300C{name}\u300D\u586B\u5165\u8868\u5355\uFF0C\u8BF7\u8865\u5168 {keys} \u540E\u4FDD\u5B58\u3002",
+  presetAddOk: "\u300C{name}\u300D\u5DF2\u6DFB\u52A0\u3002",
   add: "\u6DFB\u52A0\u670D\u52A1\u5668",
   edit: "\u7F16\u8F91",
   save: "\u4FDD\u5B58",
@@ -95,6 +102,13 @@ var en = {
   managed: "Managed",
   manual: "Configured in cordis.patch.yml (read-only)",
   manualHint: "These entries are written directly in the profile's cordis.patch.yml; edit them in the config file.",
+  presets: "Popular presets",
+  presetsHint: "One-click add common MCP servers; those needing keys/paths prefill the form for you to complete.",
+  presetAdd: "Add",
+  presetAdded: "Added",
+  presetNeeds: "Needs: {keys}",
+  presetPrefilled: "Preset \u201C{name}\u201D loaded into the form; fill in {keys} and save.",
+  presetAddOk: "\u201C{name}\u201D added.",
   add: "Add server",
   edit: "Edit",
   save: "Save",
@@ -196,6 +210,9 @@ function parseJson(text, label, t) {
     throw new Error(format(t("jsonError"), { label, message: error.message }));
   }
 }
+function inputsLabel(inputs) {
+  return inputs.map((path) => path.startsWith("env.") ? path.slice(4) : path.startsWith("args[") ? "\u53C2\u6570" : path).join("\u3001");
+}
 var css = `
 .dmc-page{display:flex;flex-direction:column;gap:16px;min-width:0;padding:4px 0}
 .dmc-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
@@ -234,12 +251,19 @@ var css = `
 .dmc-select{appearance:auto;box-sizing:border-box;border:.5px solid var(--dsw-alias-border-l2,#ccc);background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#222);font:inherit;border-radius:8px;outline:none;padding:5px 10px;font-size:13px;line-height:20px;min-width:0;width:100%}
 .dmc-form-actions{display:flex;gap:8px;justify-content:flex-end}
 .dmc-section-label{margin:0;font-size:13px;font-weight:600;color:var(--dsw-alias-label-secondary,#555)}
-@media (max-width:640px){.dmc-form-grid{grid-template-columns:1fr}}
+.dmc-presets{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.dmc-preset{display:flex;flex-direction:column;gap:6px;border:1px solid var(--dsw-alias-border-l3,#ddd);border-radius:12px;padding:10px 12px;min-width:0}
+.dmc-preset-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.dmc-preset-name{font-size:13px;font-weight:600}
+.dmc-preset-desc{margin:0;color:var(--dsw-alias-label-secondary,#555);font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.dmc-preset-foot{display:flex;justify-content:flex-end}
+@media (max-width:640px){.dmc-form-grid{grid-template-columns:1fr}.dmc-presets{grid-template-columns:1fr}}
 `;
 function McpSection({ t }) {
-  const [data, setData] = (0, import_react.useState)({ status: "loading", servers: [], manual: [], stateFile: null, corrupt: null });
+  const [data, setData] = (0, import_react.useState)({ status: "loading", servers: [], manual: [], presets: [], stateFile: null, corrupt: null });
   const [notice, setNotice] = (0, import_react.useState)(null);
   const [busy, setBusy] = (0, import_react.useState)({});
+  const [busyPreset, setBusyPreset] = (0, import_react.useState)({});
   const [editing, setEditing] = (0, import_react.useState)(null);
   const [form, setForm] = (0, import_react.useState)(null);
   const [formError, setFormError] = (0, import_react.useState)(null);
@@ -249,6 +273,7 @@ function McpSection({ t }) {
       status: "ok",
       servers: payload.servers ?? [],
       manual: payload.manual ?? [],
+      presets: payload.presets ?? previous.presets ?? [],
       stateFile: payload.stateFile ?? previous.stateFile,
       corrupt: payload.corrupt ?? null
     }));
@@ -257,9 +282,9 @@ function McpSection({ t }) {
     setData((previous) => ({ ...previous, status: "loading" }));
     try {
       const payload = await api("/servers");
-      setData({ status: "ok", servers: payload.servers ?? [], manual: payload.manual ?? [], stateFile: payload.stateFile ?? null, corrupt: payload.corrupt ?? null });
+      setData({ status: "ok", servers: payload.servers ?? [], manual: payload.manual ?? [], presets: payload.presets ?? [], stateFile: payload.stateFile ?? null, corrupt: payload.corrupt ?? null });
     } catch (error) {
-      setData({ status: "error", servers: [], manual: [], stateFile: null, corrupt: null, message: error.message });
+      setData({ status: "error", servers: [], manual: [], presets: [], stateFile: null, corrupt: null, message: error.message });
     }
   }
   (0, import_react.useEffect)(() => {
@@ -274,6 +299,62 @@ function McpSection({ t }) {
     if (key === null) return null;
     const kind = status === "active" ? "on" : status === "failed" || status === "conflict" ? "err" : "warn";
     return (0, import_react.createElement)("span", { key: "status", className: `dmc-badge ${kind === "on" ? "dmc-badge-on" : kind === "err" ? "dmc-badge-err" : "dmc-badge-warn"}` }, t(key));
+  }
+  async function addPreset(preset) {
+    setNotice(null);
+    const inputs = preset.inputs ?? [];
+    if (inputs.length > 0) {
+      setForm(formOf(preset.server));
+      setEditing(null);
+      setFormError(null);
+      setNotice({ kind: "ok", text: format(t("presetPrefilled"), { name: preset.name, keys: inputsLabel(inputs) }) });
+      return;
+    }
+    setBusyPreset((previous) => ({ ...previous, [preset.id]: true }));
+    try {
+      const payload = await api("/operation", { method: "POST", body: JSON.stringify({ operation: "save", server: preset.server }) });
+      applySnapshot(payload);
+      setNotice({ kind: "ok", text: format(t("presetAddOk"), { name: preset.name }) });
+    } catch (error) {
+      setNotice({ kind: "error", text: format(t("opFailed"), { message: error.message }) });
+    } finally {
+      setBusyPreset((previous) => {
+        const next = { ...previous };
+        delete next[preset.id];
+        return next;
+      });
+    }
+  }
+  function renderPresetCard(preset) {
+    const lang = t("title") === en.title ? "en" : "zh";
+    const description = preset.description?.[lang] ?? preset.description?.zh ?? "";
+    const inputs = preset.inputs ?? [];
+    const added = preset.added === true;
+    const presetBusy = busyPreset[preset.id] === true;
+    const badges = [];
+    if (inputs.length > 0) badges.push((0, import_react.createElement)("span", { key: "needs", className: "dmc-badge dmc-badge-warn" }, format(t("presetNeeds"), { keys: inputsLabel(inputs) })));
+    badges.push((0, import_react.createElement)("span", { key: "transport", className: "dmc-badge" }, preset.server?.transport ?? "stdio"));
+    if (added) badges.push((0, import_react.createElement)("span", { key: "added", className: "dmc-badge dmc-badge-on" }, t("presetAdded")));
+    return (0, import_react.createElement)(
+      "div",
+      { key: preset.id, className: "dmc-preset" },
+      (0, import_react.createElement)(
+        "div",
+        { className: "dmc-preset-head" },
+        (0, import_react.createElement)("span", { className: "dmc-preset-name" }, preset.name),
+        (0, import_react.createElement)("div", { className: "dmc-badges" }, badges)
+      ),
+      description ? (0, import_react.createElement)("p", { className: "dmc-preset-desc" }, description) : null,
+      (0, import_react.createElement)(
+        "div",
+        { className: "dmc-preset-foot" },
+        (0, import_react.createElement)("button", {
+          className: `dmc-btn ${added ? "" : "dmc-btn-primary"}`,
+          disabled: added || presetBusy,
+          onClick: () => void addPreset(preset)
+        }, added ? t("presetAdded") : presetBusy ? t("loading") : t("presetAdd"))
+      )
+    );
   }
   async function toggle(server) {
     setBusy((previous) => ({ ...previous, [server.serverName]: "toggle" }));
@@ -524,6 +605,13 @@ function McpSection({ t }) {
     null,
     data.corrupt !== null ? (0, import_react.createElement)("p", { className: "dmc-notice dmc-notice-err" }, format(t("corrupt"), { message: data.corrupt })) : null,
     form !== null ? renderForm() : null,
+    data.presets.length > 0 ? (0, import_react.createElement)(
+      import_react.Fragment,
+      null,
+      (0, import_react.createElement)("p", { className: "dmc-section-label" }, t("presets")),
+      (0, import_react.createElement)("p", { className: "dmc-subtitle" }, t("presetsHint")),
+      (0, import_react.createElement)("div", { className: "dmc-presets" }, data.presets.map(renderPresetCard))
+    ) : null,
     data.servers.length === 0 && data.manual.length === 0 ? (0, import_react.createElement)("p", { className: "dmc-subtitle" }, t("empty")) : (0, import_react.createElement)(
       import_react.Fragment,
       null,

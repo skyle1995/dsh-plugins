@@ -72,6 +72,21 @@ export interface McpSnapshot {
 	manual: McpManualEntry[];
 }
 
+/** 热门预设：一键添加的常用 MCP 服务器。 */
+export interface McpPreset {
+	id: string;
+	name: string;
+	description: { zh: string; en: string };
+	server: McpServer;
+	/** 需要用户补全的字段路径（如 env.GITHUB_TOKEN、args[0]），值为占位文本 */
+	inputs?: string[];
+	/** 是否已添加（受管或手工同名 serverName） */
+	added?: boolean;
+}
+
+export const PRESETS: McpPreset[];
+export const PLACEHOLDER_VALUES: Set<string>;
+
 export class McpError extends Error {
 	code: string;
 }
@@ -93,6 +108,7 @@ export class McpManagerService extends Service {
 	setEnabled(serverName: string, enabled: boolean): Promise<boolean>;
 	findServer(serverName: string): McpServer | null;
 	snapshot(): McpSnapshot;
+	presetsView(): McpPreset[];
 	project(): Promise<void>;
 }
 

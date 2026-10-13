@@ -47,6 +47,238 @@ export const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
 /** 列表接口里敏感字段（env / headers 值）的掩码。 */
 export const MASKED_VALUE = "••••••";
 
+/**
+ * 热门 MCP 服务器预设（官方 @modelcontextprotocol 参考服务器）。
+ * `inputs` 列出需要用户补全的字段路径（如 "env.GITHUB_TOKEN"、"args[0]"）：
+ * 对应值在 `server` 里是占位文本，保存时会被拦截，必须先改成真实值。
+ * 无 `inputs` 的预设零配置，可一键直接添加。
+ */
+export const PRESETS = [
+	{
+		id: "github",
+		name: "GitHub",
+		description: {
+			zh: "GitHub 仓库管理：创建 Issue / PR、搜索代码与仓库。",
+			en: "GitHub repos: create issues/PRs, search code and repositories.",
+		},
+		server: {
+			serverName: "github",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "@modelcontextprotocol/server-github"],
+			env: { GITHUB_TOKEN: "在此填入你的 GitHub Token（Settings → Developer settings → Personal access tokens）" },
+		},
+		inputs: ["env.GITHUB_TOKEN"],
+	},
+	{
+		id: "filesystem",
+		name: "Filesystem",
+		description: {
+			zh: "安全的文件系统访问：读写 / 搜索 / 列目录（限定允许目录）。",
+			en: "Secure filesystem access: read/write/search/list within allowed directories.",
+		},
+		server: {
+			serverName: "filesystem",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "@modelcontextprotocol/server-filesystem", "/在此填入允许访问的目录绝对路径"],
+		},
+		inputs: ["args[2]"],
+	},
+	{
+		id: "memory",
+		name: "Memory",
+		description: {
+			zh: "知识图谱记忆：跨会话记住实体与关系。",
+			en: "Knowledge-graph memory: remember entities and relations across sessions.",
+		},
+		server: {
+			serverName: "memory",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "@modelcontextprotocol/server-memory"],
+		},
+	},
+	{
+		id: "sequential-thinking",
+		name: "Sequential Thinking",
+		description: {
+			zh: "结构化分步思考：复杂推理的思维链工具。",
+			en: "Structured step-by-step thinking for complex reasoning.",
+		},
+		server: {
+			serverName: "sequential-thinking",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+		},
+	},
+	{
+		id: "time",
+		name: "Time",
+		description: {
+			zh: "时间与时区：获取当前时间、换算时区。",
+			en: "Time and timezones: current time and zone conversion.",
+		},
+		server: {
+			serverName: "time",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "@modelcontextprotocol/server-time"],
+		},
+	},
+	{
+		id: "fetch",
+		name: "Fetch",
+		description: {
+			zh: "网页抓取：把 URL 内容转成 Markdown。",
+			en: "Web fetching: convert URLs to Markdown content.",
+		},
+		server: {
+			serverName: "fetch",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "@modelcontextprotocol/server-fetch"],
+		},
+	},
+	{
+		id: "brave-search",
+		name: "Brave Search",
+		description: {
+			zh: "Brave 网络搜索：网页 / 本地 / 新闻检索。",
+			en: "Brave web search: web/local/news queries.",
+		},
+		server: {
+			serverName: "brave-search",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "@modelcontextprotocol/server-brave-search"],
+			env: { BRAVE_API_KEY: "在此填入你的 Brave Search API Key" },
+		},
+		inputs: ["env.BRAVE_API_KEY"],
+	},
+	{
+		id: "puppeteer",
+		name: "Puppeteer",
+		description: {
+			zh: "浏览器自动化：导航、截图、点击、执行 JS。",
+			en: "Browser automation: navigate, screenshot, click, run JS.",
+		},
+		server: {
+			serverName: "puppeteer",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "@modelcontextprotocol/server-puppeteer"],
+		},
+	},
+	{
+		id: "gitlab",
+		name: "GitLab",
+		description: {
+			zh: "GitLab 仓库管理：Issue / MR / 仓库操作。",
+			en: "GitLab repos: issues, merge requests, and repo operations.",
+		},
+		server: {
+			serverName: "gitlab",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "@modelcontextprotocol/server-gitlab"],
+			env: { GITLAB_PERSONAL_ACCESS_TOKEN: "在此填入你的 GitLab Personal Access Token" },
+		},
+		inputs: ["env.GITLAB_PERSONAL_ACCESS_TOKEN"],
+	},
+	{
+		id: "slack",
+		name: "Slack",
+		description: {
+			zh: "Slack 工作区：频道 / 消息 / 线程 / 用户管理。",
+			en: "Slack workspace: channels, messages, threads, users.",
+		},
+		server: {
+			serverName: "slack",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "@modelcontextprotocol/server-slack"],
+			env: {
+				SLACK_BOT_TOKEN: "在此填入你的 Slack Bot Token（xoxb-...）",
+				SLACK_TEAM_ID: "在此填入你的 Slack Team ID",
+			},
+		},
+		inputs: ["env.SLACK_BOT_TOKEN", "env.SLACK_TEAM_ID"],
+	},
+	{
+		id: "sentry",
+		name: "Sentry",
+		description: {
+			zh: "Sentry 错误追踪：查询 issue 与事件。",
+			en: "Sentry error tracking: query issues and events.",
+		},
+		server: {
+			serverName: "sentry",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "@modelcontextprotocol/server-sentry"],
+			env: { SENTRY_TOKEN: "在此填入你的 Sentry Auth Token" },
+		},
+		inputs: ["env.SENTRY_TOKEN"],
+	},
+	{
+		id: "postgres",
+		name: "PostgreSQL",
+		description: {
+			zh: "PostgreSQL 数据库：只读查询与 schema 检查。",
+			en: "PostgreSQL database: read-only queries and schema inspection.",
+		},
+		server: {
+			serverName: "postgres",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "@modelcontextprotocol/server-postgres", "postgresql://user:password@localhost:5432/dbname（在此填入你的连接串）"],
+		},
+		inputs: ["args[2]"],
+	},
+	{
+		id: "sqlite",
+		name: "SQLite",
+		description: {
+			zh: "SQLite 数据库：查询与 schema 检查。",
+			en: "SQLite database: queries and schema inspection.",
+		},
+		server: {
+			serverName: "sqlite",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "@modelcontextprotocol/server-sqlite", "/在此填入数据库文件绝对路径"],
+		},
+		inputs: ["args[2]"],
+	},
+	{
+		id: "everything",
+		name: "Everything",
+		description: {
+			zh: "演示 / 测试服务器：覆盖各种 MCP 特性（echo、日志、资源）。",
+			en: "Demo/test server: covers assorted MCP features (echo, logging, resources).",
+		},
+		server: {
+			serverName: "everything",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "@modelcontextprotocol/server-everything"],
+		},
+	},
+];
+
+/** 占位文本标记：所有预设占位值必须包含该短语，据此识别而非误伤普通参数。 */
+export const PLACEHOLDER_MARKER = "在此填入";
+
+/** 全部预设占位值：保存时这些值必须被用户替换（精确匹配）。 */
+export const PLACEHOLDER_VALUES = new Set(
+	PRESETS.flatMap((preset) => [
+		...Object.values(preset.server.env ?? {}),
+		...(preset.server.args ?? []).filter((value) => typeof value === "string"),
+	]).filter((value) => value.includes(PLACEHOLDER_MARKER)),
+);
+
 /** Fiber 状态（cordis）：2 = active。 */
 const FIBER_ACTIVE = 2;
 const FIBER_FAILED = 3;
@@ -332,6 +564,22 @@ export class McpManagerService extends Service {
 	/** 新增或更新一台服务器（按 serverName upsert）。 */
 	async saveServer(raw) {
 		const { config, disabled, note } = normalizeServer(raw);
+		// 预设占位值不能直接保存：用户必须先替换成真实值（如 Token / 路径）。
+		for (const [key, value] of Object.entries(config.env ?? {})) {
+			if (PLACEHOLDER_VALUES.has(value)) {
+				throw new McpError("mcp/placeholder", `请先填写 ${key}：预设占位值不能直接保存`);
+			}
+		}
+		for (const [index, value] of (config.args ?? []).entries()) {
+			if (typeof value === "string" && PLACEHOLDER_VALUES.has(value)) {
+				throw new McpError("mcp/placeholder", `请先填写 args[${index}]：预设占位值不能直接保存`);
+			}
+		}
+		for (const [key, value] of Object.entries(config.headers ?? {})) {
+			if (PLACEHOLDER_VALUES.has(value)) {
+				throw new McpError("mcp/placeholder", `请先填写 ${key}：预设占位值不能直接保存`);
+			}
+		}
 		// serverName 与手工 cordis.patch.yml 条目冲突时拒绝，避免加载期明确失败。
 		const manual = this.manualEntries().find((entry) => entry.options.config?.serverName === config.serverName);
 		if (manual !== undefined) {
@@ -430,7 +678,19 @@ export class McpManagerService extends Service {
 		return { servers, manual };
 	}
 
-	/** GET {SERVERS_ROUTE} —— 列表 + 手工条目 + 状态文件信息。 */
+	/**
+	 * 预设目录的浏览器视图：附带「是否已添加」状态（受管或手工同名）。
+	 * @returns 预设列表。
+	 */
+	presetsView() {
+		const names = new Set([
+			...this.servers.map((server) => server.serverName),
+			...this.manualEntries().map((entry) => entry.options.config?.serverName).filter((name) => typeof name === "string"),
+		]);
+		return PRESETS.map((preset) => ({ ...preset, added: names.has(preset.server.serverName) }));
+	}
+
+	/** GET {SERVERS_ROUTE} —— 列表 + 手工条目 + 预设目录 + 状态文件信息。 */
 	async handleServersRequest(req, res) {
 		const payload = (status, value) => {
 			res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
@@ -441,7 +701,7 @@ export class McpManagerService extends Service {
 				payload(405, { ok: false, code: "mcp/method", message: "method not allowed" });
 				return;
 			}
-			payload(200, { ok: true, stateFile: this.stateFile, corrupt: this.stateCorrupt, ...this.snapshot() });
+			payload(200, { ok: true, stateFile: this.stateFile, corrupt: this.stateCorrupt, presets: this.presetsView(), ...this.snapshot() });
 		} catch (error) {
 			payload(500, { ok: false, code: error.code ?? "mcp/list", message: error.message });
 		}

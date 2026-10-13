@@ -18,6 +18,13 @@ const zh = {
 	managed: "已管理",
 	manual: "cordis.patch.yml 手工配置（只读）",
 	manualHint: "以下条目直接写在 profile 的 cordis.patch.yml 中，请到配置文件里修改。",
+	presets: "热门预设",
+	presetsHint: "一键添加常用 MCP 服务器；需要密钥 / 路径的会先填入表单，补全后再保存。",
+	presetAdd: "一键添加",
+	presetAdded: "已添加",
+	presetNeeds: "需填写：{keys}",
+	presetPrefilled: "已把预设「{name}」填入表单，请补全 {keys} 后保存。",
+	presetAddOk: "「{name}」已添加。",
 	add: "添加服务器",
 	edit: "编辑",
 	save: "保存",
@@ -75,6 +82,13 @@ const en = {
 	managed: "Managed",
 	manual: "Configured in cordis.patch.yml (read-only)",
 	manualHint: "These entries are written directly in the profile's cordis.patch.yml; edit them in the config file.",
+	presets: "Popular presets",
+	presetsHint: "One-click add common MCP servers; those needing keys/paths prefill the form for you to complete.",
+	presetAdd: "Add",
+	presetAdded: "Added",
+	presetNeeds: "Needs: {keys}",
+	presetPrefilled: "Preset “{name}” loaded into the form; fill in {keys} and save.",
+	presetAddOk: "“{name}” added.",
 	add: "Add server",
 	edit: "Edit",
 	save: "Save",
@@ -187,6 +201,11 @@ function parseJson(text, label, t) {
 	}
 }
 
+/** 预设必填字段路径的可读形式："env.GITHUB_TOKEN" → "GITHUB_TOKEN"、"args[2]" → "参数"。 */
+function inputsLabel(inputs) {
+	return inputs.map((path) => (path.startsWith("env.") ? path.slice(4) : path.startsWith("args[") ? "参数" : path)).join("、");
+}
+
 const css = `
 .dmc-page{display:flex;flex-direction:column;gap:16px;min-width:0;padding:4px 0}
 .dmc-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
@@ -225,14 +244,21 @@ const css = `
 .dmc-select{appearance:auto;box-sizing:border-box;border:.5px solid var(--dsw-alias-border-l2,#ccc);background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#222);font:inherit;border-radius:8px;outline:none;padding:5px 10px;font-size:13px;line-height:20px;min-width:0;width:100%}
 .dmc-form-actions{display:flex;gap:8px;justify-content:flex-end}
 .dmc-section-label{margin:0;font-size:13px;font-weight:600;color:var(--dsw-alias-label-secondary,#555)}
-@media (max-width:640px){.dmc-form-grid{grid-template-columns:1fr}}
+.dmc-presets{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.dmc-preset{display:flex;flex-direction:column;gap:6px;border:1px solid var(--dsw-alias-border-l3,#ddd);border-radius:12px;padding:10px 12px;min-width:0}
+.dmc-preset-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.dmc-preset-name{font-size:13px;font-weight:600}
+.dmc-preset-desc{margin:0;color:var(--dsw-alias-label-secondary,#555);font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.dmc-preset-foot{display:flex;justify-content:flex-end}
+@media (max-width:640px){.dmc-form-grid{grid-template-columns:1fr}.dmc-presets{grid-template-columns:1fr}}
 `;
 
 /** 设置分区组件：props 由 slot 框架提供 t（按 NS 绑定）。 */
 function McpSection({ t }) {
-	const [data, setData] = useState({ status: "loading", servers: [], manual: [], stateFile: null, corrupt: null });
+	const [data, setData] = useState({ status: "loading", servers: [], manual: [], presets: [], stateFile: null, corrupt: null });
 	const [notice, setNotice] = useState(null);
 	const [busy, setBusy] = useState({});
+	const [busyPreset, setBusyPreset] = useState({});
 	const [editing, setEditing] = useState(null);
 	const [form, setForm] = useState(null);
 	const [formError, setFormError] = useState(null);
@@ -244,6 +270,7 @@ function McpSection({ t }) {
 			status: "ok",
 			servers: payload.servers ?? [],
 			manual: payload.manual ?? [],
+			presets: payload.presets ?? previous.presets ?? [],
 			stateFile: payload.stateFile ?? previous.stateFile,
 			corrupt: payload.corrupt ?? null,
 		}));
@@ -253,9 +280,9 @@ function McpSection({ t }) {
 		setData((previous) => ({ ...previous, status: "loading" }));
 		try {
 			const payload = await api("/servers");
-			setData({ status: "ok", servers: payload.servers ?? [], manual: payload.manual ?? [], stateFile: payload.stateFile ?? null, corrupt: payload.corrupt ?? null });
+			setData({ status: "ok", servers: payload.servers ?? [], manual: payload.manual ?? [], presets: payload.presets ?? [], stateFile: payload.stateFile ?? null, corrupt: payload.corrupt ?? null });
 		} catch (error) {
-			setData({ status: "error", servers: [], manual: [], stateFile: null, corrupt: null, message: error.message });
+			setData({ status: "error", servers: [], manual: [], presets: [], stateFile: null, corrupt: null, message: error.message });
 		}
 	}
 
@@ -279,6 +306,56 @@ function McpSection({ t }) {
 		if (key === null) return null;
 		const kind = status === "active" ? "on" : status === "failed" || status === "conflict" ? "err" : "warn";
 		return h("span", { key: "status", className: `dmc-badge ${kind === "on" ? "dmc-badge-on" : kind === "err" ? "dmc-badge-err" : "dmc-badge-warn"}` }, t(key));
+	}
+
+	/** 预设一键添加：需要补全的先预填表单，零配置的直接保存。 */
+	async function addPreset(preset) {
+		setNotice(null);
+		const inputs = preset.inputs ?? [];
+		if (inputs.length > 0) {
+			setForm(formOf(preset.server));
+			setEditing(null);
+			setFormError(null);
+			setNotice({ kind: "ok", text: format(t("presetPrefilled"), { name: preset.name, keys: inputsLabel(inputs) }) });
+			return;
+		}
+		setBusyPreset((previous) => ({ ...previous, [preset.id]: true }));
+		try {
+			const payload = await api("/operation", { method: "POST", body: JSON.stringify({ operation: "save", server: preset.server }) });
+			applySnapshot(payload);
+			setNotice({ kind: "ok", text: format(t("presetAddOk"), { name: preset.name }) });
+		} catch (error) {
+			setNotice({ kind: "error", text: format(t("opFailed"), { message: error.message }) });
+		} finally {
+			setBusyPreset((previous) => {
+				const next = { ...previous };
+				delete next[preset.id];
+				return next;
+			});
+		}
+	}
+
+	function renderPresetCard(preset) {
+		const lang = t("title") === en.title ? "en" : "zh";
+		const description = preset.description?.[lang] ?? preset.description?.zh ?? "";
+		const inputs = preset.inputs ?? [];
+		const added = preset.added === true;
+		const presetBusy = busyPreset[preset.id] === true;
+		const badges = [];
+		if (inputs.length > 0) badges.push(h("span", { key: "needs", className: "dmc-badge dmc-badge-warn" }, format(t("presetNeeds"), { keys: inputsLabel(inputs) })));
+		badges.push(h("span", { key: "transport", className: "dmc-badge" }, preset.server?.transport ?? "stdio"));
+		if (added) badges.push(h("span", { key: "added", className: "dmc-badge dmc-badge-on" }, t("presetAdded")));
+		return h("div", { key: preset.id, className: "dmc-preset" },
+			h("div", { className: "dmc-preset-head" },
+				h("span", { className: "dmc-preset-name" }, preset.name),
+				h("div", { className: "dmc-badges" }, badges)),
+			description ? h("p", { className: "dmc-preset-desc" }, description) : null,
+			h("div", { className: "dmc-preset-foot" },
+				h("button", {
+					className: `dmc-btn ${added ? "" : "dmc-btn-primary"}`,
+					disabled: added || presetBusy,
+					onClick: () => void addPreset(preset),
+				}, added ? t("presetAdded") : presetBusy ? t("loading") : t("presetAdd"))));
 	}
 
 	async function toggle(server) {
@@ -478,6 +555,10 @@ function McpSection({ t }) {
 			: h(Fragment, null,
 				data.corrupt !== null ? h("p", { className: "dmc-notice dmc-notice-err" }, format(t("corrupt"), { message: data.corrupt })) : null,
 				form !== null ? renderForm() : null,
+				data.presets.length > 0 ? h(Fragment, null,
+					h("p", { className: "dmc-section-label" }, t("presets")),
+					h("p", { className: "dmc-subtitle" }, t("presetsHint")),
+					h("div", { className: "dmc-presets" }, data.presets.map(renderPresetCard))) : null,
 				data.servers.length === 0 && data.manual.length === 0
 					? h("p", { className: "dmc-subtitle" }, t("empty"))
 					: h(Fragment, null,

@@ -20,6 +20,13 @@ dsh plugin --profile <profile> add \
 
 ## 使用
 
+- **热门预设（一键添加）**：分区顶部内置 14 个常用官方 MCP 服务器预设
+  （GitHub、Filesystem、Memory、Sequential Thinking、Time、Fetch、Brave Search、
+  Puppeteer、GitLab、Slack、Sentry、PostgreSQL、SQLite、Everything）。
+  - 零配置预设（Memory / Time / Fetch 等）点「一键添加」直接保存并生效；
+  - 需要密钥 / 路径的预设（GitHub Token、允许目录等）会先把配置**预填进表单**，
+    补全必填项后保存——占位值在宿主侧会被拦截，无法带占位符保存；
+  - 已添加（受管或手工同名）的预设标记「已添加」，防止重复。
 - **添加服务器**：填写 `serverName`（工具命名空间，`mcp__<name>__<tool>`），
   选择传输方式——`stdio`（本地进程：命令 / 参数 / 环境变量 / 工作目录）或
   `streamable-http`（远程：URL / 请求标头）。

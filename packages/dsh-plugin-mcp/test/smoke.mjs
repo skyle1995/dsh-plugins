@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const pkgDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const { default: McpManagerService, McpError, entryIdOf, normalizeServer, saveStateFile, loadStateFile, MCP_MODULE, MANAGED_ID_PREFIX } = await import(join(pkgDir, "lib/index.js"));
+const { default: McpManagerService, McpError, entryIdOf, normalizeServer, saveStateFile, loadStateFile, MCP_MODULE, MANAGED_ID_PREFIX, PRESETS, PLACEHOLDER_VALUES } = await import(join(pkgDir, "lib/index.js"));
 
 /** 记录条目并为服务提供 EntryTree 最小 API 的内存桩 loader。 */
 class StubEntry {
@@ -190,9 +190,41 @@ const stateFile = join(tempDir, "mcp-servers.json");
 	if (serverC.config.env.TOKEN === "secret") throw new Error("env 未掩码");
 	console.log("mask: env 值已掩码");
 
-	// 持久化校验：状态文件里应是 2 台（b、c）
+	// 预设：目录非空、零配置预设可一键保存、占位值被拦截、added 状态正确
+	if (PRESETS.length < 10) throw new Error("预设目录过少");
+	if (!PRESETS.some((preset) => preset.id === "github" && (preset.inputs ?? []).length > 0)) throw new Error("github 预设应带 inputs");
+	if (!PRESETS.some((preset) => preset.id === "memory" && (preset.inputs ?? []).length === 0)) throw new Error("memory 预设应为零配置");
+	if (PLACEHOLDER_VALUES.size === 0) throw new Error("占位值集合为空");
+	// 普通参数值（如 -y、包名）不能进占位值集合
+	if (PLACEHOLDER_VALUES.has("-y")) throw new Error("普通参数被误判为占位值");
+	const bravePreset = PRESETS.find((preset) => preset.id === "brave-search");
+	// 带占位值的配置不能直接保存
+	let placeholderBlocked = false;
+	try {
+		await manager.saveServer(bravePreset.server);
+	} catch (error) {
+		placeholderBlocked = error.code === "mcp/placeholder" && error.message.includes("BRAVE_API_KEY");
+	}
+	if (!placeholderBlocked) throw new Error("占位值未被拦截");
+	// 替换成真实值后可保存
+	await manager.saveServer({
+		...bravePreset.server,
+		env: { BRAVE_API_KEY: "BSA_real" },
+	});
+	console.log("presets: 占位拦截 + 替换后可保存");
+	const presetsView = manager.presetsView();
+	const braveView = presetsView.find((preset) => preset.id === "brave-search");
+	if (braveView.added !== true) throw new Error("已保存的预设应标记 added");
+	const memoryView = presetsView.find((preset) => preset.id === "memory");
+	if (memoryView.added !== false) throw new Error("未保存的预设不应标记 added");
+	// 手工同名的 github 预设也应标记 added（防止重复添加）
+	const githubView = presetsView.find((preset) => preset.id === "github");
+	if (githubView.added !== true) throw new Error("手工同名的预设应标记 added");
+	console.log("presetsView:", `${presetsView.length} 个预设`, "brave.added =", braveView.added, "github.added =", githubView.added, "memory.added =", memoryView.added);
+
+	// 持久化校验：状态文件里应是 3 台（b、c、brave-search）
 	const loaded = loadStateFile(stateFile);
-	if (loaded.servers.length !== 2) throw new Error(`持久化数量不符：${loaded.servers.length}`);
+	if (loaded.servers.length !== 3) throw new Error(`持久化数量不符：${loaded.servers.length}`);
 	console.log("persist: 状态文件同步", loaded.servers.map((server) => server.serverName).join(","));
 }
 

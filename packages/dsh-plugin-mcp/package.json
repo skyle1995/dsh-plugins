@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "DSH MCP 服务器管理器：设置面板里可视化增删改 / 启停 MCP 服务器（基于内置 @deepseek-ai/dsh-mcp-client）",
   "type": "module",
   "main": "lib/index.js",
