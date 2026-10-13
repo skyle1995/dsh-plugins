@@ -194,6 +194,21 @@ const stateFile = join(tempDir, "mcp-servers.json");
 	if (PRESETS.length < 10) throw new Error("预设目录过少");
 	if (!PRESETS.some((preset) => preset.id === "github" && (preset.inputs ?? []).length > 0)) throw new Error("github 预设应带 inputs");
 	if (!PRESETS.some((preset) => preset.id === "memory" && (preset.inputs ?? []).length === 0)) throw new Error("memory 预设应为零配置");
+	// 逆向 / 安全预设：按官方文档的启动方式校验
+	const reqable = PRESETS.find((preset) => preset.id === "reqable");
+	if (!reqable || (reqable.inputs ?? []).length !== 0 || reqable.server.command !== "npx" || !reqable.server.args.includes("reqable-mcp-server")) throw new Error("reqable 预设不符");
+	const ida = PRESETS.find((preset) => preset.id === "ida-pro");
+	if (!ida || ida.server.command !== "uvx" || !ida.server.args.includes("ida-mcp")) throw new Error("ida 预设不符");
+	const ghidra = PRESETS.find((preset) => preset.id === "ghidra");
+	if (!ghidra || ghidra.server.command !== "uvx" || !ghidra.server.args.includes("ghidra-mcp")) throw new Error("ghidra 预设不符");
+	const binja = PRESETS.find((preset) => preset.id === "binary-ninja");
+	if (!binja || !binja.server.args.includes("binary-ninja-mcp")) throw new Error("binary-ninja 预设不符");
+	const frida = PRESETS.find((preset) => preset.id === "frida");
+	if (!frida || !frida.server.args.includes("frida-mcp-server")) throw new Error("frida 预设不符");
+	const jadx = PRESETS.find((preset) => preset.id === "jadx");
+	if (!jadx || !(jadx.inputs ?? []).includes("args[1]") || !PLACEHOLDER_VALUES.has(jadx.server.args[1])) throw new Error("jadx 预设占位不符");
+	const vt = PRESETS.find((preset) => preset.id === "virustotal");
+	if (!vt || !(vt.inputs ?? []).includes("env.VTAI_TOKEN_FILE") || !PLACEHOLDER_VALUES.has(vt.server.env.VTAI_TOKEN_FILE)) throw new Error("virustotal 预设占位不符");
 	if (PLACEHOLDER_VALUES.size === 0) throw new Error("占位值集合为空");
 	// 普通参数值（如 -y、包名）不能进占位值集合
 	if (PLACEHOLDER_VALUES.has("-y")) throw new Error("普通参数被误判为占位值");

@@ -48,10 +48,12 @@ export const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
 export const MASKED_VALUE = "••••••";
 
 /**
- * 热门 MCP 服务器预设（官方 @modelcontextprotocol 参考服务器）。
+ * 热门 MCP 服务器预设：官方 @modelcontextprotocol 参考服务器 + 逆向 / 安全
+ * 分析工具（Reqable、IDA Pro、Ghidra、Binary Ninja、Frida、JADX、VirusTotal）。
  * `inputs` 列出需要用户补全的字段路径（如 "env.GITHUB_TOKEN"、"args[0]"）：
  * 对应值在 `server` 里是占位文本，保存时会被拦截，必须先改成真实值。
- * 无 `inputs` 的预设零配置，可一键直接添加。
+ * 无 `inputs` 的预设零配置，可一键直接添加；前置条件（工具本体 / 插件）
+ * 写在 description 里。
  */
 export const PRESETS = [
 	{
@@ -265,6 +267,108 @@ export const PRESETS = [
 			command: "npx",
 			args: ["-y", "@modelcontextprotocol/server-everything"],
 		},
+	},
+	// ---- 逆向 / 安全分析 ----
+	{
+		id: "reqable",
+		name: "Reqable",
+		description: {
+			zh: "Reqable 抓包调试：分析抓包记录、断点 / 重写 / 脚本规则、API 集合管理（需本机 Reqable v3.2.0+ 运行中）。",
+			en: "Reqable traffic capture: analyze captures, breakpoints/rewrites/scripts, API collections (requires Reqable v3.2.0+ running locally).",
+		},
+		server: {
+			serverName: "reqable",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "reqable-mcp-server"],
+		},
+	},
+	{
+		id: "ida-pro",
+		name: "IDA Pro",
+		description: {
+			zh: "Hex-Rays 官方 IDA MCP：反编译 / 反汇编 / 交叉引用 / 重命名 / 调试（需 IDA Pro 9.4+ 与 idalib，且已安装 uv）。",
+			en: "Official Hex-Rays IDA MCP: decompile/disassemble/xrefs/rename/debug (requires IDA Pro 9.4+ with idalib and uv).",
+		},
+		server: {
+			serverName: "ida-pro",
+			transport: "stdio",
+			command: "uvx",
+			args: ["--exclude-newer=1s", "ida-mcp", "stdio", "--agent=dsh"],
+		},
+	},
+	{
+		id: "ghidra",
+		name: "Ghidra",
+		description: {
+			zh: "Ghidra 逆向：反编译 / 自动重命名 / 交叉引用（需 Ghidra 12.1.4+ 并安装 GhidraMCP 插件，默认本地 8080）。",
+			en: "Ghidra reversing: decompile/rename/xrefs (requires Ghidra 12.1.4+ with the GhidraMCP plugin, default local 8080).",
+		},
+		server: {
+			serverName: "ghidra",
+			transport: "stdio",
+			command: "uvx",
+			args: ["--from", "git+https://github.com/LaurieWired/GhidraMCP", "ghidra-mcp", "--ghidra-server", "http://127.0.0.1:8080/"],
+		},
+	},
+	{
+		id: "binary-ninja",
+		name: "Binary Ninja",
+		description: {
+			zh: "Binary Ninja 逆向：反编译 / IL / 交叉引用 / 重命名 / 补丁（需安装 binary_ninja_mcp 插件，默认本地 9009）。",
+			en: "Binary Ninja reversing: decompile/IL/xrefs/rename/patch (requires the binary_ninja_mcp plugin, default local 9009).",
+		},
+		server: {
+			serverName: "binary-ninja",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "binary-ninja-mcp", "--host", "localhost", "--port", "9009"],
+		},
+	},
+	{
+		id: "frida",
+		name: "Frida",
+		description: {
+			zh: "Frida 动态插桩：进程 / 设备管理、attach / spawn、JS 脚本注入与交互式 REPL。",
+			en: "Frida dynamic instrumentation: process/device management, attach/spawn, JS injection and interactive REPL.",
+		},
+		server: {
+			serverName: "frida",
+			transport: "stdio",
+			command: "uvx",
+			args: ["frida-mcp-server"],
+		},
+	},
+	{
+		id: "jadx",
+		name: "JADX",
+		description: {
+			zh: "Android 逆向：操控 JADX 分析 APK / DEX（反编译、搜索、交叉引用）。需先按 jadx-ai-mcp 文档安装 JADX 插件并克隆仓库。",
+			en: "Android reversing: drive JADX to analyze APK/DEX (decompile, search, xrefs). Install the JADX plugin and clone jadx-ai-mcp first.",
+		},
+		server: {
+			serverName: "jadx",
+			transport: "stdio",
+			command: "uv",
+			args: ["--directory", "/在此填入 jadx-ai-mcp/jadx-mcp-server 目录绝对路径", "run", "jadx_mcp_server.py"],
+		},
+		inputs: ["args[1]"],
+	},
+	{
+		id: "virustotal",
+		name: "VirusTotal",
+		description: {
+			zh: "官方 VirusTotal MCP（VTAI）：文件 / URL / 域名 / IP 威胁情报查询与提交分析。需先在 ai.virustotal.com 创建 VTAI Agent Token。",
+			en: "Official VirusTotal MCP (VTAI): file/URL/domain/IP threat intelligence and analysis submission. Create a VTAI Agent Token first.",
+		},
+		server: {
+			serverName: "virustotal",
+			transport: "stdio",
+			command: "uvx",
+			args: ["vt-mcp"],
+			env: { VTAI_TOKEN_FILE: "在此填入你的 VTAI Agent Token 文件路径（如 ~/.config/vt-mcp/token）" },
+		},
+		inputs: ["env.VTAI_TOKEN_FILE"],
 	},
 ];
 
