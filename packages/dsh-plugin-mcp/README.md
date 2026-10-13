@@ -1,0 +1,65 @@
+# dsh-plugin-mcp
+
+DSH 设置面板里的 **MCP 服务器管理器**：可视化增删改 / 启停外部 MCP 服务器，
+无需手写 cordis.patch.yml。
+
+DSH 运行时（0.2.0-rc.2）内置 [`@deepseek-ai/dsh-mcp-client`](https://github.com/deepseek-ai/deepseek-harness/tree/main/packages/mcp/mcp-client)
+——每台 MCP 服务器是 cordis 树里一条该模块的条目，工具以
+`mcp__<serverName>__<tool>` 形式注册给模型。本插件不重新实现 MCP 客户端，
+而是把「管理体验」打包：状态存一份 JSON，运行时投影成 loader 树里的受管
+条目（id 前缀 `mcp-managed-`）。
+
+## 安装
+
+```bash
+dsh plugin --profile <profile> add \
+  "https://hub.ifunx.com/skyle1995/dsh-plugins.git#main&path:packages/dsh-plugin-mcp"
+```
+
+安装后重启 profile（或热重载插件），打开设置面板即可看到「MCP 服务器」分区。
+
+## 使用
+
+- **添加服务器**：填写 `serverName`（工具命名空间，`mcp__<name>__<tool>`），
+  选择传输方式——`stdio`（本地进程：命令 / 参数 / 环境变量 / 工作目录）或
+  `streamable-http`（远程：URL / 请求标头）。
+- **启停 / 编辑 / 删除**：立即生效——保存即持久化到状态文件，并实时
+  创建 / 更新 / 移除对应的 mcp-client 条目（连接断开会自动重连，重连策略
+  沿用 mcp-client 默认值）。
+- **手工条目**：写在 `cordis.patch.yml` 里的 mcp-client 条目照常工作，在
+  分区底部只读展示；与受管条目同名的 `serverName` 会在保存时被拦截。
+- **状态徽标**：已连接 / 连接失败 / 已停止 / 连接中 / 待创建 / id 冲突。
+
+## 数据与持久化
+
+- 状态文件：`<profileDir>/mcp-servers.json`（与 `cordis.patch.yml` 同级；
+  可用插件配置 `stateFile` 覆盖为绝对路径）。文件权限 0600。
+- **重启安全**：profile 启动时 cordis.yml 会被重置为空根，本插件激活后
+  按状态文件重建全部受管条目；运行时任何树写回 / 补丁热重载后也会自动
+  重新投影（幂等）。
+- **卸载 / 停用插件**：受管条目在下次启动时不再重建（当前进程内最后一次
+  投影的条目会随树写回保留到重启）；状态文件不会被删除，可自行清理。
+- **敏感信息**：`env` / `headers` 值明文保存在状态文件（0600）里，列表接口
+  已掩码；DSH 的树写回会把运行中条目配置落进 `profiles/<name>/cordis.yml`
+  （运行时行为，重启即重置），请勿在共享机器上存放密钥。
+
+## 配置
+
+```yaml
+# profile 的 cordis.patch.yml
+- id: mcp-manager
+  name: 'dsh-plugin-mcp'
+  config:
+    stateFile: /custom/mcp-servers.json   # 可选；默认 <profileDir>/mcp-servers.json
+```
+
+## 开发
+
+```bash
+pnpm install                    # 安装 devDependencies
+node test/smoke.mjs             # 宿主服务冒烟测试（状态读写 / 校验 / 树投影）
+pnpm --filter dsh-plugin-mcp run build:client   # 构建浏览器半区 lib/client.js
+```
+
+浏览器半区是提交进仓库的构建产物（`lib/client.js`），宿主半区零构建
+（纯 ESM JS + `.d.ts`），与仓库「发布即源码」约定一致。

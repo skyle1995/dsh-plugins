@@ -25,6 +25,7 @@ dsh plugin --profile web add \
 |---|---|---|
 | [`dsh-plugin-repo`](packages/dsh-plugin-repo) | `packages/dsh-plugin-repo` | **基础插件**：设置面板三个分区——插件仓库（在线目录/安装/更新/卸载）、技能能力（skills 管理+导入）、规则提示词（system-prompt persona 编辑，热加载）；另在会话右键菜单底部提供「删除会话」（红色警示+确认弹窗） |
 | [`dsh-plugin-file-actions`](packages/dsh-plugin-file-actions) | `packages/dsh-plugin-file-actions` | **文件列表增强**：文件树右键菜单与批量操作——侧边栏编辑 tab（编辑态实时语法高亮 + prettier 一键格式化）、剪切/复制/粘贴、删除（确认弹窗）、压缩为 ZIP（命名弹窗）、复制路径、⌘/Ctrl 多选与底部批量操作栏（宿主半区路由 + 工作区安全约束） |
+| [`dsh-plugin-mcp`](packages/dsh-plugin-mcp) | `packages/dsh-plugin-mcp` | **MCP 服务器管理器**：设置面板「MCP 服务器」分区——可视化增删改/启停外部 MCP 服务器（stdio 本地进程 / streamable-http 远程），基于内置 `@deepseek-ai/dsh-mcp-client` 桥接（工具名 `mcp__<name>__<tool>`）；状态存 JSON、运行时投影为 loader 树条目，重启自动重建；手工 cordis.patch.yml 条目只读展示 |
 
 ## 为什么需要「仓库插件」
 
@@ -82,5 +83,7 @@ DSH 版本」精确豁免后才可运行。
 
 - [x] `dsh-plugin-repo`：宿主服务（catalog / spec / install）
 - [x] 设置里的「插件仓库」独立分区：在线列表查看、安装、更新、卸载（浏览器半区）
+- [x] `dsh-plugin-mcp`：设置面板 MCP 服务器管理器（增删改/启停 + 状态投影 + 重启重建）
 - [ ] `plugin_repo` agent 工具（目录搜索 + 安装，需评估启用策略）
+- [ ] `dsh-plugin-mcp`：MCP 服务器状态自检（工具列表预览）、`$env:` 环境变量引用（避免明文落盘）
 - [ ] 更多业务插件（session-manager 等迁入）

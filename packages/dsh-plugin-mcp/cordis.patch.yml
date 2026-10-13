@@ -1,0 +1,17 @@
+# dsh-plugin-mcp bundle patch: 注册设置面板里的 MCP 服务器管理器。
+#
+# 该行加载本包默认导出的 Cordis 插件（服务键 mcpManager，即 ctx.mcpManager）：
+# - 宿主半区：状态文件（mcp-servers.json）读写 + loader 树投影（每台受管
+#   服务器一条 @deepseek-ai/dsh-mcp-client 条目，id 形如 mcp-managed-<name>）
+# - 浏览器半区：设置面板「MCP 服务器」分区（列表 / 新增 / 编辑 / 启停 / 删除）
+#
+# 配置通过 profile 的 cordis.patch.yml 覆盖，例如：
+#
+# - id: mcp-manager
+#   name: 'dsh-plugin-mcp'
+#   config:
+#     stateFile: /custom/mcp-servers.json
+#
+- insert:
+    - id: mcp-manager
+      name: 'dsh-plugin-mcp'
