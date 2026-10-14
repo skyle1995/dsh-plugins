@@ -42,9 +42,6 @@ const zh = {
 	repoVersionBadge: "仓库版本 {version}",
 	updateAvailableBadge: "可更新",
 	installOk: "「{name}」操作成功。",
-	reloadHint: "插件已变更，{seconds} 秒后自动刷新页面使其生效。",
-	reloadNow: "立即刷新",
-	reloadCancel: "暂不",
 	installFailed: "「{name}」操作失败：{message}",
 	removeConfirm: "确定卸载「{name}」吗？其配置覆盖会保留在 profile 中。",
 };
@@ -76,9 +73,6 @@ const en = {
 	repoVersionBadge: "Repo v{version}",
 	updateAvailableBadge: "Update available",
 	installOk: "“{name}” succeeded.",
-	reloadHint: "Plugins changed; the page reloads in {seconds}s to apply.",
-	reloadNow: "Reload now",
-	reloadCancel: "Not now",
 	installFailed: "“{name}” operation failed: {message}",
 	removeConfirm: "Uninstall “{name}”? Its configuration overrides remain in the profile.",
 };
@@ -141,7 +135,6 @@ function RepoSection({ t }) {
 	const [notice, setNotice] = useState(null);
 	const [query, setQuery] = useState("");
 	/** 插件安装/更新/启停/删除后提示刷新；非 null 时倒计时自动刷新页面。 */
-	const [reloadCountdown, setReloadCountdown] = useState(null);
 	const requests = useRef(new Map());
 
 	async function refresh() {
@@ -158,21 +151,6 @@ function RepoSection({ t }) {
 		void refresh();
 	}, []);
 
-	// 倒计时归零 → 刷新页面；期间每秒递减。
-	useEffect(() => {
-		if (reloadCountdown === null) return;
-		if (reloadCountdown <= 0) {
-			globalThis.location.reload();
-			return;
-		}
-		const timer = setTimeout(() => setReloadCountdown((value) => (value === null ? null : value - 1)), 1000);
-		return () => clearTimeout(timer);
-	}, [reloadCountdown]);
-
-	/** 组合包操作（安装/更新/重装/启停/删除）完成后提示刷新。 */
-	function bundleChanged() {
-		setReloadCountdown(5);
-	}
 
 	const filtered = useMemo(() => {
 		const q = query.trim().toLowerCase();
@@ -209,7 +187,6 @@ function RepoSection({ t }) {
 		await run(entry.name, "install", requestId, async () => {
 			await api("/install", { method: "POST", body: JSON.stringify({ spec: entry.spec, enabled: true, requestId }) });
 			setNotice({ kind: "ok", text: format(t("installOk"), { name: entry.name }) });
-			bundleChanged();
 		}).catch((error) => {
 			setNotice({ kind: "error", text: format(t("installFailed"), { name: entry.name, message: error.message }) });
 		});
@@ -229,7 +206,6 @@ function RepoSection({ t }) {
 		await run(entry.name, "toggle", undefined, async () => {
 			await api("/enable", { method: "POST", body: JSON.stringify({ name: entry.name, enabled: !entry.enabled }) });
 			setNotice({ kind: "ok", text: format(t("installOk"), { name: entry.name }) });
-			bundleChanged();
 		}).catch((error) => {
 			setNotice({ kind: "error", text: format(t("installFailed"), { name: entry.name, message: error.message }) });
 		});
@@ -240,7 +216,6 @@ function RepoSection({ t }) {
 		await run(entry.name, "remove", undefined, async () => {
 			await api("/remove", { method: "POST", body: JSON.stringify({ name: entry.name }) });
 			setNotice({ kind: "ok", text: format(t("installOk"), { name: entry.name }) });
-			bundleChanged();
 		}).catch((error) => {
 			setNotice({ kind: "error", text: format(t("installFailed"), { name: entry.name, message: error.message }) });
 		});
@@ -299,10 +274,6 @@ function RepoSection({ t }) {
 			h("div", { className: "dpr-toolbar" },
 				h("input", { className: "dpr-search", placeholder: t("search"), value: query, onChange: (event) => setQuery(event.target.value) })),
 			renderNotice(),
-			reloadCountdown !== null ? h("div", { className: "dpr-notice dpr-notice-ok dpr-reload" },
-				h("span", null, format(t("reloadHint"), { seconds: reloadCountdown })),
-				h("button", { className: "dpr-btn dpr-btn-primary", onClick: () => globalThis.location.reload() }, t("reloadNow")),
-				h("button", { className: "dpr-btn", onClick: () => setReloadCountdown(null) }, t("reloadCancel"))) : null,
 			body));
 }
 
