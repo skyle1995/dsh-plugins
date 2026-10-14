@@ -194,6 +194,25 @@ const stateFile = join(tempDir, "mcp-servers.json");
 	if (PRESETS.length < 10) throw new Error("预设目录过少");
 	if (!PRESETS.some((preset) => preset.id === "github" && (preset.inputs ?? []).length > 0)) throw new Error("github 预设应带 inputs");
 	if (!PRESETS.some((preset) => preset.id === "memory" && (preset.inputs ?? []).length === 0)) throw new Error("memory 预设应为零配置");
+	// 新增预设：按官方文档的启动方式校验
+	if (PRESETS.length < 30) throw new Error(`预设数量不足：${PRESETS.length}`);
+	const gitea = PRESETS.find((preset) => preset.id === "gitea");
+	if (!gitea || gitea.server.command !== "docker" || !(gitea.inputs ?? []).includes("env.GITEA_ACCESS_TOKEN") || !PLACEHOLDER_VALUES.has(gitea.server.env.GITEA_HOST)) throw new Error("gitea 预设不符");
+	const x64dbg = PRESETS.find((preset) => preset.id === "x64dbg");
+	if (!x64dbg || !x64dbg.server.args.includes("x64dbg-mcp") || categoryOf("x64dbg") !== "reversing") throw new Error("x64dbg 预设不符");
+	const cyberchef = PRESETS.find((preset) => preset.id === "cyberchef");
+	if (!cyberchef || !cyberchef.server.args.includes("cyberchef-mcp") || categoryOf("cyberchef") !== "reversing") throw new Error("cyberchef 预设不符");
+	const playwright = PRESETS.find((preset) => preset.id === "playwright");
+	if (!playwright || !playwright.server.args.some((arg) => arg.startsWith("@playwright/mcp")) || categoryOf("playwright") !== "browser") throw new Error("playwright 预设不符");
+	const chromeDev = PRESETS.find((preset) => preset.id === "chrome-devtools");
+	if (!chromeDev || !chromeDev.server.args.some((arg) => arg.startsWith("chrome-devtools-mcp")) || categoryOf("chrome-devtools") !== "browser") throw new Error("chrome-devtools 预设不符");
+	const k8s = PRESETS.find((preset) => preset.id === "kubernetes");
+	if (!k8s || categoryOf("kubernetes") !== "cloud") throw new Error("kubernetes 预设不符");
+	const context7 = PRESETS.find((preset) => preset.id === "context7");
+	if (!context7 || categoryOf("context7") !== "intel") throw new Error("context7 预设不符");
+	if (categoryOf("gitlab") !== "git" || categoryOf("gitea") !== "git") throw new Error("代码托管分类不符");
+	if (categoryOf("tavily") !== "intel" || categoryOf("urlscan") !== "intel") throw new Error("搜索/情报分类不符");
+	if (categoryOf("cloudflare") !== "cloud" || categoryOf("supabase") !== "cloud") throw new Error("云服务分类不符");
 	// 逆向 / 安全预设：按官方文档的启动方式校验
 	const reqable = PRESETS.find((preset) => preset.id === "reqable");
 	if (!reqable || (reqable.inputs ?? []).length !== 0 || reqable.server.command !== "npx" || !reqable.server.args.includes("reqable-mcp-server")) throw new Error("reqable 预设不符");

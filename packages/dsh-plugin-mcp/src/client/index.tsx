@@ -263,6 +263,8 @@ const css = `
 .dmc-chip-on{background:color-mix(in srgb,var(--dsw-alias-state-business-primary,#3b6ef5) 12%,transparent);border-color:var(--dsw-alias-state-business-primary,#3b6ef5);color:var(--dsw-alias-state-business-primary,#3b6ef5);font-weight:600}
 .dmc-search{box-sizing:border-box;border:.5px solid var(--dsw-alias-border-l2,#ccc);background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#222);font:inherit;border-radius:8px;outline:none;padding:4px 10px;font-size:13px;line-height:20px;min-width:180px;flex:1;max-width:280px}
 .dmc-search:focus{border-color:var(--dsw-alias-state-business-primary,#3b6ef5)}
+.dmc-search-row{display:flex}
+.dmc-search-row .dmc-search{flex:1;max-width:100%}
 .dmc-preset-group{margin-top:6px}
 .dmc-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-start;justify-content:center;z-index:1000;overflow:auto;padding:48px 16px}
 .dmc-modal{box-sizing:border-box;width:100%;max-width:640px;background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l3,#ddd);border-radius:14px;box-shadow:0 16px 48px rgba(0,0,0,.18);display:flex;flex-direction:column;gap:12px}
@@ -639,8 +641,9 @@ function McpSection({ t }) {
 					h("button", { className: `dmc-tab ${activeTab === "presets" ? "dmc-tab-on" : ""}`, onClick: () => setTab("presets") }, `${t("tabPresets")}（${data.presets.length}）`)),
 				activeTab === "presets"
 					? h(Fragment, null,
+						h("div", { className: "dmc-search-row" },
+							h("input", { className: "dmc-search", placeholder: t("searchPlaceholder"), value: presetQuery, onChange: (event) => setPresetQuery(event.target.value) })),
 						h("div", { className: "dmc-chiprow" },
-							h("input", { className: "dmc-search", placeholder: t("searchPlaceholder"), value: presetQuery, onChange: (event) => setPresetQuery(event.target.value) }),
 							h("button", { className: `dmc-chip ${presetCategory === null ? "dmc-chip-on" : ""}`, onClick: () => setPresetCategory(null) }, t("catAll")),
 							data.categories.map((category) => h("button", {
 								key: category.id,

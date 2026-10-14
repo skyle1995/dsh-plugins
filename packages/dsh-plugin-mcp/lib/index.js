@@ -370,6 +370,188 @@ export const PRESETS = [
 		},
 		inputs: ["env.VTAI_TOKEN_FILE"],
 	},
+	{
+		id: "x64dbg",
+		name: "x64dbg",
+		description: {
+			zh: "x64dbg 动态调试：加载 / 附加进程、断点、内存与寄存器、反汇编、恶意样本分诊（仅 Windows，首次自动下载 x64dbg）。",
+			en: "x64dbg debugging: load/attach processes, breakpoints, memory/registers, disassembly, malware triage (Windows only; auto-downloads x64dbg).",
+		},
+		server: {
+			serverName: "x64dbg",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "x64dbg-mcp"],
+		},
+	},
+	{
+		id: "cyberchef",
+		name: "CyberChef",
+		description: {
+			zh: "CyberChef 数据变换：加解密 / 编解码 / 压缩 / 哈希等 500+ 操作。",
+			en: "CyberChef transformations: 500+ encryption/encoding/compression/hashing operations.",
+		},
+		server: {
+			serverName: "cyberchef",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "cyberchef-mcp"],
+		},
+	},
+	// ---- 代码托管 / 浏览器 / 搜索情报 / 云服务 ----
+	{
+		id: "gitea",
+		name: "Gitea",
+		description: {
+			zh: "Gitea 官方 MCP：仓库 / Issue / PR / Wiki / Actions / 文件管理，支持自建实例（GITEA_HOST 填你的实例地址，令牌在 设置 → 应用 生成）。",
+			en: "Official Gitea MCP: repos/issues/PRs/wiki/actions/files, self-hosted instances supported (set GITEA_HOST to your instance; token from Settings → Applications).",
+		},
+		server: {
+			serverName: "gitea",
+			transport: "stdio",
+			command: "docker",
+			args: ["run", "-i", "--rm", "-e", "GITEA_ACCESS_TOKEN", "-e", "GITEA_HOST", "docker.gitea.com/gitea-mcp-server"],
+			env: {
+				GITEA_HOST: "https://gitea.com（在此填入你的 Gitea 地址，自建填你的实例 URL）",
+				GITEA_ACCESS_TOKEN: "在此填入你的 Gitea Access Token",
+			},
+		},
+		inputs: ["env.GITEA_HOST", "env.GITEA_ACCESS_TOKEN"],
+	},
+	{
+		id: "playwright",
+		name: "Playwright",
+		description: {
+			zh: "微软官方浏览器自动化（MCP 版）：导航 / 点击 / 截图 / 表单 / 断言。",
+			en: "Official Microsoft browser automation (MCP): navigate/click/screenshot/forms/assertions.",
+		},
+		server: {
+			serverName: "playwright",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "@playwright/mcp@latest"],
+		},
+	},
+	{
+		id: "chrome-devtools",
+		name: "Chrome DevTools",
+		description: {
+			zh: "官方 Chrome DevTools MCP：性能分析 / 网络 / 控制台 / 页面调试。",
+			en: "Official Chrome DevTools MCP: performance, network, console, and page debugging.",
+		},
+		server: {
+			serverName: "chrome-devtools",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "chrome-devtools-mcp@latest"],
+		},
+	},
+	{
+		id: "tavily",
+		name: "Tavily",
+		description: {
+			zh: "Tavily 搜索：为 AI 优化的网络搜索。",
+			en: "Tavily search: AI-optimized web search.",
+		},
+		server: {
+			serverName: "tavily",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "tavily-mcp"],
+			env: { TAVILY_API_KEY: "在此填入你的 Tavily API Key" },
+		},
+		inputs: ["env.TAVILY_API_KEY"],
+	},
+	{
+		id: "firecrawl",
+		name: "Firecrawl",
+		description: {
+			zh: "Firecrawl 抓取：网页抓取 / 搜索 / 转 Markdown。",
+			en: "Firecrawl: scrape/search and convert web pages to Markdown.",
+		},
+		server: {
+			serverName: "firecrawl",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "firecrawl-mcp"],
+			env: { FIRECRAWL_API_KEY: "在此填入你的 Firecrawl API Key" },
+		},
+		inputs: ["env.FIRECRAWL_API_KEY"],
+	},
+	{
+		id: "urlscan",
+		name: "urlscan.io",
+		description: {
+			zh: "urlscan.io 扫描：提交 URL 扫描并读取结果（免费额度，无需 Key）。",
+			en: "urlscan.io: submit URL scans and read results (free tier, no key required).",
+		},
+		server: {
+			serverName: "urlscan",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "urlscan-mcp"],
+		},
+	},
+	{
+		id: "context7",
+		name: "Context7",
+		description: {
+			zh: "Context7 文档检索：查询最新库 / 框架文档。",
+			en: "Context7: up-to-date library and framework documentation lookup.",
+		},
+		server: {
+			serverName: "context7",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "@upstash/context7-mcp"],
+		},
+	},
+	{
+		id: "cloudflare",
+		name: "Cloudflare",
+		description: {
+			zh: "Cloudflare 官方 MCP：管理 Workers / KV / D1 / R2 等资源。",
+			en: "Official Cloudflare MCP: manage Workers, KV, D1, R2 and more.",
+		},
+		server: {
+			serverName: "cloudflare",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "@cloudflare/mcp-server-cloudflare"],
+			env: { CLOUDFLARE_API_TOKEN: "在此填入你的 Cloudflare API Token" },
+		},
+		inputs: ["env.CLOUDFLARE_API_TOKEN"],
+	},
+	{
+		id: "supabase",
+		name: "Supabase",
+		description: {
+			zh: "Supabase 官方 MCP：管理数据库 / 表 / 数据（Personal Access Token）。",
+			en: "Official Supabase MCP: manage databases, tables, and data (Personal Access Token).",
+		},
+		server: {
+			serverName: "supabase",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "@supabase/mcp-server-supabase"],
+			env: { SUPABASE_ACCESS_TOKEN: "在此填入你的 Supabase Personal Access Token" },
+		},
+		inputs: ["env.SUPABASE_ACCESS_TOKEN"],
+	},
+	{
+		id: "kubernetes",
+		name: "Kubernetes",
+		description: {
+			zh: "Kubernetes MCP：像 kubectl 一样管理集群资源（使用本机 kubeconfig）。",
+			en: "Kubernetes MCP: manage cluster resources like kubectl (uses your local kubeconfig).",
+		},
+		server: {
+			serverName: "kubernetes",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "kubernetes-mcp-server"],
+		},
+	},
 ];
 
 /**
@@ -383,14 +565,38 @@ export const PRESET_CATEGORIES = [
 		en: "Development",
 		presetIds: [
 			"github", "filesystem", "memory", "sequential-thinking", "time", "fetch",
-			"brave-search", "puppeteer", "gitlab", "slack", "sentry", "postgres", "sqlite", "everything",
+			"brave-search", "puppeteer", "slack", "sentry", "postgres", "sqlite", "everything",
 		],
+	},
+	{
+		id: "git",
+		zh: "代码托管",
+		en: "Code Hosting",
+		presetIds: ["gitlab", "gitea"],
+	},
+	{
+		id: "browser",
+		zh: "浏览器 / Web",
+		en: "Browser & Web",
+		presetIds: ["playwright", "chrome-devtools"],
+	},
+	{
+		id: "intel",
+		zh: "搜索 / 情报",
+		en: "Search & Intel",
+		presetIds: ["tavily", "firecrawl", "urlscan", "context7"],
+	},
+	{
+		id: "cloud",
+		zh: "云服务",
+		en: "Cloud",
+		presetIds: ["cloudflare", "supabase", "kubernetes"],
 	},
 	{
 		id: "reversing",
 		zh: "逆向 / 安全",
 		en: "Reversing & Security",
-		presetIds: ["reqable", "ida-pro", "ghidra", "binary-ninja", "frida", "jadx", "virustotal"],
+		presetIds: ["reqable", "ida-pro", "ghidra", "binary-ninja", "frida", "jadx", "virustotal", "x64dbg", "cyberchef"],
 	},
 ];
 
