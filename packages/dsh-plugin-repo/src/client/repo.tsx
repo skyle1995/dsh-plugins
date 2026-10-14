@@ -191,7 +191,8 @@ function RepoSection({ t }) {
 		if (requestId !== undefined) requests.current.set(name, requestId);
 		try {
 			await work();
-			setTimeout(() => globalThis.location.reload(), 1200);
+			// 不整页刷新（避免打断连续安装），仅自动更新目录列表：
+			// 已安装/启用状态与版本徽标随 refresh 立即变化。
 			await refresh();
 		} finally {
 			requests.current.delete(name);

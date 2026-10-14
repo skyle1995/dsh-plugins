@@ -22,7 +22,7 @@ var __copyProps = (to, from, except, desc) => {
 };
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// src/client/index.tsx
+// packages/dsh-plugin-repo/src/client/index.tsx
 var index_exports = {};
 __export(index_exports, {
   apply: () => apply,
@@ -30,7 +30,7 @@ __export(index_exports, {
 });
 module.exports = __toCommonJS(index_exports);
 
-// src/client/repo.tsx
+// packages/dsh-plugin-repo/src/client/repo.tsx
 var import_react = require("react");
 var NS = "dsh-plugin-repo";
 var API = "/api/dsh-plugin-repo";
@@ -192,7 +192,6 @@ function RepoSection({ t }) {
     if (requestId !== void 0) requests.current.set(name, requestId);
     try {
       await work();
-      setTimeout(() => globalThis.location.reload(), 1200);
       await refresh();
     } finally {
       requests.current.delete(name);
@@ -333,7 +332,7 @@ function register(ctx) {
   }, RepoSection));
 }
 
-// src/client/skills.tsx
+// packages/dsh-plugin-repo/src/client/skills.tsx
 var import_react2 = require("react");
 var NS2 = "dsh-plugin-skills";
 var API2 = "/api/dsh-plugin-skills";
@@ -801,7 +800,7 @@ function register2(ctx) {
   }, PromptSection));
 }
 
-// src/client/session-archive.tsx
+// packages/dsh-plugin-repo/src/client/session-archive.tsx
 var import_react3 = require("react");
 var import_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 var NS3 = "dsh-plugin-session-archive";
@@ -917,7 +916,7 @@ function register3(ctx) {
   }, DeleteSessionMenuItem));
 }
 
-// src/client/index.tsx
+// packages/dsh-plugin-repo/src/client/index.tsx
 function apply(ctx) {
   register(ctx);
   register2(ctx);
