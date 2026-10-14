@@ -24,18 +24,21 @@ dsh plugin --profile <profile> add \
 条目）与**「预设」**（一键添加）。没有已安装服务器时默认落在预设页；预设
 直存成功后自动切回已安装页。
 
-- **热门预设（一键添加）**：内置 21 个常用 MCP 服务器预设——通用开发
-  （GitHub、Filesystem、Memory、Sequential Thinking、Time、Fetch、Brave Search、
-  Puppeteer、GitLab、Slack、Sentry、PostgreSQL、SQLite、Everything）与
-  **逆向 / 安全分析**（Reqable 抓包、IDA Pro 官方、Ghidra、Binary Ninja、
+- **热门预设（一键添加）**：内置 21 个常用 MCP 服务器预设，按**分类**
+  （通用开发 / 逆向·安全）分组展示，支持**搜索**（名称 / 描述）与分类筛选
+  ——通用开发（GitHub、Filesystem、Memory、Sequential Thinking、Time、Fetch、
+  Brave Search、Puppeteer、GitLab、Slack、Sentry、PostgreSQL、SQLite、Everything）
+  与**逆向 / 安全分析**（Reqable 抓包、IDA Pro 官方、Ghidra、Binary Ninja、
   Frida、JADX、VirusTotal）。
   - 零配置预设（Memory / Time / Fetch 等）点「一键添加」直接保存并生效；
-  - 需要密钥 / 路径的预设（GitHub Token、允许目录等）会先把配置**预填进表单**，
+  - 需要密钥 / 路径的预设（GitHub Token、允许目录等）会先把配置**预填进弹窗表单**，
     补全必填项后保存——占位值在宿主侧会被拦截，无法带占位符保存；
   - 已添加（受管或手工同名）的预设标记「已添加」，防止重复。
-- **添加服务器**：填写 `serverName`（工具命名空间，`mcp__<name>__<tool>`），
-  选择传输方式——`stdio`（本地进程：命令 / 参数 / 环境变量 / 工作目录）或
-  `streamable-http`（远程：URL / 请求标头）。
+- **添加 / 编辑服务器（弹窗）**：新增与编辑都在居中弹窗里完成（点遮罩 /
+  ✕ / 取消关闭），表单就出现在操作位置，不会跑到页面顶部。填写
+  `serverName`（工具命名空间，`mcp__<name>__<tool>`），选择传输方式——
+  `stdio`（本地进程：命令 / 参数 / 环境变量 / 工作目录）或 `streamable-http`
+  （远程：URL / 请求标头）。
 - **启停 / 编辑 / 删除**：立即生效——保存即持久化到状态文件，并实时
   创建 / 更新 / 移除对应的 mcp-client 条目（连接断开会自动重连，重连策略
   沿用 mcp-client 默认值）。

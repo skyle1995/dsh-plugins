@@ -48,8 +48,13 @@ var zh = {
   presetAddOk: "\u300C{name}\u300D\u5DF2\u6DFB\u52A0\u3002",
   tabInstalled: "\u5DF2\u5B89\u88C5",
   tabPresets: "\u9884\u8BBE",
+  searchPlaceholder: "\u641C\u7D22\u9884\u8BBE\u2026",
+  catAll: "\u5168\u90E8",
+  catOther: "\u5176\u4ED6",
+  presetEmpty: "\u6CA1\u6709\u5339\u914D\u7684\u9884\u8BBE\u3002",
   add: "\u6DFB\u52A0\u670D\u52A1\u5668",
   edit: "\u7F16\u8F91",
+  editTitle: "\u7F16\u8F91\u670D\u52A1\u5668\uFF1A{name}",
   save: "\u4FDD\u5B58",
   cancel: "\u53D6\u6D88",
   refresh: "\u5237\u65B0",
@@ -113,8 +118,13 @@ var en = {
   presetAddOk: "\u201C{name}\u201D added.",
   tabInstalled: "Installed",
   tabPresets: "Presets",
+  searchPlaceholder: "Search presets\u2026",
+  catAll: "All",
+  catOther: "Other",
+  presetEmpty: "No matching presets.",
   add: "Add server",
   edit: "Edit",
+  editTitle: "Edit server: {name}",
   save: "Save",
   cancel: "Cancel",
   refresh: "Refresh",
@@ -243,7 +253,6 @@ var css = `
 .dmc-notice{margin:0;border-radius:8px;padding:10px 14px;font-size:13px;line-height:1.6}
 .dmc-notice-err{background:color-mix(in srgb,var(--dsw-alias-state-error-primary,#d33) 12%,transparent);color:var(--dsw-alias-state-error-primary,#d33)}
 .dmc-notice-ok{background:color-mix(in srgb,var(--dsw-alias-state-success,#18864b) 12%,transparent);color:var(--dsw-alias-state-success,#18864b)}
-.dmc-form{display:flex;flex-direction:column;gap:12px;border:1px solid var(--dsw-alias-border-l3,#ddd);border-radius:12px;padding:14px}
 .dmc-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .dmc-field{display:flex;flex-direction:column;gap:4px;min-width:0}
 .dmc-field-wide{grid-column:1 / -1}
@@ -255,6 +264,18 @@ var css = `
 .dmc-select{appearance:auto;box-sizing:border-box;border:.5px solid var(--dsw-alias-border-l2,#ccc);background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#222);font:inherit;border-radius:8px;outline:none;padding:5px 10px;font-size:13px;line-height:20px;min-width:0;width:100%}
 .dmc-form-actions{display:flex;gap:8px;justify-content:flex-end}
 .dmc-section-label{margin:0;font-size:13px;font-weight:600;color:var(--dsw-alias-label-secondary,#555)}
+.dmc-chiprow{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.dmc-chip{appearance:none;border:1px solid var(--dsw-alias-border-l3,#ddd);background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-secondary,#555);font:inherit;font-size:12px;line-height:1.6;border-radius:999px;padding:2px 12px;cursor:pointer}
+.dmc-chip:hover{border-color:var(--dsw-alias-state-business-primary,#3b6ef5)}
+.dmc-chip-on{background:color-mix(in srgb,var(--dsw-alias-state-business-primary,#3b6ef5) 12%,transparent);border-color:var(--dsw-alias-state-business-primary,#3b6ef5);color:var(--dsw-alias-state-business-primary,#3b6ef5);font-weight:600}
+.dmc-search{box-sizing:border-box;border:.5px solid var(--dsw-alias-border-l2,#ccc);background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#222);font:inherit;border-radius:8px;outline:none;padding:4px 10px;font-size:13px;line-height:20px;min-width:180px;flex:1;max-width:280px}
+.dmc-search:focus{border-color:var(--dsw-alias-state-business-primary,#3b6ef5)}
+.dmc-preset-group{margin-top:6px}
+.dmc-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-start;justify-content:center;z-index:1000;overflow:auto;padding:48px 16px}
+.dmc-modal{box-sizing:border-box;width:100%;max-width:640px;background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l3,#ddd);border-radius:14px;box-shadow:0 16px 48px rgba(0,0,0,.18);display:flex;flex-direction:column;gap:12px}
+.dmc-modal-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:14px 16px 0}
+.dmc-modal-title{margin:0;font-size:15px;font-weight:600}
+.dmc-modal-body{padding:0 16px 16px}
 .dmc-tabs{display:flex;gap:4px;border-bottom:1px solid var(--dsw-alias-border-l3,#ddd);margin-bottom:4px}
 .dmc-tab{appearance:none;border:none;background:transparent;color:var(--dsw-alias-label-tertiary,#777);font:inherit;font-size:13px;line-height:1.6;padding:6px 12px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
 .dmc-tab:hover{color:var(--dsw-alias-label-primary,#222)}
@@ -268,7 +289,7 @@ var css = `
 @media (max-width:640px){.dmc-form-grid{grid-template-columns:1fr}.dmc-presets{grid-template-columns:1fr}}
 `;
 function McpSection({ t }) {
-  const [data, setData] = (0, import_react.useState)({ status: "loading", servers: [], manual: [], presets: [], stateFile: null, corrupt: null });
+  const [data, setData] = (0, import_react.useState)({ status: "loading", servers: [], manual: [], presets: [], categories: [], stateFile: null, corrupt: null });
   const [notice, setNotice] = (0, import_react.useState)(null);
   const [busy, setBusy] = (0, import_react.useState)({});
   const [busyPreset, setBusyPreset] = (0, import_react.useState)({});
@@ -276,6 +297,9 @@ function McpSection({ t }) {
   const [form, setForm] = (0, import_react.useState)(null);
   const [formError, setFormError] = (0, import_react.useState)(null);
   const [tab, setTab] = (0, import_react.useState)(null);
+  const [presetQuery, setPresetQuery] = (0, import_react.useState)("");
+  const [presetCategory, setPresetCategory] = (0, import_react.useState)(null);
+  const lang = t("title") === en.title ? "en" : "zh";
   function applySnapshot(payload) {
     setData((previous) => ({
       ...previous,
@@ -283,6 +307,7 @@ function McpSection({ t }) {
       servers: payload.servers ?? [],
       manual: payload.manual ?? [],
       presets: payload.presets ?? previous.presets ?? [],
+      categories: payload.categories ?? previous.categories ?? [],
       stateFile: payload.stateFile ?? previous.stateFile,
       corrupt: payload.corrupt ?? null
     }));
@@ -291,9 +316,9 @@ function McpSection({ t }) {
     setData((previous) => ({ ...previous, status: "loading" }));
     try {
       const payload = await api("/servers");
-      setData({ status: "ok", servers: payload.servers ?? [], manual: payload.manual ?? [], presets: payload.presets ?? [], stateFile: payload.stateFile ?? null, corrupt: payload.corrupt ?? null });
+      setData({ status: "ok", servers: payload.servers ?? [], manual: payload.manual ?? [], presets: payload.presets ?? [], categories: payload.categories ?? [], stateFile: payload.stateFile ?? null, corrupt: payload.corrupt ?? null });
     } catch (error) {
-      setData({ status: "error", servers: [], manual: [], presets: [], stateFile: null, corrupt: null, message: error.message });
+      setData({ status: "error", servers: [], manual: [], presets: [], categories: [], stateFile: null, corrupt: null, message: error.message });
     }
   }
   (0, import_react.useEffect)(() => {
@@ -336,7 +361,6 @@ function McpSection({ t }) {
     }
   }
   function renderPresetCard(preset) {
-    const lang = t("title") === en.title ? "en" : "zh";
     const description = preset.description?.[lang] ?? preset.description?.zh ?? "";
     const inputs = preset.inputs ?? [];
     const added = preset.added === true;
@@ -365,6 +389,29 @@ function McpSection({ t }) {
         }, added ? t("presetAdded") : presetBusy ? t("loading") : t("presetAdd"))
       )
     );
+  }
+  function categoryLabel(id) {
+    const category = data.categories.find((item) => item.id === id);
+    if (category !== void 0) return category[lang] ?? category.id;
+    return id === "other" ? t("catOther") : id;
+  }
+  function filteredPresets() {
+    const query = presetQuery.trim().toLowerCase();
+    const matches = (preset) => {
+      if (presetCategory !== null && preset.category !== presetCategory) return false;
+      if (query === "") return true;
+      const haystack = `${preset.name} ${preset.description?.[lang] ?? ""} ${preset.description?.zh ?? ""} ${preset.server?.serverName ?? ""}`.toLowerCase();
+      return haystack.includes(query);
+    };
+    const filtered = data.presets.filter(matches);
+    const groups = [];
+    for (const category of data.categories) {
+      const items = filtered.filter((preset) => preset.category === category.id);
+      if (items.length > 0) groups.push({ id: category.id, items });
+    }
+    const others = filtered.filter((preset) => !data.categories.some((category) => category.id === preset.category));
+    if (others.length > 0) groups.push({ id: "other", items: others });
+    return groups;
   }
   async function toggle(server) {
     setBusy((previous) => ({ ...previous, [server.serverName]: "toggle" }));
@@ -494,96 +541,115 @@ function McpSection({ t }) {
       (0, import_react.createElement)("div", { className: "dmc-actions" }, actions)
     );
   }
-  function renderForm() {
+  function renderFormModal() {
     const isEdit = editing !== null;
     return (0, import_react.createElement)(
       "div",
-      { className: "dmc-form" },
+      {
+        className: "dmc-modal-backdrop",
+        onClick: (event) => {
+          if (event.target === event.currentTarget) setForm(null);
+        }
+      },
       (0, import_react.createElement)(
         "div",
-        { className: "dmc-form-grid" },
+        { className: "dmc-modal" },
         (0, import_react.createElement)(
-          "label",
-          { className: "dmc-field" },
-          (0, import_react.createElement)("span", { className: "dmc-label" }, t("nameLabel")),
-          (0, import_react.createElement)("input", { className: "dmc-input", value: form.serverName, disabled: isEdit, placeholder: "github", onChange: (event) => updateField("serverName", event.target.value) }),
-          (0, import_react.createElement)("span", { className: "dmc-hint" }, t("nameHint"))
+          "div",
+          { className: "dmc-modal-head" },
+          (0, import_react.createElement)("h2", { className: "dmc-modal-title" }, isEdit ? format(t("editTitle"), { name: editing }) : t("add")),
+          (0, import_react.createElement)("button", { className: "dmc-btn", onClick: () => setForm(null) }, "\u2715")
         ),
         (0, import_react.createElement)(
-          "label",
-          { className: "dmc-field" },
-          (0, import_react.createElement)("span", { className: "dmc-label" }, t("transportLabel")),
+          "div",
+          { className: "dmc-modal-body" },
           (0, import_react.createElement)(
-            "select",
-            { className: "dmc-select", value: form.transport, onChange: (event) => updateField("transport", event.target.value) },
-            (0, import_react.createElement)("option", { value: "stdio" }, t("stdio")),
-            (0, import_react.createElement)("option", { value: "streamable-http" }, t("http"))
+            "div",
+            { className: "dmc-form-grid" },
+            (0, import_react.createElement)(
+              "label",
+              { className: "dmc-field" },
+              (0, import_react.createElement)("span", { className: "dmc-label" }, t("nameLabel")),
+              (0, import_react.createElement)("input", { className: "dmc-input", value: form.serverName, disabled: isEdit, placeholder: "github", onChange: (event) => updateField("serverName", event.target.value) }),
+              (0, import_react.createElement)("span", { className: "dmc-hint" }, t("nameHint"))
+            ),
+            (0, import_react.createElement)(
+              "label",
+              { className: "dmc-field" },
+              (0, import_react.createElement)("span", { className: "dmc-label" }, t("transportLabel")),
+              (0, import_react.createElement)(
+                "select",
+                { className: "dmc-select", value: form.transport, onChange: (event) => updateField("transport", event.target.value) },
+                (0, import_react.createElement)("option", { value: "stdio" }, t("stdio")),
+                (0, import_react.createElement)("option", { value: "streamable-http" }, t("http"))
+              ),
+              (0, import_react.createElement)("span", { className: "dmc-hint" }, form.transport === "stdio" ? t("stdio") : t("http"))
+            ),
+            form.transport === "stdio" ? (0, import_react.createElement)(
+              import_react.Fragment,
+              { key: "stdio" },
+              (0, import_react.createElement)(
+                "label",
+                { className: "dmc-field" },
+                (0, import_react.createElement)("span", { className: "dmc-label" }, t("commandLabel")),
+                (0, import_react.createElement)("input", { className: "dmc-input", value: form.command, placeholder: "npx", onChange: (event) => updateField("command", event.target.value) }),
+                (0, import_react.createElement)("span", { className: "dmc-hint" }, t("commandHint"))
+              ),
+              (0, import_react.createElement)(
+                "label",
+                { className: "dmc-field" },
+                (0, import_react.createElement)("span", { className: "dmc-label" }, t("argsLabel")),
+                (0, import_react.createElement)("textarea", { className: "dmc-input dmc-textarea", value: form.argsText, placeholder: '["-y", "@modelcontextprotocol/server-github"]', onChange: (event) => updateField("argsText", event.target.value) }),
+                (0, import_react.createElement)("span", { className: "dmc-hint" }, t("argsHint"))
+              ),
+              (0, import_react.createElement)(
+                "label",
+                { className: "dmc-field dmc-field-wide" },
+                (0, import_react.createElement)("span", { className: "dmc-label" }, t("envLabel")),
+                (0, import_react.createElement)("textarea", { className: "dmc-input dmc-textarea", value: form.envText, placeholder: '{"GITHUB_TOKEN": "ghp_xxx"}', onChange: (event) => updateField("envText", event.target.value) }),
+                (0, import_react.createElement)("span", { className: "dmc-hint" }, t("envHint"))
+              ),
+              (0, import_react.createElement)(
+                "label",
+                { className: "dmc-field dmc-field-wide" },
+                (0, import_react.createElement)("span", { className: "dmc-label" }, t("cwdLabel")),
+                (0, import_react.createElement)("input", { className: "dmc-input", value: form.cwd, placeholder: "/path/to/project", onChange: (event) => updateField("cwd", event.target.value) }),
+                (0, import_react.createElement)("span", { className: "dmc-hint" }, null)
+              )
+            ) : (0, import_react.createElement)(
+              import_react.Fragment,
+              { key: "http" },
+              (0, import_react.createElement)(
+                "label",
+                { className: "dmc-field dmc-field-wide" },
+                (0, import_react.createElement)("span", { className: "dmc-label" }, t("urlLabel")),
+                (0, import_react.createElement)("input", { className: "dmc-input", value: form.url, placeholder: "http://localhost:3000/mcp", onChange: (event) => updateField("url", event.target.value) }),
+                (0, import_react.createElement)("span", { className: "dmc-hint" }, t("urlHint"))
+              ),
+              (0, import_react.createElement)(
+                "label",
+                { className: "dmc-field dmc-field-wide" },
+                (0, import_react.createElement)("span", { className: "dmc-label" }, t("headersLabel")),
+                (0, import_react.createElement)("textarea", { className: "dmc-input dmc-textarea", value: form.headersText, placeholder: '{"Authorization": "Bearer ..."}', onChange: (event) => updateField("headersText", event.target.value) }),
+                (0, import_react.createElement)("span", { className: "dmc-hint" }, t("headersHint"))
+              )
+            ),
+            (0, import_react.createElement)(
+              "label",
+              { className: "dmc-field dmc-field-wide" },
+              (0, import_react.createElement)("span", { className: "dmc-label" }, t("noteLabel")),
+              (0, import_react.createElement)("input", { className: "dmc-input", value: form.note, onChange: (event) => updateField("note", event.target.value) }),
+              (0, import_react.createElement)("span", { className: "dmc-hint" }, t("noteHint"))
+            )
           ),
-          (0, import_react.createElement)("span", { className: "dmc-hint" }, form.transport === "stdio" ? t("stdio") : t("http"))
-        ),
-        form.transport === "stdio" ? (0, import_react.createElement)(
-          import_react.Fragment,
-          { key: "stdio" },
+          formError !== null ? (0, import_react.createElement)("p", { className: "dmc-notice dmc-notice-err" }, formError) : null,
           (0, import_react.createElement)(
-            "label",
-            { className: "dmc-field" },
-            (0, import_react.createElement)("span", { className: "dmc-label" }, t("commandLabel")),
-            (0, import_react.createElement)("input", { className: "dmc-input", value: form.command, placeholder: "npx", onChange: (event) => updateField("command", event.target.value) }),
-            (0, import_react.createElement)("span", { className: "dmc-hint" }, t("commandHint"))
-          ),
-          (0, import_react.createElement)(
-            "label",
-            { className: "dmc-field" },
-            (0, import_react.createElement)("span", { className: "dmc-label" }, t("argsLabel")),
-            (0, import_react.createElement)("textarea", { className: "dmc-input dmc-textarea", value: form.argsText, placeholder: '["-y", "@modelcontextprotocol/server-github"]', onChange: (event) => updateField("argsText", event.target.value) }),
-            (0, import_react.createElement)("span", { className: "dmc-hint" }, t("argsHint"))
-          ),
-          (0, import_react.createElement)(
-            "label",
-            { className: "dmc-field dmc-field-wide" },
-            (0, import_react.createElement)("span", { className: "dmc-label" }, t("envLabel")),
-            (0, import_react.createElement)("textarea", { className: "dmc-input dmc-textarea", value: form.envText, placeholder: '{"GITHUB_TOKEN": "ghp_xxx"}', onChange: (event) => updateField("envText", event.target.value) }),
-            (0, import_react.createElement)("span", { className: "dmc-hint" }, t("envHint"))
-          ),
-          (0, import_react.createElement)(
-            "label",
-            { className: "dmc-field dmc-field-wide" },
-            (0, import_react.createElement)("span", { className: "dmc-label" }, t("cwdLabel")),
-            (0, import_react.createElement)("input", { className: "dmc-input", value: form.cwd, placeholder: "/path/to/project", onChange: (event) => updateField("cwd", event.target.value) }),
-            (0, import_react.createElement)("span", { className: "dmc-hint" }, null)
+            "div",
+            { className: "dmc-form-actions" },
+            (0, import_react.createElement)("button", { className: "dmc-btn", onClick: () => setForm(null) }, t("cancel")),
+            (0, import_react.createElement)("button", { className: "dmc-btn dmc-btn-primary", onClick: () => void saveForm() }, t("save"))
           )
-        ) : (0, import_react.createElement)(
-          import_react.Fragment,
-          { key: "http" },
-          (0, import_react.createElement)(
-            "label",
-            { className: "dmc-field dmc-field-wide" },
-            (0, import_react.createElement)("span", { className: "dmc-label" }, t("urlLabel")),
-            (0, import_react.createElement)("input", { className: "dmc-input", value: form.url, placeholder: "http://localhost:3000/mcp", onChange: (event) => updateField("url", event.target.value) }),
-            (0, import_react.createElement)("span", { className: "dmc-hint" }, t("urlHint"))
-          ),
-          (0, import_react.createElement)(
-            "label",
-            { className: "dmc-field dmc-field-wide" },
-            (0, import_react.createElement)("span", { className: "dmc-label" }, t("headersLabel")),
-            (0, import_react.createElement)("textarea", { className: "dmc-input dmc-textarea", value: form.headersText, placeholder: '{"Authorization": "Bearer ..."}', onChange: (event) => updateField("headersText", event.target.value) }),
-            (0, import_react.createElement)("span", { className: "dmc-hint" }, t("headersHint"))
-          )
-        ),
-        (0, import_react.createElement)(
-          "label",
-          { className: "dmc-field dmc-field-wide" },
-          (0, import_react.createElement)("span", { className: "dmc-label" }, t("noteLabel")),
-          (0, import_react.createElement)("input", { className: "dmc-input", value: form.note, onChange: (event) => updateField("note", event.target.value) }),
-          (0, import_react.createElement)("span", { className: "dmc-hint" }, t("noteHint"))
         )
-      ),
-      formError !== null ? (0, import_react.createElement)("p", { className: "dmc-notice dmc-notice-err" }, formError) : null,
-      (0, import_react.createElement)(
-        "div",
-        { className: "dmc-form-actions" },
-        (0, import_react.createElement)("button", { className: "dmc-btn", onClick: () => setForm(null) }, t("cancel")),
-        (0, import_react.createElement)("button", { className: "dmc-btn dmc-btn-primary", onClick: () => void saveForm() }, t("save"))
       )
     );
   }
@@ -612,11 +678,11 @@ function McpSection({ t }) {
   }
   const hasInstalled = data.servers.length > 0 || data.manual.length > 0;
   const activeTab = tab ?? (data.status === "ok" && !hasInstalled ? "presets" : "installed");
+  const presetGroups = filteredPresets();
   const body = data.status === "loading" ? (0, import_react.createElement)("p", { className: "dmc-subtitle" }, t("loading")) : data.status === "error" ? (0, import_react.createElement)("p", { className: "dmc-subtitle" }, format(t("loadError"), { message: data.message })) : (0, import_react.createElement)(
     import_react.Fragment,
     null,
     data.corrupt !== null ? (0, import_react.createElement)("p", { className: "dmc-notice dmc-notice-err" }, format(t("corrupt"), { message: data.corrupt })) : null,
-    form !== null ? renderForm() : null,
     (0, import_react.createElement)(
       "div",
       { className: "dmc-tabs" },
@@ -626,8 +692,24 @@ function McpSection({ t }) {
     activeTab === "presets" ? (0, import_react.createElement)(
       import_react.Fragment,
       null,
+      (0, import_react.createElement)(
+        "div",
+        { className: "dmc-chiprow" },
+        (0, import_react.createElement)("input", { className: "dmc-search", placeholder: t("searchPlaceholder"), value: presetQuery, onChange: (event) => setPresetQuery(event.target.value) }),
+        (0, import_react.createElement)("button", { className: `dmc-chip ${presetCategory === null ? "dmc-chip-on" : ""}`, onClick: () => setPresetCategory(null) }, t("catAll")),
+        data.categories.map((category) => (0, import_react.createElement)("button", {
+          key: category.id,
+          className: `dmc-chip ${presetCategory === category.id ? "dmc-chip-on" : ""}`,
+          onClick: () => setPresetCategory(presetCategory === category.id ? null : category.id)
+        }, category[lang] ?? category.id))
+      ),
       (0, import_react.createElement)("p", { className: "dmc-subtitle" }, t("presetsHint")),
-      (0, import_react.createElement)("div", { className: "dmc-presets" }, data.presets.map(renderPresetCard))
+      presetGroups.length === 0 ? (0, import_react.createElement)("p", { className: "dmc-subtitle" }, t("presetEmpty")) : (0, import_react.createElement)(import_react.Fragment, null, presetGroups.map((group) => (0, import_react.createElement)(
+        "div",
+        { key: group.id, className: "dmc-preset-group" },
+        (0, import_react.createElement)("p", { className: "dmc-section-label" }, categoryLabel(group.id)),
+        (0, import_react.createElement)("div", { className: "dmc-presets" }, group.items.map(renderPresetCard))
+      )))
     ) : (0, import_react.createElement)(
       import_react.Fragment,
       null,
@@ -673,7 +755,8 @@ function McpSection({ t }) {
       ),
       renderNotice(),
       body
-    )
+    ),
+    form !== null ? renderFormModal() : null
   );
 }
 function register(ctx) {

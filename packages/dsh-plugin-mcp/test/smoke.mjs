@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const pkgDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const { default: McpManagerService, McpError, entryIdOf, normalizeServer, saveStateFile, loadStateFile, MCP_MODULE, MANAGED_ID_PREFIX, PRESETS, PLACEHOLDER_VALUES } = await import(join(pkgDir, "lib/index.js"));
+const { default: McpManagerService, McpError, entryIdOf, normalizeServer, saveStateFile, loadStateFile, MCP_MODULE, MANAGED_ID_PREFIX, PRESETS, PLACEHOLDER_VALUES, PRESET_CATEGORIES, categoryOf } = await import(join(pkgDir, "lib/index.js"));
 
 /** 记录条目并为服务提供 EntryTree 最小 API 的内存桩 loader。 */
 class StubEntry {
@@ -227,6 +227,22 @@ const stateFile = join(tempDir, "mcp-servers.json");
 		env: { BRAVE_API_KEY: "BSA_real" },
 	});
 	console.log("presets: 占位拦截 + 替换后可保存");
+	// 分类：每个预设都有归属分类，且分类声明恰好覆盖全部预设
+	const categoryIds = new Set(PRESET_CATEGORIES.map((category) => category.presetIds).flat());
+	for (const preset of PRESETS) {
+		const category = categoryOf(preset.id);
+		if (!PRESET_CATEGORIES.some((item) => item.id === category)) throw new Error(`预设 ${preset.id} 分类缺失`);
+	}
+	const presetIds = new Set(PRESETS.map((preset) => preset.id));
+	for (const id of categoryIds) {
+		if (!presetIds.has(id)) throw new Error(`分类引用了不存在的预设 ${id}`);
+	}
+	const reqableView = manager.presetsView().find((preset) => preset.id === "reqable");
+	const githubView2 = manager.presetsView().find((preset) => preset.id === "github");
+	if (categoryOf("reqable") !== "reversing" || categoryOf("github") !== "dev") throw new Error("预设分类映射错误");
+	if (reqableView.category !== "reversing" || githubView2.category !== "dev") throw new Error("presetsView 未附带分类");
+	console.log("categories: 分类覆盖全部预设，映射正确");
+
 	const presetsView = manager.presetsView();
 	const braveView = presetsView.find((preset) => preset.id === "brave-search");
 	if (braveView.added !== true) throw new Error("已保存的预设应标记 added");

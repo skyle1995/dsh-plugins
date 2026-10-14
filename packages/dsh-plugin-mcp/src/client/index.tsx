@@ -27,8 +27,13 @@ const zh = {
 	presetAddOk: "「{name}」已添加。",
 	tabInstalled: "已安装",
 	tabPresets: "预设",
+	searchPlaceholder: "搜索预设…",
+	catAll: "全部",
+	catOther: "其他",
+	presetEmpty: "没有匹配的预设。",
 	add: "添加服务器",
 	edit: "编辑",
+	editTitle: "编辑服务器：{name}",
 	save: "保存",
 	cancel: "取消",
 	refresh: "刷新",
@@ -93,8 +98,13 @@ const en = {
 	presetAddOk: "“{name}” added.",
 	tabInstalled: "Installed",
 	tabPresets: "Presets",
+	searchPlaceholder: "Search presets…",
+	catAll: "All",
+	catOther: "Other",
+	presetEmpty: "No matching presets.",
 	add: "Add server",
 	edit: "Edit",
+	editTitle: "Edit server: {name}",
 	save: "Save",
 	cancel: "Cancel",
 	refresh: "Refresh",
@@ -236,7 +246,6 @@ const css = `
 .dmc-notice{margin:0;border-radius:8px;padding:10px 14px;font-size:13px;line-height:1.6}
 .dmc-notice-err{background:color-mix(in srgb,var(--dsw-alias-state-error-primary,#d33) 12%,transparent);color:var(--dsw-alias-state-error-primary,#d33)}
 .dmc-notice-ok{background:color-mix(in srgb,var(--dsw-alias-state-success,#18864b) 12%,transparent);color:var(--dsw-alias-state-success,#18864b)}
-.dmc-form{display:flex;flex-direction:column;gap:12px;border:1px solid var(--dsw-alias-border-l3,#ddd);border-radius:12px;padding:14px}
 .dmc-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .dmc-field{display:flex;flex-direction:column;gap:4px;min-width:0}
 .dmc-field-wide{grid-column:1 / -1}
@@ -248,6 +257,18 @@ const css = `
 .dmc-select{appearance:auto;box-sizing:border-box;border:.5px solid var(--dsw-alias-border-l2,#ccc);background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#222);font:inherit;border-radius:8px;outline:none;padding:5px 10px;font-size:13px;line-height:20px;min-width:0;width:100%}
 .dmc-form-actions{display:flex;gap:8px;justify-content:flex-end}
 .dmc-section-label{margin:0;font-size:13px;font-weight:600;color:var(--dsw-alias-label-secondary,#555)}
+.dmc-chiprow{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.dmc-chip{appearance:none;border:1px solid var(--dsw-alias-border-l3,#ddd);background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-secondary,#555);font:inherit;font-size:12px;line-height:1.6;border-radius:999px;padding:2px 12px;cursor:pointer}
+.dmc-chip:hover{border-color:var(--dsw-alias-state-business-primary,#3b6ef5)}
+.dmc-chip-on{background:color-mix(in srgb,var(--dsw-alias-state-business-primary,#3b6ef5) 12%,transparent);border-color:var(--dsw-alias-state-business-primary,#3b6ef5);color:var(--dsw-alias-state-business-primary,#3b6ef5);font-weight:600}
+.dmc-search{box-sizing:border-box;border:.5px solid var(--dsw-alias-border-l2,#ccc);background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#222);font:inherit;border-radius:8px;outline:none;padding:4px 10px;font-size:13px;line-height:20px;min-width:180px;flex:1;max-width:280px}
+.dmc-search:focus{border-color:var(--dsw-alias-state-business-primary,#3b6ef5)}
+.dmc-preset-group{margin-top:6px}
+.dmc-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-start;justify-content:center;z-index:1000;overflow:auto;padding:48px 16px}
+.dmc-modal{box-sizing:border-box;width:100%;max-width:640px;background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l3,#ddd);border-radius:14px;box-shadow:0 16px 48px rgba(0,0,0,.18);display:flex;flex-direction:column;gap:12px}
+.dmc-modal-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:14px 16px 0}
+.dmc-modal-title{margin:0;font-size:15px;font-weight:600}
+.dmc-modal-body{padding:0 16px 16px}
 .dmc-tabs{display:flex;gap:4px;border-bottom:1px solid var(--dsw-alias-border-l3,#ddd);margin-bottom:4px}
 .dmc-tab{appearance:none;border:none;background:transparent;color:var(--dsw-alias-label-tertiary,#777);font:inherit;font-size:13px;line-height:1.6;padding:6px 12px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
 .dmc-tab:hover{color:var(--dsw-alias-label-primary,#222)}
@@ -263,7 +284,7 @@ const css = `
 
 /** 设置分区组件：props 由 slot 框架提供 t（按 NS 绑定）。 */
 function McpSection({ t }) {
-	const [data, setData] = useState({ status: "loading", servers: [], manual: [], presets: [], stateFile: null, corrupt: null });
+	const [data, setData] = useState({ status: "loading", servers: [], manual: [], presets: [], categories: [], stateFile: null, corrupt: null });
 	const [notice, setNotice] = useState(null);
 	const [busy, setBusy] = useState({});
 	const [busyPreset, setBusyPreset] = useState({});
@@ -272,6 +293,12 @@ function McpSection({ t }) {
 	const [formError, setFormError] = useState(null);
 	/** 显式选择的标签页；null = 未手动选择（有已安装时默认「已安装」，否则「预设」）。 */
 	const [tab, setTab] = useState(null);
+	/** 预设搜索词与分类筛选（null = 全部）。 */
+	const [presetQuery, setPresetQuery] = useState("");
+	const [presetCategory, setPresetCategory] = useState(null);
+
+	/** 当前界面语言：按 t 输出与英文词典比对（预设描述 / 分类标签按语言显示）。 */
+	const lang = t("title") === en.title ? "en" : "zh";
 
 	/** 把接口快照写入列表状态（保存/启停/删除后免一次刷新）。 */
 	function applySnapshot(payload) {
@@ -281,6 +308,7 @@ function McpSection({ t }) {
 			servers: payload.servers ?? [],
 			manual: payload.manual ?? [],
 			presets: payload.presets ?? previous.presets ?? [],
+			categories: payload.categories ?? previous.categories ?? [],
 			stateFile: payload.stateFile ?? previous.stateFile,
 			corrupt: payload.corrupt ?? null,
 		}));
@@ -290,9 +318,9 @@ function McpSection({ t }) {
 		setData((previous) => ({ ...previous, status: "loading" }));
 		try {
 			const payload = await api("/servers");
-			setData({ status: "ok", servers: payload.servers ?? [], manual: payload.manual ?? [], presets: payload.presets ?? [], stateFile: payload.stateFile ?? null, corrupt: payload.corrupt ?? null });
+			setData({ status: "ok", servers: payload.servers ?? [], manual: payload.manual ?? [], presets: payload.presets ?? [], categories: payload.categories ?? [], stateFile: payload.stateFile ?? null, corrupt: payload.corrupt ?? null });
 		} catch (error) {
-			setData({ status: "error", servers: [], manual: [], presets: [], stateFile: null, corrupt: null, message: error.message });
+			setData({ status: "error", servers: [], manual: [], presets: [], categories: [], stateFile: null, corrupt: null, message: error.message });
 		}
 	}
 
@@ -347,7 +375,6 @@ function McpSection({ t }) {
 	}
 
 	function renderPresetCard(preset) {
-		const lang = t("title") === en.title ? "en" : "zh";
 		const description = preset.description?.[lang] ?? preset.description?.zh ?? "";
 		const inputs = preset.inputs ?? [];
 		const added = preset.added === true;
@@ -367,6 +394,33 @@ function McpSection({ t }) {
 					disabled: added || presetBusy,
 					onClick: () => void addPreset(preset),
 				}, added ? t("presetAdded") : presetBusy ? t("loading") : t("presetAdd"))));
+	}
+
+	/** 分类 id → 显示名（未知分类归入「其他」）。 */
+	function categoryLabel(id) {
+		const category = data.categories.find((item) => item.id === id);
+		if (category !== undefined) return category[lang] ?? category.id;
+		return id === "other" ? t("catOther") : id;
+	}
+
+	/** 按分类 + 搜索词过滤后的预设（保持目录顺序，按分类分组）。 */
+	function filteredPresets() {
+		const query = presetQuery.trim().toLowerCase();
+		const matches = (preset) => {
+			if (presetCategory !== null && preset.category !== presetCategory) return false;
+			if (query === "") return true;
+			const haystack = `${preset.name} ${preset.description?.[lang] ?? ""} ${preset.description?.zh ?? ""} ${preset.server?.serverName ?? ""}`.toLowerCase();
+			return haystack.includes(query);
+		};
+		const filtered = data.presets.filter(matches);
+		const groups = [];
+		for (const category of data.categories) {
+			const items = filtered.filter((preset) => preset.category === category.id);
+			if (items.length > 0) groups.push({ id: category.id, items });
+		}
+		const others = filtered.filter((preset) => !data.categories.some((category) => category.id === preset.category));
+		if (others.length > 0) groups.push({ id: "other", items: others });
+		return groups;
 	}
 
 	async function toggle(server) {
@@ -496,55 +550,66 @@ function McpSection({ t }) {
 			h("div", { className: "dmc-actions" }, actions));
 	}
 
-	function renderForm() {
+	/** 添加 / 编辑弹窗（遮罩 + 居中面板；Esc 或点遮罩关闭）。 */
+	function renderFormModal() {
 		const isEdit = editing !== null;
-		return h("div", { className: "dmc-form" },
-			h("div", { className: "dmc-form-grid" },
-				h("label", { className: "dmc-field" },
-					h("span", { className: "dmc-label" }, t("nameLabel")),
-					h("input", { className: "dmc-input", value: form.serverName, disabled: isEdit, placeholder: "github", onChange: (event) => updateField("serverName", event.target.value) }),
-					h("span", { className: "dmc-hint" }, t("nameHint"))),
-				h("label", { className: "dmc-field" },
-					h("span", { className: "dmc-label" }, t("transportLabel")),
-					h("select", { className: "dmc-select", value: form.transport, onChange: (event) => updateField("transport", event.target.value) },
-						h("option", { value: "stdio" }, t("stdio")),
-						h("option", { value: "streamable-http" }, t("http"))),
-					h("span", { className: "dmc-hint" }, form.transport === "stdio" ? t("stdio") : t("http"))),
-				form.transport === "stdio"
-					? h(Fragment, { key: "stdio" },
-						h("label", { className: "dmc-field" },
-							h("span", { className: "dmc-label" }, t("commandLabel")),
-							h("input", { className: "dmc-input", value: form.command, placeholder: "npx", onChange: (event) => updateField("command", event.target.value) }),
-							h("span", { className: "dmc-hint" }, t("commandHint"))),
-						h("label", { className: "dmc-field" },
-							h("span", { className: "dmc-label" }, t("argsLabel")),
-							h("textarea", { className: "dmc-input dmc-textarea", value: form.argsText, placeholder: "[\"-y\", \"@modelcontextprotocol/server-github\"]", onChange: (event) => updateField("argsText", event.target.value) }),
-							h("span", { className: "dmc-hint" }, t("argsHint"))),
-						h("label", { className: "dmc-field dmc-field-wide" },
-							h("span", { className: "dmc-label" }, t("envLabel")),
-							h("textarea", { className: "dmc-input dmc-textarea", value: form.envText, placeholder: "{\"GITHUB_TOKEN\": \"ghp_xxx\"}", onChange: (event) => updateField("envText", event.target.value) }),
-							h("span", { className: "dmc-hint" }, t("envHint"))),
-						h("label", { className: "dmc-field dmc-field-wide" },
-							h("span", { className: "dmc-label" }, t("cwdLabel")),
-							h("input", { className: "dmc-input", value: form.cwd, placeholder: "/path/to/project", onChange: (event) => updateField("cwd", event.target.value) }),
-							h("span", { className: "dmc-hint" }, null)))
-					: h(Fragment, { key: "http" },
-						h("label", { className: "dmc-field dmc-field-wide" },
-							h("span", { className: "dmc-label" }, t("urlLabel")),
-							h("input", { className: "dmc-input", value: form.url, placeholder: "http://localhost:3000/mcp", onChange: (event) => updateField("url", event.target.value) }),
-							h("span", { className: "dmc-hint" }, t("urlHint"))),
-						h("label", { className: "dmc-field dmc-field-wide" },
-							h("span", { className: "dmc-label" }, t("headersLabel")),
-							h("textarea", { className: "dmc-input dmc-textarea", value: form.headersText, placeholder: "{\"Authorization\": \"Bearer ...\"}", onChange: (event) => updateField("headersText", event.target.value) }),
-							h("span", { className: "dmc-hint" }, t("headersHint")))),
-				h("label", { className: "dmc-field dmc-field-wide" },
-					h("span", { className: "dmc-label" }, t("noteLabel")),
-					h("input", { className: "dmc-input", value: form.note, onChange: (event) => updateField("note", event.target.value) }),
-					h("span", { className: "dmc-hint" }, t("noteHint")))),
-			formError !== null ? h("p", { className: "dmc-notice dmc-notice-err" }, formError) : null,
-			h("div", { className: "dmc-form-actions" },
-				h("button", { className: "dmc-btn", onClick: () => setForm(null) }, t("cancel")),
-				h("button", { className: "dmc-btn dmc-btn-primary", onClick: () => void saveForm() }, t("save"))));
+		return h("div", {
+			className: "dmc-modal-backdrop",
+			onClick: (event) => {
+				if (event.target === event.currentTarget) setForm(null);
+			},
+		},
+		h("div", { className: "dmc-modal" },
+			h("div", { className: "dmc-modal-head" },
+				h("h2", { className: "dmc-modal-title" }, isEdit ? format(t("editTitle"), { name: editing }) : t("add")),
+				h("button", { className: "dmc-btn", onClick: () => setForm(null) }, "✕")),
+			h("div", { className: "dmc-modal-body" },
+				h("div", { className: "dmc-form-grid" },
+					h("label", { className: "dmc-field" },
+						h("span", { className: "dmc-label" }, t("nameLabel")),
+						h("input", { className: "dmc-input", value: form.serverName, disabled: isEdit, placeholder: "github", onChange: (event) => updateField("serverName", event.target.value) }),
+						h("span", { className: "dmc-hint" }, t("nameHint"))),
+					h("label", { className: "dmc-field" },
+						h("span", { className: "dmc-label" }, t("transportLabel")),
+						h("select", { className: "dmc-select", value: form.transport, onChange: (event) => updateField("transport", event.target.value) },
+							h("option", { value: "stdio" }, t("stdio")),
+							h("option", { value: "streamable-http" }, t("http"))),
+						h("span", { className: "dmc-hint" }, form.transport === "stdio" ? t("stdio") : t("http"))),
+					form.transport === "stdio"
+						? h(Fragment, { key: "stdio" },
+							h("label", { className: "dmc-field" },
+								h("span", { className: "dmc-label" }, t("commandLabel")),
+								h("input", { className: "dmc-input", value: form.command, placeholder: "npx", onChange: (event) => updateField("command", event.target.value) }),
+								h("span", { className: "dmc-hint" }, t("commandHint"))),
+							h("label", { className: "dmc-field" },
+								h("span", { className: "dmc-label" }, t("argsLabel")),
+								h("textarea", { className: "dmc-input dmc-textarea", value: form.argsText, placeholder: "[\"-y\", \"@modelcontextprotocol/server-github\"]", onChange: (event) => updateField("argsText", event.target.value) }),
+								h("span", { className: "dmc-hint" }, t("argsHint"))),
+							h("label", { className: "dmc-field dmc-field-wide" },
+								h("span", { className: "dmc-label" }, t("envLabel")),
+								h("textarea", { className: "dmc-input dmc-textarea", value: form.envText, placeholder: "{\"GITHUB_TOKEN\": \"ghp_xxx\"}", onChange: (event) => updateField("envText", event.target.value) }),
+								h("span", { className: "dmc-hint" }, t("envHint"))),
+							h("label", { className: "dmc-field dmc-field-wide" },
+								h("span", { className: "dmc-label" }, t("cwdLabel")),
+								h("input", { className: "dmc-input", value: form.cwd, placeholder: "/path/to/project", onChange: (event) => updateField("cwd", event.target.value) }),
+								h("span", { className: "dmc-hint" }, null)))
+						: h(Fragment, { key: "http" },
+							h("label", { className: "dmc-field dmc-field-wide" },
+								h("span", { className: "dmc-label" }, t("urlLabel")),
+								h("input", { className: "dmc-input", value: form.url, placeholder: "http://localhost:3000/mcp", onChange: (event) => updateField("url", event.target.value) }),
+								h("span", { className: "dmc-hint" }, t("urlHint"))),
+							h("label", { className: "dmc-field dmc-field-wide" },
+								h("span", { className: "dmc-label" }, t("headersLabel")),
+								h("textarea", { className: "dmc-input dmc-textarea", value: form.headersText, placeholder: "{\"Authorization\": \"Bearer ...\"}", onChange: (event) => updateField("headersText", event.target.value) }),
+								h("span", { className: "dmc-hint" }, t("headersHint")))),
+					h("label", { className: "dmc-field dmc-field-wide" },
+						h("span", { className: "dmc-label" }, t("noteLabel")),
+						h("input", { className: "dmc-input", value: form.note, onChange: (event) => updateField("note", event.target.value) }),
+						h("span", { className: "dmc-hint" }, t("noteHint")))),
+				formError !== null ? h("p", { className: "dmc-notice dmc-notice-err" }, formError) : null,
+				h("div", { className: "dmc-form-actions" },
+					h("button", { className: "dmc-btn", onClick: () => setForm(null) }, t("cancel")),
+					h("button", { className: "dmc-btn dmc-btn-primary", onClick: () => void saveForm() }, t("save"))))));
 	}
 
 	function renderManualRow(entry) {
@@ -561,6 +626,7 @@ function McpSection({ t }) {
 
 	const hasInstalled = data.servers.length > 0 || data.manual.length > 0;
 	const activeTab = tab ?? (data.status === "ok" && !hasInstalled ? "presets" : "installed");
+	const presetGroups = filteredPresets();
 
 	const body = data.status === "loading"
 		? h("p", { className: "dmc-subtitle" }, t("loading"))
@@ -568,14 +634,25 @@ function McpSection({ t }) {
 			? h("p", { className: "dmc-subtitle" }, format(t("loadError"), { message: data.message }))
 			: h(Fragment, null,
 				data.corrupt !== null ? h("p", { className: "dmc-notice dmc-notice-err" }, format(t("corrupt"), { message: data.corrupt })) : null,
-				form !== null ? renderForm() : null,
 				h("div", { className: "dmc-tabs" },
 					h("button", { className: `dmc-tab ${activeTab === "installed" ? "dmc-tab-on" : ""}`, onClick: () => setTab("installed") }, `${t("tabInstalled")}（${data.servers.length + data.manual.length}）`),
 					h("button", { className: `dmc-tab ${activeTab === "presets" ? "dmc-tab-on" : ""}`, onClick: () => setTab("presets") }, `${t("tabPresets")}（${data.presets.length}）`)),
 				activeTab === "presets"
 					? h(Fragment, null,
+						h("div", { className: "dmc-chiprow" },
+							h("input", { className: "dmc-search", placeholder: t("searchPlaceholder"), value: presetQuery, onChange: (event) => setPresetQuery(event.target.value) }),
+							h("button", { className: `dmc-chip ${presetCategory === null ? "dmc-chip-on" : ""}`, onClick: () => setPresetCategory(null) }, t("catAll")),
+							data.categories.map((category) => h("button", {
+								key: category.id,
+								className: `dmc-chip ${presetCategory === category.id ? "dmc-chip-on" : ""}`,
+								onClick: () => setPresetCategory(presetCategory === category.id ? null : category.id),
+							}, category[lang] ?? category.id))),
 						h("p", { className: "dmc-subtitle" }, t("presetsHint")),
-						h("div", { className: "dmc-presets" }, data.presets.map(renderPresetCard)))
+						presetGroups.length === 0
+							? h("p", { className: "dmc-subtitle" }, t("presetEmpty"))
+							: h(Fragment, null, presetGroups.map((group) => h("div", { key: group.id, className: "dmc-preset-group" },
+								h("p", { className: "dmc-section-label" }, categoryLabel(group.id)),
+								h("div", { className: "dmc-presets" }, group.items.map(renderPresetCard))))))
 					: h(Fragment, null,
 						!hasInstalled ? h("p", { className: "dmc-subtitle" }, t("empty")) : null,
 						data.servers.length > 0 ? h(Fragment, null,
@@ -598,7 +675,8 @@ function McpSection({ t }) {
 					h("button", { className: "dmc-btn", onClick: () => void refresh() }, t("refresh")),
 					h("button", { className: "dmc-btn dmc-btn-primary", onClick: startAdd }, t("add")))),
 			renderNotice(),
-			body));
+			body),
+		form !== null ? renderFormModal() : null);
 }
 
 /** 注册 MCP 服务器设置分区（由主包 apply 调用）。 */

@@ -372,6 +372,36 @@ export const PRESETS = [
 	},
 ];
 
+/**
+ * 预设分类：显式的 id → 预设 id 集合映射，展示顺序即此处顺序。
+ * 未列出的预设归入 `other`（UI 显示「其他」）。
+ */
+export const PRESET_CATEGORIES = [
+	{
+		id: "dev",
+		zh: "通用开发",
+		en: "Development",
+		presetIds: [
+			"github", "filesystem", "memory", "sequential-thinking", "time", "fetch",
+			"brave-search", "puppeteer", "gitlab", "slack", "sentry", "postgres", "sqlite", "everything",
+		],
+	},
+	{
+		id: "reversing",
+		zh: "逆向 / 安全",
+		en: "Reversing & Security",
+		presetIds: ["reqable", "ida-pro", "ghidra", "binary-ninja", "frida", "jadx", "virustotal"],
+	},
+];
+
+/** 预设 id → 分类 id。 */
+export function categoryOf(presetId) {
+	for (const category of PRESET_CATEGORIES) {
+		if (category.presetIds.includes(presetId)) return category.id;
+	}
+	return "other";
+}
+
 /** 占位文本标记：所有预设占位值必须包含该短语，据此识别而非误伤普通参数。 */
 export const PLACEHOLDER_MARKER = "在此填入";
 
@@ -783,7 +813,7 @@ export class McpManagerService extends Service {
 	}
 
 	/**
-	 * 预设目录的浏览器视图：附带「是否已添加」状态（受管或手工同名）。
+	 * 预设目录的浏览器视图：附带「是否已添加」状态（受管或手工同名）与分类 id。
 	 * @returns 预设列表。
 	 */
 	presetsView() {
@@ -791,7 +821,7 @@ export class McpManagerService extends Service {
 			...this.servers.map((server) => server.serverName),
 			...this.manualEntries().map((entry) => entry.options.config?.serverName).filter((name) => typeof name === "string"),
 		]);
-		return PRESETS.map((preset) => ({ ...preset, added: names.has(preset.server.serverName) }));
+		return PRESETS.map((preset) => ({ ...preset, category: categoryOf(preset.id), added: names.has(preset.server.serverName) }));
 	}
 
 	/** GET {SERVERS_ROUTE} —— 列表 + 手工条目 + 预设目录 + 状态文件信息。 */
@@ -805,7 +835,14 @@ export class McpManagerService extends Service {
 				payload(405, { ok: false, code: "mcp/method", message: "method not allowed" });
 				return;
 			}
-			payload(200, { ok: true, stateFile: this.stateFile, corrupt: this.stateCorrupt, presets: this.presetsView(), ...this.snapshot() });
+			payload(200, {
+				ok: true,
+				stateFile: this.stateFile,
+				corrupt: this.stateCorrupt,
+				categories: PRESET_CATEGORIES.map(({ presetIds, ...category }) => category),
+				presets: this.presetsView(),
+				...this.snapshot(),
+			});
 		} catch (error) {
 			payload(500, { ok: false, code: error.code ?? "mcp/list", message: error.message });
 		}

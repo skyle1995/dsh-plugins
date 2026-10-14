@@ -82,10 +82,22 @@ export interface McpPreset {
 	inputs?: string[];
 	/** 是否已添加（受管或手工同名 serverName） */
 	added?: boolean;
+	/** 分类 id（见 PRESET_CATEGORIES） */
+	category?: string;
+}
+
+/** 预设分类（presetIds 仅供宿主映射，接口不返回）。 */
+export interface McpPresetCategory {
+	id: string;
+	zh: string;
+	en: string;
+	presetIds: string[];
 }
 
 export const PRESETS: McpPreset[];
 export const PLACEHOLDER_VALUES: Set<string>;
+export const PRESET_CATEGORIES: McpPresetCategory[];
+export function categoryOf(presetId: string): string;
 
 export class McpError extends Error {
 	code: string;
