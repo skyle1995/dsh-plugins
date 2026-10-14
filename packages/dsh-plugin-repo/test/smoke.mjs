@@ -22,6 +22,9 @@ class StubManager extends Service {
 		this.calls.push({ spec, options });
 		return { ok: true };
 	}
+	async listBundles() {
+		return [];
+	}
 }
 
 const root = new Context();
