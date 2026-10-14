@@ -552,7 +552,160 @@ export const PRESETS = [
 			args: ["-y", "kubernetes-mcp-server"],
 		},
 	},
+
+
+	// ---- 办公协作 / 数据存储 / 更多开发 ----
+	{
+		id: "git",
+		name: "Git",
+		description: {
+			zh: "GitHub 官方 Git MCP：仓库状态 / 分支 / 提交 / 暂存 / 差异（本地 git 操作）。",
+			en: "Official GitHub Git MCP: repository status, branches, commits, staging, diffs (local git).",
+		},
+		server: {
+			serverName: "git",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "git-mcp"],
+		},
+	},
+	{
+		id: "notion",
+		name: "Notion",
+		description: {
+			zh: "Notion 官方 MCP：搜索 / 读写页面、数据库与评论（NOTION_TOKEN，集成创建于 notion.so/my-integrations）。",
+			en: "Official Notion MCP: search/read/write pages, databases and comments (NOTION_TOKEN from an integration).",
+		},
+		server: {
+			serverName: "notion",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "@notionhq/notion-mcp-server"],
+			env: { NOTION_TOKEN: "在此填入你的 Notion Integration Token" },
+		},
+		inputs: ["env.NOTION_TOKEN"],
+	},
+	{
+		id: "figma",
+		name: "Figma",
+		description: {
+			zh: "Figma 官方开发者 MCP：读取设计文件 / 组件 / 样式，辅助实现设计稿。",
+			en: "Official Figma developer MCP: read design files, components and styles.",
+		},
+		server: {
+			serverName: "figma",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "figma-developer-mcp"],
+			env: { FIGMA_API_KEY: "在此填入你的 Figma Personal Access Token" },
+		},
+		inputs: ["env.FIGMA_API_KEY"],
+	},
+	{
+		id: "atlassian",
+		name: "Atlassian",
+		description: {
+			zh: "Atlassian 官方 MCP：Jira / Confluence 查询与操作（实例地址 + API Token）。",
+			en: "Official Atlassian MCP: query and manage Jira/Confluence (instance URL + API token).",
+		},
+		server: {
+			serverName: "atlassian",
+			transport: "stdio",
+			command: "uvx",
+			args: ["mcp-atlassian"],
+			env: {
+				ATLASSIAN_INSTANCE_URL: "https://your-domain.atlassian.net（在此填入你的 Atlassian 实例地址）",
+				ATLASSIAN_API_TOKEN: "在此填入你的 Atlassian API Token",
+			},
+		},
+		inputs: ["env.ATLASSIAN_INSTANCE_URL", "env.ATLASSIAN_API_TOKEN"],
+	},
+	{
+		id: "exa",
+		name: "Exa",
+		description: {
+			zh: "Exa 官方 MCP：语义搜索 / 网页内容抓取 / 多步研究。",
+			en: "Official Exa MCP: semantic search, content fetching, multi-step research.",
+		},
+		server: {
+			serverName: "exa",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "exa-mcp-server"],
+			env: { EXA_API_KEY: "在此填入你的 Exa API Key" },
+		},
+		inputs: ["env.EXA_API_KEY"],
+	},
+	{
+		id: "deepwiki",
+		name: "DeepWiki",
+		description: {
+			zh: "DeepWiki 文档检索：查询代码仓库的 DeepWiki 文档。",
+			en: "DeepWiki: query DeepWiki documentation for code repositories.",
+		},
+		server: {
+			serverName: "deepwiki",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "deepwiki-mcp"],
+		},
+	},
+	{
+		id: "mysql",
+		name: "MySQL",
+		description: {
+			zh: "MySQL 数据库：只读查询与 schema 检查（MYSQL_HOST / USER / PASSWORD / DATABASE）。",
+			en: "MySQL database: read-only queries and schema inspection (host/user/password/database).",
+		},
+		server: {
+			serverName: "mysql",
+			transport: "stdio",
+			command: "uvx",
+			args: ["mysql-mcp-server"],
+			env: {
+				MYSQL_HOST: "127.0.0.1",
+				MYSQL_USER: "在此填入你的 MySQL 用户名",
+				MYSQL_PASSWORD: "在此填入你的 MySQL 密码",
+				MYSQL_DATABASE: "在此填入你的数据库名",
+			},
+		},
+		inputs: ["env.MYSQL_USER", "env.MYSQL_PASSWORD", "env.MYSQL_DATABASE"],
+	},
+	{
+		id: "chroma",
+		name: "Chroma",
+		description: {
+			zh: "Chroma 官方向量数据库 MCP：集合 / 文档 / 检索（默认本机 localhost:8000）。",
+			en: "Official Chroma vector database MCP: collections, documents, retrieval (default localhost:8000).",
+		},
+		server: {
+			serverName: "chroma",
+			transport: "stdio",
+			command: "uvx",
+			args: ["chroma-mcp"],
+		},
+	},
+	{
+		id: "posthog",
+		name: "PostHog",
+		description: {
+			zh: "PostHog 官方 MCP：产品分析 / 事件 / 洞察查询（Personal API Key + 项目 ID）。",
+			en: "Official PostHog MCP: product analytics, events, insights (personal API key + project id).",
+		},
+		server: {
+			serverName: "posthog",
+			transport: "stdio",
+			command: "npx",
+			args: ["-y", "posthog-mcp"],
+			env: {
+				POSTHOG_PERSONAL_API_KEY: "在此填入你的 PostHog Personal API Key",
+				POSTHOG_PROJECT_ID: "在此填入你的 PostHog 项目 ID",
+			},
+		},
+		inputs: ["env.POSTHOG_PERSONAL_API_KEY", "env.POSTHOG_PROJECT_ID"],
+	},
 ];
+
 
 /**
  * 预设分类：显式的 id → 预设 id 集合映射，展示顺序即此处顺序。
@@ -565,7 +718,7 @@ export const PRESET_CATEGORIES = [
 		en: "Development",
 		presetIds: [
 			"github", "filesystem", "memory", "sequential-thinking", "time", "fetch",
-			"brave-search", "puppeteer", "slack", "sentry", "postgres", "sqlite", "everything",
+			"brave-search", "puppeteer", "slack", "sentry", "everything", "git", "deepwiki",
 		],
 	},
 	{
@@ -584,7 +737,19 @@ export const PRESET_CATEGORIES = [
 		id: "intel",
 		zh: "搜索 / 情报",
 		en: "Search & Intel",
-		presetIds: ["tavily", "firecrawl", "urlscan", "context7"],
+		presetIds: ["tavily", "firecrawl", "urlscan", "context7", "exa"],
+	},
+	{
+		id: "office",
+		zh: "办公 / 协作",
+		en: "Productivity",
+		presetIds: ["notion", "figma", "atlassian"],
+	},
+	{
+		id: "data",
+		zh: "数据 / 数据库",
+		en: "Data & Databases",
+		presetIds: ["postgres", "sqlite", "mysql", "chroma", "posthog"],
 	},
 	{
 		id: "cloud",

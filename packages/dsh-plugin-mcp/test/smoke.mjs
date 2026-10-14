@@ -213,6 +213,27 @@ const stateFile = join(tempDir, "mcp-servers.json");
 	if (categoryOf("gitlab") !== "git" || categoryOf("gitea") !== "git") throw new Error("代码托管分类不符");
 	if (categoryOf("tavily") !== "intel" || categoryOf("urlscan") !== "intel") throw new Error("搜索/情报分类不符");
 	if (categoryOf("cloudflare") !== "cloud" || categoryOf("supabase") !== "cloud") throw new Error("云服务分类不符");
+	// 第二批新增预设（Git/办公/数据）：按官方文档校验
+	if (PRESETS.length < 40) throw new Error(`预设数量不足：${PRESETS.length}`);
+	const gitPreset = PRESETS.find((preset) => preset.id === "git");
+	if (!gitPreset || !gitPreset.server.args.includes("git-mcp") || categoryOf("git") !== "dev") throw new Error("git 预设不符");
+	const notion = PRESETS.find((preset) => preset.id === "notion");
+	if (!notion || !(notion.inputs ?? []).includes("env.NOTION_TOKEN") || categoryOf("notion") !== "office") throw new Error("notion 预设不符");
+	const figma = PRESETS.find((preset) => preset.id === "figma");
+	if (!figma || !figma.server.args.includes("figma-developer-mcp") || categoryOf("figma") !== "office") throw new Error("figma 预设不符");
+	const atlassian = PRESETS.find((preset) => preset.id === "atlassian");
+	if (!atlassian || !(atlassian.inputs ?? []).includes("env.ATLASSIAN_API_TOKEN") || !PLACEHOLDER_VALUES.has(atlassian.server.env.ATLASSIAN_INSTANCE_URL)) throw new Error("atlassian 预设不符");
+	const exa = PRESETS.find((preset) => preset.id === "exa");
+	if (!exa || !exa.server.args.includes("exa-mcp-server") || categoryOf("exa") !== "intel") throw new Error("exa 预设不符");
+	const deepwiki = PRESETS.find((preset) => preset.id === "deepwiki");
+	if (!deepwiki || !deepwiki.server.args.includes("deepwiki-mcp") || categoryOf("deepwiki") !== "dev") throw new Error("deepwiki 预设不符");
+	const mysqlPreset = PRESETS.find((preset) => preset.id === "mysql");
+	if (!mysqlPreset || categoryOf("mysql") !== "data" || !(mysqlPreset.inputs ?? []).includes("env.MYSQL_PASSWORD")) throw new Error("mysql 预设不符");
+	const chroma = PRESETS.find((preset) => preset.id === "chroma");
+	if (!chroma || categoryOf("chroma") !== "data") throw new Error("chroma 预设不符");
+	const posthog = PRESETS.find((preset) => preset.id === "posthog");
+	if (!posthog || categoryOf("posthog") !== "data" || !(posthog.inputs ?? []).includes("env.POSTHOG_PERSONAL_API_KEY")) throw new Error("posthog 预设不符");
+	if (categoryOf("postgres") !== "data" || categoryOf("sqlite") !== "data") throw new Error("postgres/sqlite 应移入数据分类");
 	// 逆向 / 安全预设：按官方文档的启动方式校验
 	const reqable = PRESETS.find((preset) => preset.id === "reqable");
 	if (!reqable || (reqable.inputs ?? []).length !== 0 || reqable.server.command !== "npx" || !reqable.server.args.includes("reqable-mcp-server")) throw new Error("reqable 预设不符");

@@ -22,7 +22,7 @@ var __copyProps = (to, from, except, desc) => {
 };
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// packages/dsh-plugin-repo/src/client/index.tsx
+// src/client/index.tsx
 var index_exports = {};
 __export(index_exports, {
   apply: () => apply,
@@ -30,7 +30,7 @@ __export(index_exports, {
 });
 module.exports = __toCommonJS(index_exports);
 
-// packages/dsh-plugin-repo/src/client/repo.tsx
+// src/client/repo.tsx
 var import_react = require("react");
 var NS = "dsh-plugin-repo";
 var API = "/api/dsh-plugin-repo";
@@ -61,6 +61,9 @@ var zh = {
   repoVersionBadge: "\u4ED3\u5E93\u7248\u672C {version}",
   updateAvailableBadge: "\u53EF\u66F4\u65B0",
   installOk: "\u300C{name}\u300D\u64CD\u4F5C\u6210\u529F\u3002",
+  reloadHint: "\u63D2\u4EF6\u5DF2\u53D8\u66F4\uFF0C{seconds} \u79D2\u540E\u81EA\u52A8\u5237\u65B0\u9875\u9762\u4F7F\u5176\u751F\u6548\u3002",
+  reloadNow: "\u7ACB\u5373\u5237\u65B0",
+  reloadCancel: "\u6682\u4E0D",
   installFailed: "\u300C{name}\u300D\u64CD\u4F5C\u5931\u8D25\uFF1A{message}",
   removeConfirm: "\u786E\u5B9A\u5378\u8F7D\u300C{name}\u300D\u5417\uFF1F\u5176\u914D\u7F6E\u8986\u76D6\u4F1A\u4FDD\u7559\u5728 profile \u4E2D\u3002"
 };
@@ -91,6 +94,9 @@ var en = {
   repoVersionBadge: "Repo v{version}",
   updateAvailableBadge: "Update available",
   installOk: "\u201C{name}\u201D succeeded.",
+  reloadHint: "Plugins changed; the page reloads in {seconds}s to apply.",
+  reloadNow: "Reload now",
+  reloadCancel: "Not now",
   installFailed: "\u201C{name}\u201D operation failed: {message}",
   removeConfirm: "Uninstall \u201C{name}\u201D? Its configuration overrides remain in the profile."
 };
@@ -137,12 +143,15 @@ var css = `
 .dpr-notice{margin:0;border-radius:8px;padding:10px 14px;font-size:13px;line-height:1.6}
 .dpr-notice-err{background:color-mix(in srgb,var(--dsw-alias-state-error-primary,#d33) 12%,transparent);color:var(--dsw-alias-state-error-primary,#d33)}
 .dpr-notice-ok{background:color-mix(in srgb,var(--dsw-alias-state-success,#18864b) 12%,transparent);color:var(--dsw-alias-state-success,#18864b)}
+.dpr-reload{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.dpr-reload .dpr-btn-primary{background:var(--dsw-alias-state-business-primary,#3b6ef5);border-color:transparent;color:#fff}
 `;
 function RepoSection({ t }) {
   const [catalog, setCatalog] = (0, import_react.useState)({ status: "loading", source: null, entries: [] });
   const [busy, setBusy] = (0, import_react.useState)({});
   const [notice, setNotice] = (0, import_react.useState)(null);
   const [query, setQuery] = (0, import_react.useState)("");
+  const [reloadCountdown, setReloadCountdown] = (0, import_react.useState)(null);
   const requests = (0, import_react.useRef)(/* @__PURE__ */ new Map());
   async function refresh() {
     setCatalog((previous) => ({ ...previous, status: "loading" }));
@@ -156,6 +165,18 @@ function RepoSection({ t }) {
   (0, import_react.useEffect)(() => {
     void refresh();
   }, []);
+  (0, import_react.useEffect)(() => {
+    if (reloadCountdown === null) return;
+    if (reloadCountdown <= 0) {
+      globalThis.location.reload();
+      return;
+    }
+    const timer = setTimeout(() => setReloadCountdown((value) => value === null ? null : value - 1), 1e3);
+    return () => clearTimeout(timer);
+  }, [reloadCountdown]);
+  function bundleChanged() {
+    setReloadCountdown(5);
+  }
   const filtered = (0, import_react.useMemo)(() => {
     const q = query.trim().toLowerCase();
     if (q === "") return catalog.entries;
@@ -171,6 +192,7 @@ function RepoSection({ t }) {
     if (requestId !== void 0) requests.current.set(name, requestId);
     try {
       await work();
+      setTimeout(() => globalThis.location.reload(), 1200);
       await refresh();
     } finally {
       requests.current.delete(name);
@@ -186,6 +208,7 @@ function RepoSection({ t }) {
     await run(entry.name, "install", requestId, async () => {
       await api("/install", { method: "POST", body: JSON.stringify({ spec: entry.spec, enabled: true, requestId }) });
       setNotice({ kind: "ok", text: format(t("installOk"), { name: entry.name }) });
+      bundleChanged();
     }).catch((error) => {
       setNotice({ kind: "error", text: format(t("installFailed"), { name: entry.name, message: error.message }) });
     });
@@ -202,6 +225,7 @@ function RepoSection({ t }) {
     await run(entry.name, "toggle", void 0, async () => {
       await api("/enable", { method: "POST", body: JSON.stringify({ name: entry.name, enabled: !entry.enabled }) });
       setNotice({ kind: "ok", text: format(t("installOk"), { name: entry.name }) });
+      bundleChanged();
     }).catch((error) => {
       setNotice({ kind: "error", text: format(t("installFailed"), { name: entry.name, message: error.message }) });
     });
@@ -211,6 +235,7 @@ function RepoSection({ t }) {
     await run(entry.name, "remove", void 0, async () => {
       await api("/remove", { method: "POST", body: JSON.stringify({ name: entry.name }) });
       setNotice({ kind: "ok", text: format(t("installOk"), { name: entry.name }) });
+      bundleChanged();
     }).catch((error) => {
       setNotice({ kind: "error", text: format(t("installFailed"), { name: entry.name, message: error.message }) });
     });
@@ -285,6 +310,13 @@ function RepoSection({ t }) {
         (0, import_react.createElement)("input", { className: "dpr-search", placeholder: t("search"), value: query, onChange: (event) => setQuery(event.target.value) })
       ),
       renderNotice(),
+      reloadCountdown !== null ? (0, import_react.createElement)(
+        "div",
+        { className: "dpr-notice dpr-notice-ok dpr-reload" },
+        (0, import_react.createElement)("span", null, format(t("reloadHint"), { seconds: reloadCountdown })),
+        (0, import_react.createElement)("button", { className: "dpr-btn dpr-btn-primary", onClick: () => globalThis.location.reload() }, t("reloadNow")),
+        (0, import_react.createElement)("button", { className: "dpr-btn", onClick: () => setReloadCountdown(null) }, t("reloadCancel"))
+      ) : null,
       body
     )
   );
@@ -301,7 +333,7 @@ function register(ctx) {
   }, RepoSection));
 }
 
-// packages/dsh-plugin-repo/src/client/skills.tsx
+// src/client/skills.tsx
 var import_react2 = require("react");
 var NS2 = "dsh-plugin-skills";
 var API2 = "/api/dsh-plugin-skills";
@@ -769,7 +801,7 @@ function register2(ctx) {
   }, PromptSection));
 }
 
-// packages/dsh-plugin-repo/src/client/session-archive.tsx
+// src/client/session-archive.tsx
 var import_react3 = require("react");
 var import_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 var NS3 = "dsh-plugin-session-archive";
@@ -885,7 +917,7 @@ function register3(ctx) {
   }, DeleteSessionMenuItem));
 }
 
-// packages/dsh-plugin-repo/src/client/index.tsx
+// src/client/index.tsx
 function apply(ctx) {
   register(ctx);
   register2(ctx);
