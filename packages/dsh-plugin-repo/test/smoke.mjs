@@ -41,7 +41,20 @@ const { source, entries } = await repo.catalog();
 console.log("catalog:", source.gitUrl, "->", entries.length, "entries");
 if (entries.length < 1 || !entries.some((entry) => entry.name === "dsh-plugin-repo")) throw new Error("catalog 不符合预期");
 
-// 2) resolve：包名 / 路径 / spec 三种输入
+// 2) spec 钉 commit（自包含断言）
+{
+	const { pinSpecToCommit } = await import("../lib/index.js");
+	const sha = "a".repeat(40);
+	const ok = (label, condition) => { if (!condition) throw new Error(`pin check failed: ${label}`); };
+	ok("钉分支为 commit", pinSpecToCommit("https://hub.ifunx.com/skyle1995/dsh-plugins.git#main&path:packages/x", sha) === `https://hub.ifunx.com/skyle1995/dsh-plugins.git#${sha}&path:packages/x`);
+	ok("已钉 sha 不重复", pinSpecToCommit(`https://hub.ifunx.com/skyle1995/dsh-plugins.git#${sha}&path:packages/x`, sha) === `https://hub.ifunx.com/skyle1995/dsh-plugins.git#${sha}&path:packages/x`);
+	ok("无 fragment 原样", pinSpecToCommit("https://hub.ifunx.com/skyle1995/dsh-plugins.git", sha) === "https://hub.ifunx.com/skyle1995/dsh-plugins.git");
+	ok("非法 commit 原样", pinSpecToCommit("https://hub.ifunx.com/skyle1995/dsh-plugins.git#main&path:x", "xyz") === "https://hub.ifunx.com/skyle1995/dsh-plugins.git#main&path:x");
+	ok("仅 path 参数", pinSpecToCommit("https://hub.ifunx.com/skyle1995/dsh-plugins.git#path:packages/x", sha) === `https://hub.ifunx.com/skyle1995/dsh-plugins.git#path:packages/x`);
+	console.log("pin checks ok");
+}
+
+// 3) resolve：包名 / 路径 / spec 三种输入
 const byName = await repo.resolve("dsh-plugin-repo");
 const byDir = await repo.resolve("dsh-plugin-repo");
 const byPath = await repo.resolve("packages/dsh-plugin-repo");
@@ -56,7 +69,8 @@ if (!byName.spec.includes("#main&path:packages/dsh-plugin-repo")) throw new Erro
 const installed = await repo.install("dsh-plugin-repo", { enabled: true, requestId: "smoke-1" });
 const manager = root.get("pluginManager");
 console.log("install result:", JSON.stringify(installed), "| manager.calls:", manager.calls.length);
-if (manager.calls[0]?.spec !== byName.spec) throw new Error("install 未按解析结果转发");
+const forwarded = manager.calls[0]?.spec ?? "";
+if (!new RegExp(`^https://hub\\.ifunx\\.com/skyle1995/dsh-plugins\\.git#[0-9a-f]{40}&path:packages/dsh-plugin-repo$`).test(forwarded)) throw new Error(`install 未按钉死 commit 的解析结果转发：${forwarded}`);
 await repo.install("https://example.com/org/other.git", {});
 if (manager.calls.length !== 2) throw new Error("spec 直传转发失败");
 

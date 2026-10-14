@@ -148,6 +148,48 @@ export async function buildCatalog(config, request = giteaRequest) {
 }
 
 /**
+ * 把分支 spec 钉到精确 commit：pnpm 对分支引用的解析可能滞后于刚刚推送的
+ * head（Gitea git 端点缓存），导致安装/更新解析到旧 commit、看似「回退」。
+ * Gitea API 与推送即时同步，因此安装前用 API 的 commit id 替换分支名。
+ * @param spec - 安装 spec（`https://...git#<分支>&path:...` 或已钉死 sha）。
+ * @param headCommit - 40 位十六进制 commit id。
+ * @returns 钉死 commit 的 spec；非本仓库 spec 原样返回。
+ */
+export function pinSpecToCommit(spec, headCommit) {
+	if (typeof headCommit !== "string" || !/^[0-9a-f]{40}$/i.test(headCommit)) return spec;
+	const hash = spec.indexOf("#");
+	if (hash < 0) return spec;
+	const fragment = spec.slice(hash + 1);
+	const params = fragment.split("&");
+	const committish = params.find((param) => !param.startsWith("path:") && !param.startsWith("semver:"));
+	if (committish === undefined) return spec;
+	if (/^[0-9a-f]{40}$/i.test(committish)) return spec;
+	const replaced = params.map((param) => (param === committish ? headCommit : param)).join("&");
+	return `${spec.slice(0, hash + 1)}${replaced}`;
+}
+
+/** 从 `#...&path:packages/<name>` 片段提取包名；取不到返回 undefined。 */
+export function packageNameFromSpec(spec) {
+	const hash = String(spec).indexOf("#");
+	if (hash < 0) return undefined;
+	const fragment = String(spec).slice(hash + 1);
+	const pathParam = fragment.split("&").find((param) => param.startsWith("path:"));
+	if (pathParam === undefined) return undefined;
+	const dir = pathParam.slice("path:".length);
+	if (dir === "") return undefined;
+	return basename(dir);
+}
+
+/** 通过 Gitea API 读取仓库分支当前 head commit（与推送即时同步）。 */
+export async function resolveBranchHead(config, request = giteaRequest) {
+	const { owner, repo, branch = "main" } = config;
+	const payload = await request(config, `/repos/${owner}/${repo}/branches/${branch}`);
+	const commit = payload?.commit?.id;
+	if (typeof commit !== "string" || commit === "") throw new RepoError("plugin-repo/branch-head", `无法读取分支 ${branch} 的 head commit`);
+	return commit;
+}
+
+/**
  * dsh-plugin-repo 的 Cordis 服务：目录查询、spec 生成与一键安装。
  * 服务键 `pluginRepo`，通过 `ctx.pluginRepo` 使用。
  */
@@ -287,10 +329,21 @@ export class PluginRepoService extends Service {
 			}
 			const manager = this.ctx.pluginManager;
 			if (operation === "install") {
-				const spec = String(body.spec ?? "").trim();
+				let spec = String(body.spec ?? "").trim();
 				if (spec === "") {
 					payload(400, { ok: false, code: "plugin-repo/invalid-spec", message: "缺少安装 spec" });
 					return;
+				}
+				if (spec.startsWith(gitUrlOf(this.config)) || spec.startsWith(this.gitUrl())) {
+					const head = await resolveBranchHead(this.config);
+					spec = pinSpecToCommit(spec, head);
+				}
+				const target = packageNameFromSpec(spec);
+				if (target !== undefined) {
+					const bundles = await manager.listBundles();
+					if (bundles.some((bundle) => bundle.name === target && bundle.installed)) {
+						await manager.removeBundle(target);
+					}
 				}
 				const result = await manager.installBundle(spec, {
 					enabled: body.enabled !== false,
@@ -382,7 +435,17 @@ export class PluginRepoService extends Service {
 	 */
 	async install(specOrName, options = {}) {
 		const manager = this.ctx.pluginManager;
-		const { entry, spec } = await this.resolve(specOrName);
+		const { entry, spec: resolved } = await this.resolve(specOrName);
+		const spec = (resolved.startsWith(gitUrlOf(this.config)) || resolved.startsWith(this.gitUrl()))
+			? pinSpecToCommit(resolved, await resolveBranchHead(this.config))
+			: resolved;
+		const target = packageNameFromSpec(spec);
+		if (target !== undefined) {
+			const bundles = await manager.listBundles();
+			if (bundles.some((bundle) => bundle.name === target && bundle.installed)) {
+				await manager.removeBundle(target);
+			}
+		}
 		const result = await manager.installBundle(spec, options);
 		return { source: entry, spec, result };
 	}
