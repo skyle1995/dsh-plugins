@@ -8,6 +8,11 @@
 # 激活由服务可用性驱动：主服务注入了 pluginManager；会话归档子服务在缺少
 # workspaceRegistry 时单独保持未激活，不影响其余能力。
 #
+# 另覆盖 base 组合包的 hmr 行：把模块监听根指向 profile 的 node_modules
+# （含 .pnpm 真实文件），使安装/更新插件后宿主模块随文件变化热重载，
+# 无需重启 dsh。ignored 必须放行 **/.pnpm（隐藏目录），否则监听不到
+# pnpm 实际安装的包文件。仅在存在 profileContext（Web 等 profile）时生效。
+#
 # 配置通过 profile 的 cordis.patch.yml 覆盖，例如：
 #
 # - id: plugin-repo
@@ -20,3 +25,8 @@
 - insert:
     - id: plugin-repo
       name: 'dsh-plugin-repo'
+    - id: hmr
+      name: '@deepseek-ai/dsh-hmr'
+      config:
+        root: !!js "ctx.get('profileContext') ? [ctx.get('profileContext').dir + '/node_modules'] : []"
+        ignored: ["cache", "data"]
