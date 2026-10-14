@@ -42,6 +42,9 @@ const zh = {
 	repoVersionBadge: "仓库版本 {version}",
 	updateAvailableBadge: "可更新",
 	installOk: "「{name}」操作成功。",
+	reloadHint: "插件已变更：新装 / 更新的插件界面需刷新页面后出现（可继续安装，稍后统一刷新）。",
+	reloadNow: "立即刷新",
+	reloadDismiss: "稍后",
 	installFailed: "「{name}」操作失败：{message}",
 	removeConfirm: "确定卸载「{name}」吗？其配置覆盖会保留在 profile 中。",
 };
@@ -73,6 +76,9 @@ const en = {
 	repoVersionBadge: "Repo v{version}",
 	updateAvailableBadge: "Update available",
 	installOk: "“{name}” succeeded.",
+	reloadHint: "Plugins changed: newly installed/updated plugin UIs appear after a page reload (you may keep installing and reload later).",
+	reloadNow: "Reload now",
+	reloadDismiss: "Later",
 	installFailed: "“{name}” operation failed: {message}",
 	removeConfirm: "Uninstall “{name}”? Its configuration overrides remain in the profile.",
 };
@@ -126,6 +132,8 @@ const css = `
 .dpr-notice-ok{background:color-mix(in srgb,var(--dsw-alias-state-success,#18864b) 12%,transparent);color:var(--dsw-alias-state-success,#18864b)}
 .dpr-reload{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .dpr-reload .dpr-btn-primary{background:var(--dsw-alias-state-business-primary,#3b6ef5);border-color:transparent;color:#fff}
+.dpr-reload{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.dpr-reload .dpr-btn-primary{background:var(--dsw-alias-state-business-primary,#3b6ef5);border-color:transparent;color:#fff}
 `;
 
 /** 设置分区组件：props 由 slot 框架提供 t（按 NS 绑定）。 */
@@ -135,6 +143,8 @@ function RepoSection({ t }) {
 	const [notice, setNotice] = useState(null);
 	const [query, setQuery] = useState("");
 	/** 插件安装/更新/启停/删除后提示刷新；非 null 时倒计时自动刷新页面。 */
+	/** 组合包操作后提示手动刷新（不自动刷新，避免打断连续安装）。 */
+	const [reloadPrompt, setReloadPrompt] = useState(false);
 	const requests = useRef(new Map());
 
 	async function refresh() {
@@ -187,6 +197,7 @@ function RepoSection({ t }) {
 		await run(entry.name, "install", requestId, async () => {
 			await api("/install", { method: "POST", body: JSON.stringify({ spec: entry.spec, enabled: true, requestId }) });
 			setNotice({ kind: "ok", text: format(t("installOk"), { name: entry.name }) });
+			setReloadPrompt(true);
 		}).catch((error) => {
 			setNotice({ kind: "error", text: format(t("installFailed"), { name: entry.name, message: error.message }) });
 		});
@@ -206,6 +217,7 @@ function RepoSection({ t }) {
 		await run(entry.name, "toggle", undefined, async () => {
 			await api("/enable", { method: "POST", body: JSON.stringify({ name: entry.name, enabled: !entry.enabled }) });
 			setNotice({ kind: "ok", text: format(t("installOk"), { name: entry.name }) });
+			setReloadPrompt(true);
 		}).catch((error) => {
 			setNotice({ kind: "error", text: format(t("installFailed"), { name: entry.name, message: error.message }) });
 		});
@@ -216,6 +228,7 @@ function RepoSection({ t }) {
 		await run(entry.name, "remove", undefined, async () => {
 			await api("/remove", { method: "POST", body: JSON.stringify({ name: entry.name }) });
 			setNotice({ kind: "ok", text: format(t("installOk"), { name: entry.name }) });
+			setReloadPrompt(true);
 		}).catch((error) => {
 			setNotice({ kind: "error", text: format(t("installFailed"), { name: entry.name, message: error.message }) });
 		});
@@ -274,6 +287,10 @@ function RepoSection({ t }) {
 			h("div", { className: "dpr-toolbar" },
 				h("input", { className: "dpr-search", placeholder: t("search"), value: query, onChange: (event) => setQuery(event.target.value) })),
 			renderNotice(),
+			reloadPrompt ? h("div", { className: "dpr-notice dpr-notice-ok dpr-reload" },
+				h("span", null, t("reloadHint")),
+				h("button", { className: "dpr-btn dpr-btn-primary", onClick: () => globalThis.location.reload() }, t("reloadNow")),
+				h("button", { className: "dpr-btn", onClick: () => setReloadPrompt(false) }, t("reloadDismiss"))) : null,
 			body));
 }
 
