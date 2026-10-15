@@ -39,6 +39,8 @@ const zh = {
 	presetRefreshed: "预设目录已刷新（{count} 个预设）。",
 	presetFetchFailed: "预设目录刷新失败：{message}",
 	presetOff: "在线目录未启用",
+	resolveWarn: "引用未解析：{keys}",
+	exprHint: "支持动态解析：$env:变量名（环境变量）、$file:/路径（读取文件首行）、${env:变量名}（字符串内嵌引用）。解析失败会在列表显示警告。",
 	add: "添加服务器",
 	edit: "编辑",
 	editTitle: "编辑服务器：{name}",
@@ -118,6 +120,8 @@ const en = {
 	presetRefreshed: "Preset catalog refreshed ({count} presets).",
 	presetFetchFailed: "Failed to refresh presets: {message}",
 	presetOff: "Online catalog disabled",
+	resolveWarn: "Unresolved refs: {keys}",
+	exprHint: "Dynamic resolution: $env:VAR (environment variable), $file:/path (first line of file), ${env:VAR} (inline). Unresolved refs show a warning in the list.",
 	add: "Add server",
 	edit: "Edit",
 	editTitle: "Edit server: {name}",
@@ -597,6 +601,7 @@ function McpSection({ t }) {
 					h("span", null, server.serverName),
 					h("div", { className: "dmc-badges" }, badges)),
 				server.conflictWith !== null ? h("p", { className: "dmc-note" }, format(t("loadError"), { message: `id ${server.id} 已被 ${server.conflictWith} 占用` })) : null,
+				(server.resolveIssues ?? []).length > 0 ? h("p", { className: "dmc-note" }, format(t("resolveWarn"), { keys: server.resolveIssues.join("、") })) : null,
 				server.note ? h("p", { className: "dmc-note" }, server.note) : null),
 			h("div", { className: "dmc-actions" }, actions));
 	}
@@ -657,6 +662,7 @@ function McpSection({ t }) {
 						h("span", { className: "dmc-label" }, t("noteLabel")),
 						h("input", { className: "dmc-input", value: form.note, onChange: (event) => updateField("note", event.target.value) }),
 						h("span", { className: "dmc-hint" }, t("noteHint")))),
+				h("p", { className: "dmc-hint" }, t("exprHint")),
 				formError !== null ? h("p", { className: "dmc-notice dmc-notice-err" }, formError) : null,
 				h("div", { className: "dmc-form-actions" },
 					h("button", { className: "dmc-btn", onClick: () => setForm(null) }, t("cancel")),

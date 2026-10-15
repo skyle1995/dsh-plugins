@@ -94,6 +94,61 @@ export function placeholderValuesOf(presets) {
 }
 
 /**
+ * 配置值的动态表达式语法：
+ * - `$env:NAME` / `${env:NAME}` —— 引用 harness 进程环境变量（密钥不落盘）
+ * - `$file:/path` / `${file:/path}` —— 读取文件首行（令牌文件；支持 ~）
+ * 解析发生在投影时：改环境变量 / 文件内容后重新投影即生效；
+ * 解析失败（变量未设置 / 文件不可读）记为 issue 并解析为空字符串。
+ */
+export const EXPR_FULL = /^\$(env|file):(.+)$/;
+export const EXPR_INLINE = /\$\{(env|file):([^}]+)\}/g;
+
+/** 单次引用的解析；失败时记录 issue（如 env:GITHUB_TOKEN）。 */
+function lookupRef(kind, arg, issues) {
+	if (kind === "env") {
+		const value = process.env[arg];
+		if (value === undefined) issues.push(`env:${arg}`);
+		return value ?? "";
+	}
+	if (kind === "file") {
+		const path = arg.startsWith("~") ? join(resolveDshHomeFallback(), arg.slice(2)) : arg;
+		try {
+			return readFileSync(path, "utf8").trim();
+		} catch {
+			issues.push(`file:${arg}`);
+			return "";
+		}
+	}
+	return "";
+}
+
+/** 宿主环境 HOME 兜底（file 引用 ~ 展开用）。 */
+function resolveDshHomeFallback() {
+	return process.env.HOME ?? process.env.USERPROFILE ?? ".";
+}
+
+/**
+ * 递归解析配置值中的表达式（字符串全值 / 内嵌、数组、对象均支持）。
+ * @param value - 原始配置值。
+ * @param issues - 收集解析失败的引用。
+ * @returns 解析后的值（普通值原样返回）。
+ */
+export function resolveConfigValue(value, issues) {
+	if (typeof value === "string") {
+		const inline = value.replace(EXPR_INLINE, (_match, kind, arg) => lookupRef(kind, arg, issues));
+		if (inline !== value) return inline;
+		const full = value.match(EXPR_FULL);
+		if (full !== null) return lookupRef(full[1], full[2], issues);
+		return value;
+	}
+	if (Array.isArray(value)) return value.map((item) => resolveConfigValue(item, issues));
+	if (value !== null && typeof value === "object") {
+		return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, resolveConfigValue(item, issues)]));
+	}
+	return value;
+}
+
+/**
  * 校验并规范化在线目录载荷。结构非法时抛 McpError（mcp/preset-invalid），
  * 调用方决定回退策略（缓存 / 内置）。
  * @param raw - 远程 JSON 解析结果。
@@ -314,6 +369,8 @@ export class McpManagerService extends Service {
 		this.stateCorrupt = null;
 		this.servers = [];
 		this.conflicts = new Map();
+		/** serverName 的受管条目 id → 动态表达式解析失败列表（如 env:GITHUB_TOKEN）。 */
+		this.resolveIssues = new Map();
 		this.syncScheduled = false;
 		this.syncRunning = false;
 		// 活动预设目录：初始为内置（随包 presets.json），启动后异步拉取在线目录，
@@ -497,6 +554,9 @@ export class McpManagerService extends Service {
 		for (const id of [...this.conflicts.keys()]) {
 			if (!desired.has(id)) this.conflicts.delete(id);
 		}
+		for (const bareId of [...this.resolveIssues.keys()]) {
+			if (!desired.has(bareId)) this.resolveIssues.delete(bareId);
+		}
 		for (const [bareId, server] of desired) {
 			const entry = this.resolveManagedEntry(bareId);
 			if (entry !== null && entry.options.name !== MCP_MODULE) {
@@ -504,7 +564,11 @@ export class McpManagerService extends Service {
 				continue;
 			}
 			this.conflicts.delete(bareId);
-			const config = entryConfigOf(server);
+			// 动态解析：\$env: / \$file: / \${...} 表达式在投影时解析，
+			// 解析失败记入 resolveIssues（列表接口展示「未解析」警告）。
+			const issues = [];
+			const config = resolveConfigValue(entryConfigOf(server), issues);
+			this.resolveIssues.set(bareId, issues);
 			const disabled = server.disabled === true;
 			if (entry === null) {
 				await this.ctx.loader.create({ id: bareId, name: MCP_MODULE, config, disabled }, INCLUDE_ENTRY_ID);
@@ -633,6 +697,7 @@ export class McpManagerService extends Service {
 				note: server.note ?? "",
 				status: conflictWith !== null ? "conflict" : this.statusOf(id),
 				conflictWith,
+				resolveIssues: this.resolveIssues.get(id) ?? [],
 			};
 		});
 		const manual = this.manualEntries().map((entry) => {

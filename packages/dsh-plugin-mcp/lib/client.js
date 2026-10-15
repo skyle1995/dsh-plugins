@@ -60,6 +60,8 @@ var zh = {
   presetRefreshed: "\u9884\u8BBE\u76EE\u5F55\u5DF2\u5237\u65B0\uFF08{count} \u4E2A\u9884\u8BBE\uFF09\u3002",
   presetFetchFailed: "\u9884\u8BBE\u76EE\u5F55\u5237\u65B0\u5931\u8D25\uFF1A{message}",
   presetOff: "\u5728\u7EBF\u76EE\u5F55\u672A\u542F\u7528",
+  resolveWarn: "\u5F15\u7528\u672A\u89E3\u6790\uFF1A{keys}",
+  exprHint: "\u652F\u6301\u52A8\u6001\u89E3\u6790\uFF1A$env:\u53D8\u91CF\u540D\uFF08\u73AF\u5883\u53D8\u91CF\uFF09\u3001$file:/\u8DEF\u5F84\uFF08\u8BFB\u53D6\u6587\u4EF6\u9996\u884C\uFF09\u3001${env:\u53D8\u91CF\u540D}\uFF08\u5B57\u7B26\u4E32\u5185\u5D4C\u5F15\u7528\uFF09\u3002\u89E3\u6790\u5931\u8D25\u4F1A\u5728\u5217\u8868\u663E\u793A\u8B66\u544A\u3002",
   add: "\u6DFB\u52A0\u670D\u52A1\u5668",
   edit: "\u7F16\u8F91",
   editTitle: "\u7F16\u8F91\u670D\u52A1\u5668\uFF1A{name}",
@@ -138,6 +140,8 @@ var en = {
   presetRefreshed: "Preset catalog refreshed ({count} presets).",
   presetFetchFailed: "Failed to refresh presets: {message}",
   presetOff: "Online catalog disabled",
+  resolveWarn: "Unresolved refs: {keys}",
+  exprHint: "Dynamic resolution: $env:VAR (environment variable), $file:/path (first line of file), ${env:VAR} (inline). Unresolved refs show a warning in the list.",
   add: "Add server",
   edit: "Edit",
   editTitle: "Edit server: {name}",
@@ -579,6 +583,7 @@ function McpSection({ t }) {
           (0, import_react.createElement)("div", { className: "dmc-badges" }, badges)
         ),
         server.conflictWith !== null ? (0, import_react.createElement)("p", { className: "dmc-note" }, format(t("loadError"), { message: `id ${server.id} \u5DF2\u88AB ${server.conflictWith} \u5360\u7528` })) : null,
+        (server.resolveIssues ?? []).length > 0 ? (0, import_react.createElement)("p", { className: "dmc-note" }, format(t("resolveWarn"), { keys: server.resolveIssues.join("\u3001") })) : null,
         server.note ? (0, import_react.createElement)("p", { className: "dmc-note" }, server.note) : null
       ),
       (0, import_react.createElement)("div", { className: "dmc-actions" }, actions)
@@ -685,6 +690,7 @@ function McpSection({ t }) {
               (0, import_react.createElement)("span", { className: "dmc-hint" }, t("noteHint"))
             )
           ),
+          (0, import_react.createElement)("p", { className: "dmc-hint" }, t("exprHint")),
           formError !== null ? (0, import_react.createElement)("p", { className: "dmc-notice dmc-notice-err" }, formError) : null,
           (0, import_react.createElement)(
             "div",

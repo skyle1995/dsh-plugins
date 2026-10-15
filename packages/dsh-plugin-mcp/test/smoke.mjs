@@ -6,14 +6,14 @@
  */
 import { Context, Service } from "@deepseek-ai/cordis";
 import { createRequire } from "node:module";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const pkgDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const { default: McpManagerService, McpError, entryIdOf, normalizeServer, saveStateFile, loadStateFile, MCP_MODULE, MANAGED_ID_PREFIX, PRESETS, PLACEHOLDER_VALUES, PRESET_CATEGORIES, categoryOf, validatePresetCatalog, fetchPresetCatalog, placeholderValuesOf } = await import(join(pkgDir, "lib/index.js"));
+const { default: McpManagerService, McpError, entryIdOf, normalizeServer, saveStateFile, loadStateFile, MCP_MODULE, MANAGED_ID_PREFIX, PRESETS, PLACEHOLDER_VALUES, PRESET_CATEGORIES, categoryOf, validatePresetCatalog, fetchPresetCatalog, placeholderValuesOf, resolveConfigValue } = await import(join(pkgDir, "lib/index.js"));
 
 /** 记录条目并为服务提供 EntryTree 最小 API 的内存桩 loader。 */
 class StubEntry {
@@ -354,6 +354,42 @@ const stateFile = join(tempDir, "mcp-servers.json");
 		const info = manager2.presetInfo();
 		if (info.presetSource !== "remote" || info.presetFetchedAt === null || info.presetError !== null) throw new Error("presetInfo 不符");
 		console.log("remote e2e: 在线目录加载 + 缓存 + 分类/占位切换正常");
+	}
+
+	// 动态表达式解析：全值 / 内嵌 / 文件引用 / 失败记录 / 投影动态生效
+	{
+		const issues = [];
+		process.env.SMOKE_DYN_VAR = "dyn-value";
+		if (resolveConfigValue("$env:SMOKE_DYN_VAR", issues) !== "dyn-value") throw new Error("$env 全值解析失败");
+		if (resolveConfigValue("x-${env:SMOKE_DYN_VAR}-y", issues) !== "x-dyn-value-y") throw new Error("${env} 内嵌解析失败");
+		if (resolveConfigValue("$env:SMOKE_MISSING_XYZ", issues) !== "" || !issues.includes("env:SMOKE_MISSING_XYZ")) throw new Error("缺失环境变量应解析为空并记录 issue");
+		const tokenFile = join(tempDir, "token.txt");
+		writeFileSync(tokenFile, "file-token\n");
+		if (resolveConfigValue(`$file:${tokenFile}`, issues) !== "file-token") throw new Error("$file 解析失败");
+		const nested = resolveConfigValue({ env: { T: "$env:SMOKE_DYN_VAR" }, args: ["a", `${"$"}{file:${tokenFile}}`] }, issues);
+		if (nested.env.T !== "dyn-value" || nested.args[1] !== "file-token") throw new Error("对象/数组递归解析失败");
+		console.log("dynamic: 表达式解析（全值/内嵌/文件/失败记录）正常");
+
+		// 投影动态生效：改环境变量 → 重新投影 → 条目配置随之更新
+		const dynRoot = new Context();
+		await dynRoot.plugin(StubLoader, {});
+		dynRoot.get("loader").seedInclude();
+		const dynState = join(tempDir, "mcp-dyn.json");
+		await dynRoot.plugin(McpManagerService, { stateFile: dynState, presetUrl: "off" });
+		const dynManager = dynRoot.get("mcpManager");
+		await dynManager.saveServer({ serverName: "dyn", transport: "stdio", command: "echo", env: { TOKEN: "$env:SMOKE_DYN_VAR" } });
+		const dynLoader = dynRoot.get("loader");
+		const dynEntry = () => dynLoader.resolve(entryIdOf("dyn"));
+		if (dynEntry().options.config.env.TOKEN !== "dyn-value") throw new Error("投影未解析表达式");
+		process.env.SMOKE_DYN_VAR = "changed-value";
+		await dynManager.sync("smoke");
+		if (dynEntry().options.config.env.TOKEN !== "changed-value") throw new Error("环境变量变化后投影未更新");
+		delete process.env.SMOKE_DYN_VAR;
+		await dynManager.sync("smoke");
+		if (dynEntry().options.config.env.TOKEN !== "") throw new Error("变量缺失后应解析为空");
+		const dynView = dynManager.snapshot().servers.find((server) => server.serverName === "dyn");
+		if (!dynView.resolveIssues.includes("env:SMOKE_DYN_VAR")) throw new Error("快照未记录解析失败");
+		console.log("dynamic: 投影随环境变量变化动态更新 + 快照记录未解析引用");
 	}
 
 	// 持久化校验：状态文件里应是 3 台（b、c、brave-search）

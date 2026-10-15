@@ -96,6 +96,9 @@ export interface McpPresetCategory {
 
 export const PRESETS: McpPreset[];
 export const PLACEHOLDER_VALUES: Set<string>;
+export const EXPR_FULL: RegExp;
+export const EXPR_INLINE: RegExp;
+export function resolveConfigValue(value: unknown, issues: string[]): unknown;
 export const PRESET_CATEGORIES: McpPresetCategory[];
 export function categoryOf(presetId: string): string;
 

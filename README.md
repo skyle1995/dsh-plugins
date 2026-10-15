@@ -25,7 +25,7 @@ dsh plugin --profile web add \
 |---|---|---|
 | [`dsh-plugin-repo`](packages/dsh-plugin-repo) | `packages/dsh-plugin-repo` | **基础插件**：设置面板三个分区——插件仓库（在线目录/安装/更新/卸载）、技能能力（skills 管理+导入）、规则提示词（system-prompt persona 编辑，热加载）；另在会话右键菜单底部提供「删除会话」（红色警示+确认弹窗） |
 | [`dsh-plugin-file-actions`](packages/dsh-plugin-file-actions) | `packages/dsh-plugin-file-actions` | **文件列表增强**：文件树右键菜单与批量操作——侧边栏编辑 tab（编辑态实时语法高亮 + prettier 一键格式化）、剪切/复制/粘贴、删除（确认弹窗）、压缩为 ZIP（命名弹窗）、复制路径、⌘/Ctrl 多选与底部批量操作栏（宿主半区路由 + 工作区安全约束） |
-| [`dsh-plugin-mcp`](packages/dsh-plugin-mcp) | `packages/dsh-plugin-mcp` | **MCP 服务器管理器**：设置面板「MCP 服务器」分区（已安装/预设分页）——可视化增删改/启停外部 MCP 服务器（stdio 本地进程 / streamable-http 远程），基于内置 `@deepseek-ai/dsh-mcp-client` 桥接（工具名 `mcp__<name>__<tool>`）；**42 个热门预设一键添加**（在线目录：更新仓库 presets.json 即可下发新预设，无需升级插件）（通用开发 / 代码托管（Gitea 官方·自建）/ 浏览器 Web / 搜索情报 / 云服务 / 逆向安全：Reqable、IDA Pro、Ghidra、Binary Ninja、Frida、JADX、VirusTotal、x64dbg、CyberChef；六分类分组 + 搜索 + 弹窗表单 + 占位拦截）；状态存 JSON、运行时投影为 loader 树条目，重启自动重建；手工 cordis.patch.yml 条目只读展示 |
+| [`dsh-plugin-mcp`](packages/dsh-plugin-mcp) | `packages/dsh-plugin-mcp` | **MCP 服务器管理器**：设置面板「MCP 服务器」分区（已安装/预设分页）——可视化增删改/启停外部 MCP 服务器（stdio 本地进程 / streamable-http 远程），基于内置 `@deepseek-ai/dsh-mcp-client` 桥接（工具名 `mcp__<name>__<tool>`）；**42 个热门预设一键添加**（在线目录：更新仓库 presets.json 即可下发新预设，无需升级插件）（通用开发 / 代码托管（Gitea 官方·自建）/ 浏览器 Web / 搜索情报 / 云服务 / 逆向安全：Reqable、IDA Pro、Ghidra、Binary Ninja、Frida、JADX、VirusTotal、x64dbg、CyberChef；六分类分组 + 搜索 + 弹窗表单 + 占位拦截 + $env:/$file: 动态参数解析）；状态存 JSON、运行时投影为 loader 树条目，重启自动重建；手工 cordis.patch.yml 条目只读展示 |
 
 ## 为什么需要「仓库插件」
 
