@@ -222,7 +222,8 @@ const stateFile = join(tempDir, "mcp-servers.json");
 	const figma = PRESETS.find((preset) => preset.id === "figma");
 	if (!figma || !figma.server.args.includes("figma-developer-mcp") || categoryOf("figma") !== "office") throw new Error("figma 预设不符");
 	const atlassian = PRESETS.find((preset) => preset.id === "atlassian");
-	if (!atlassian || !(atlassian.inputs ?? []).includes("env.ATLASSIAN_API_TOKEN") || !PLACEHOLDER_VALUES.has(atlassian.server.env.ATLASSIAN_INSTANCE_URL)) throw new Error("atlassian 预设不符");
+	if (!atlassian || !(atlassian.inputs ?? []).includes("env.JIRA_API_TOKEN") || !PLACEHOLDER_VALUES.has(atlassian.server.env.JIRA_URL)) throw new Error("atlassian 预设不符");
+	if ("ATLASSIAN_INSTANCE_URL" in (atlassian.server.env ?? {})) throw new Error("atlassian 使用了错误的旧环境变量名");
 	const exa = PRESETS.find((preset) => preset.id === "exa");
 	if (!exa || !exa.server.args.includes("exa-mcp-server") || categoryOf("exa") !== "intel") throw new Error("exa 预设不符");
 	const deepwiki = PRESETS.find((preset) => preset.id === "deepwiki");
@@ -233,7 +234,17 @@ const stateFile = join(tempDir, "mcp-servers.json");
 	if (!chroma || categoryOf("chroma") !== "data") throw new Error("chroma 预设不符");
 	const posthog = PRESETS.find((preset) => preset.id === "posthog");
 	if (!posthog || categoryOf("posthog") !== "data" || !(posthog.inputs ?? []).includes("env.POSTHOG_PERSONAL_API_KEY")) throw new Error("posthog 预设不符");
+	if ("POSTHOG_PROJECT_ID" in (posthog.server.env ?? {})) throw new Error("posthog 不应设置 POSTHOG_PROJECT_ID 环境变量（项目 ID 是查询参数）");
 	if (categoryOf("postgres") !== "data" || categoryOf("sqlite") !== "data") throw new Error("postgres/sqlite 应移入数据分类");
+	// 官方服务器迁移 PyPI 后的修复断言（npm 包已下架 / 参数形式修正）
+	const timeP = PRESETS.find((preset) => preset.id === "time");
+	if (!timeP || timeP.server.command !== "uvx" || !timeP.server.args.includes("mcp-server-time")) throw new Error("time 预设未迁移 PyPI");
+	const fetchP = PRESETS.find((preset) => preset.id === "fetch");
+	if (!fetchP || fetchP.server.command !== "uvx" || !fetchP.server.args.includes("mcp-server-fetch")) throw new Error("fetch 预设未迁移 PyPI");
+	const sqliteP = PRESETS.find((preset) => preset.id === "sqlite");
+	if (!sqliteP || !sqliteP.server.args.includes("--db-path") || !(sqliteP.inputs ?? []).includes("args[2]") || !PLACEHOLDER_VALUES.has(sqliteP.server.args[2])) throw new Error("sqlite 预设参数形式错误");
+	const sentryP = PRESETS.find((preset) => preset.id === "sentry");
+	if (!sentryP || !sentryP.server.args.includes("--auth-token") || sentryP.server.env !== undefined) throw new Error("sentry 预设应使用 --auth-token 参数");
 	// 逆向 / 安全预设：按官方文档的启动方式校验
 	const reqable = PRESETS.find((preset) => preset.id === "reqable");
 	if (!reqable || (reqable.inputs ?? []).length !== 0 || reqable.server.command !== "npx" || !reqable.server.args.includes("reqable-mcp-server")) throw new Error("reqable 预设不符");

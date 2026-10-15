@@ -189,10 +189,9 @@
 			"server": {
 				"serverName": "time",
 				"transport": "stdio",
-				"command": "npx",
+				"command": "uvx",
 				"args": [
-					"-y",
-					"@modelcontextprotocol/server-time"
+					"mcp-server-time"
 				]
 			}
 		},
@@ -206,10 +205,9 @@
 			"server": {
 				"serverName": "fetch",
 				"transport": "stdio",
-				"command": "npx",
+				"command": "uvx",
 				"args": [
-					"-y",
-					"@modelcontextprotocol/server-fetch"
+					"mcp-server-fetch"
 				]
 			}
 		},
@@ -311,17 +309,15 @@
 			"server": {
 				"serverName": "sentry",
 				"transport": "stdio",
-				"command": "npx",
+				"command": "uvx",
 				"args": [
-					"-y",
-					"@modelcontextprotocol/server-sentry"
-				],
-				"env": {
-					"SENTRY_TOKEN": "在此填入你的 Sentry Auth Token"
-				}
+					"mcp-server-sentry",
+					"--auth-token",
+					"在此填入你的 Sentry Auth Token"
+				]
 			},
 			"inputs": [
-				"env.SENTRY_TOKEN"
+				"args[2]"
 			]
 		},
 		{
@@ -355,10 +351,10 @@
 			"server": {
 				"serverName": "sqlite",
 				"transport": "stdio",
-				"command": "npx",
+				"command": "uvx",
 				"args": [
-					"-y",
-					"@modelcontextprotocol/server-sqlite",
+					"mcp-server-sqlite",
+					"--db-path",
 					"/在此填入数据库文件绝对路径"
 				]
 			},
@@ -829,8 +825,8 @@
 			"id": "atlassian",
 			"name": "Atlassian",
 			"description": {
-				"zh": "Atlassian 官方 MCP：Jira / Confluence 查询与操作（实例地址 + API Token）。",
-				"en": "Official Atlassian MCP: query and manage Jira/Confluence (instance URL + API token)."
+				"zh": "Atlassian 官方 MCP：Jira / Confluence 查询与操作（JIRA_URL + JIRA_API_TOKEN；Confluence 可另配 CONFLUENCE_URL / CONFLUENCE_API_TOKEN）。",
+				"en": "Official Atlassian MCP: query and manage Jira/Confluence (JIRA_URL + JIRA_API_TOKEN; add CONFLUENCE_URL / CONFLUENCE_API_TOKEN for Confluence)."
 			},
 			"server": {
 				"serverName": "atlassian",
@@ -840,13 +836,13 @@
 					"mcp-atlassian"
 				],
 				"env": {
-					"ATLASSIAN_INSTANCE_URL": "https://your-domain.atlassian.net（在此填入你的 Atlassian 实例地址）",
-					"ATLASSIAN_API_TOKEN": "在此填入你的 Atlassian API Token"
+					"JIRA_URL": "https://your-company.atlassian.net（在此填入你的 Atlassian 实例地址）",
+					"JIRA_API_TOKEN": "在此填入你的 Atlassian API Token"
 				}
 			},
 			"inputs": [
-				"env.ATLASSIAN_INSTANCE_URL",
-				"env.ATLASSIAN_API_TOKEN"
+				"env.JIRA_URL",
+				"env.JIRA_API_TOKEN"
 			]
 		},
 		{
@@ -936,8 +932,8 @@
 			"id": "posthog",
 			"name": "PostHog",
 			"description": {
-				"zh": "PostHog 官方 MCP：产品分析 / 事件 / 洞察查询（Personal API Key + 项目 ID）。",
-				"en": "Official PostHog MCP: product analytics, events, insights (personal API key + project id)."
+				"zh": "PostHog 官方 MCP：产品分析 / 事件 / 洞察查询（Personal API Key；项目 ID 在每次查询时作为参数传入）。",
+				"en": "Official PostHog MCP: product analytics, events, insights (Personal API Key; the project ID is passed per query)."
 			},
 			"server": {
 				"serverName": "posthog",
@@ -948,13 +944,11 @@
 					"posthog-mcp"
 				],
 				"env": {
-					"POSTHOG_PERSONAL_API_KEY": "在此填入你的 PostHog Personal API Key",
-					"POSTHOG_PROJECT_ID": "在此填入你的 PostHog 项目 ID"
+					"POSTHOG_PERSONAL_API_KEY": "在此填入你的 PostHog Personal API Key"
 				}
 			},
 			"inputs": [
-				"env.POSTHOG_PERSONAL_API_KEY",
-				"env.POSTHOG_PROJECT_ID"
+				"env.POSTHOG_PERSONAL_API_KEY"
 			]
 		}
 	]
