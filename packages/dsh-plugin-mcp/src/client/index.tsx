@@ -31,6 +31,14 @@ const zh = {
 	catAll: "全部",
 	catOther: "其他",
 	presetEmpty: "没有匹配的预设。",
+	presetSourceRemote: "在线目录",
+	presetSourceCache: "缓存（离线）",
+	presetSourceBundled: "内置（离线）",
+	presetSourceLabel: "预设源：{source} · 更新于 {time}",
+	presetRefresh: "刷新预设",
+	presetRefreshed: "预设目录已刷新（{count} 个预设）。",
+	presetFetchFailed: "预设目录刷新失败：{message}",
+	presetOff: "在线目录未启用",
 	add: "添加服务器",
 	edit: "编辑",
 	editTitle: "编辑服务器：{name}",
@@ -102,6 +110,14 @@ const en = {
 	catAll: "All",
 	catOther: "Other",
 	presetEmpty: "No matching presets.",
+	presetSourceRemote: "online catalog",
+	presetSourceCache: "cache (offline)",
+	presetSourceBundled: "bundled (offline)",
+	presetSourceLabel: "Preset source: {source} · updated {time}",
+	presetRefresh: "Refresh presets",
+	presetRefreshed: "Preset catalog refreshed ({count} presets).",
+	presetFetchFailed: "Failed to refresh presets: {message}",
+	presetOff: "Online catalog disabled",
 	add: "Add server",
 	edit: "Edit",
 	editTitle: "Edit server: {name}",
@@ -286,7 +302,7 @@ const css = `
 
 /** 设置分区组件：props 由 slot 框架提供 t（按 NS 绑定）。 */
 function McpSection({ t }) {
-	const [data, setData] = useState({ status: "loading", servers: [], manual: [], presets: [], categories: [], stateFile: null, corrupt: null });
+	const [data, setData] = useState({ status: "loading", servers: [], manual: [], presets: [], categories: [], stateFile: null, corrupt: null, presetSource: "bundled", presetFetchedAt: null, presetError: null });
 	const [notice, setNotice] = useState(null);
 	const [busy, setBusy] = useState({});
 	const [busyPreset, setBusyPreset] = useState({});
@@ -313,6 +329,9 @@ function McpSection({ t }) {
 			categories: payload.categories ?? previous.categories ?? [],
 			stateFile: payload.stateFile ?? previous.stateFile,
 			corrupt: payload.corrupt ?? null,
+			presetSource: payload.presetSource ?? previous.presetSource,
+			presetFetchedAt: payload.presetFetchedAt ?? previous.presetFetchedAt,
+			presetError: payload.presetError ?? null,
 		}));
 	}
 
@@ -320,15 +339,45 @@ function McpSection({ t }) {
 		setData((previous) => ({ ...previous, status: "loading" }));
 		try {
 			const payload = await api("/servers");
-			setData({ status: "ok", servers: payload.servers ?? [], manual: payload.manual ?? [], presets: payload.presets ?? [], categories: payload.categories ?? [], stateFile: payload.stateFile ?? null, corrupt: payload.corrupt ?? null });
+			setData({ status: "ok", servers: payload.servers ?? [], manual: payload.manual ?? [], presets: payload.presets ?? [], categories: payload.categories ?? [], stateFile: payload.stateFile ?? null, corrupt: payload.corrupt ?? null, presetSource: payload.presetSource ?? "bundled", presetFetchedAt: payload.presetFetchedAt ?? null, presetError: payload.presetError ?? null });
+			return payload;
 		} catch (error) {
-			setData({ status: "error", servers: [], manual: [], presets: [], categories: [], stateFile: null, corrupt: null, message: error.message });
+			setData({ status: "error", servers: [], manual: [], presets: [], categories: [], stateFile: null, corrupt: null, presetSource: "bundled", presetFetchedAt: null, presetError: null, message: error.message });
+			return null;
 		}
 	}
 
 	useEffect(() => {
-		void refresh();
+		// 首次打开时在线目录可能尚未拉取完成：仍为内置时延迟再取一次。
+		void (async () => {
+			const payload = await refresh();
+			if (payload !== null && payload.presetSource === "bundled") {
+				setTimeout(() => void refresh(), 2500);
+			}
+		})();
 	}, []);
+
+	/** 手动刷新在线预设目录。 */
+	async function refreshPresets() {
+		setNotice(null);
+		try {
+			const payload = await api("/operation", { method: "POST", body: JSON.stringify({ operation: "refresh-presets" }) });
+			applySnapshot(payload);
+			setNotice({ kind: "ok", text: format(t("presetRefreshed"), { count: payload.presets?.length ?? 0 }) });
+		} catch (error) {
+			setNotice({ kind: "error", text: format(t("presetFetchFailed"), { message: error.message }) });
+		}
+	}
+
+	/** 预设源标签（远程 / 缓存 / 内置 + 更新时间）。 */
+	function presetSourceLabel() {
+		const source = data.presetSource === "remote" ? t("presetSourceRemote")
+			: data.presetSource === "cache" ? t("presetSourceCache") : t("presetSourceBundled");
+		const time = data.presetFetchedAt !== null && data.presetFetchedAt !== undefined
+			? new Date(data.presetFetchedAt).toLocaleString()
+			: "—";
+		return format(t("presetSourceLabel"), { source, time });
+	}
 
 	function renderNotice() {
 		if (notice === null) return null;
@@ -650,6 +699,9 @@ function McpSection({ t }) {
 								className: `dmc-chip ${presetCategory === category.id ? "dmc-chip-on" : ""}`,
 								onClick: () => setPresetCategory(presetCategory === category.id ? null : category.id),
 							}, category[lang] ?? category.id))),
+						h("p", { className: "dmc-meta" }, data.presetError !== null && data.presetError !== undefined
+							? format(t("presetFetchFailed"), { message: data.presetError })
+							: presetSourceLabel()),
 						h("p", { className: "dmc-subtitle" }, t("presetsHint")),
 						presetGroups.length === 0
 							? h("p", { className: "dmc-subtitle" }, t("presetEmpty"))
@@ -676,6 +728,7 @@ function McpSection({ t }) {
 					data.stateFile !== null ? h("p", { className: "dmc-meta" }, format(t("stateFile"), { file: data.stateFile })) : null),
 				h("div", { className: "dmc-toolbar" },
 					h("button", { className: "dmc-btn", onClick: () => void refresh() }, t("refresh")),
+					h("button", { className: "dmc-btn", onClick: () => void refreshPresets() }, t("presetRefresh")),
 					h("button", { className: "dmc-btn dmc-btn-primary", onClick: startAdd }, t("add")))),
 			renderNotice(),
 			body),

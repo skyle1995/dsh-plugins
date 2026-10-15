@@ -23,6 +23,7 @@ import { Config as McpClientConfig } from "@deepseek-ai/dsh-mcp-client";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import presetCatalog from "../presets.json" with { type: "json" };
 
 /** 内置 MCP 客户端桥接模块名（loader 条目 name）。 */
 export const MCP_MODULE = "@deepseek-ai/dsh-mcp-client";
@@ -48,722 +49,14 @@ export const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
 export const MASKED_VALUE = "••••••";
 
 /**
- * 热门 MCP 服务器预设：官方 @modelcontextprotocol 参考服务器 + 逆向 / 安全
- * 分析工具（Reqable、IDA Pro、Ghidra、Binary Ninja、Frida、JADX、VirusTotal）。
- * `inputs` 列出需要用户补全的字段路径（如 "env.GITHUB_TOKEN"、"args[0]"）：
- * 对应值在 `server` 里是占位文本，保存时会被拦截，必须先改成真实值。
- * 无 `inputs` 的预设零配置，可一键直接添加；前置条件（工具本体 / 插件）
- * 写在 description 里。
+ * 内置预设目录（随包发布的 presets.json；在线目录未加载时的兜底）。
+ * 日常新增预设只需更新仓库里的 presets.json——在线目录按需拉取，
+ * 无需更新插件本身。
  */
-export const PRESETS = [
-	{
-		id: "github",
-		name: "GitHub",
-		description: {
-			zh: "GitHub 仓库管理：创建 Issue / PR、搜索代码与仓库。",
-			en: "GitHub repos: create issues/PRs, search code and repositories.",
-		},
-		server: {
-			serverName: "github",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "@modelcontextprotocol/server-github"],
-			env: { GITHUB_TOKEN: "在此填入你的 GitHub Token（Settings → Developer settings → Personal access tokens）" },
-		},
-		inputs: ["env.GITHUB_TOKEN"],
-	},
-	{
-		id: "filesystem",
-		name: "Filesystem",
-		description: {
-			zh: "安全的文件系统访问：读写 / 搜索 / 列目录（限定允许目录）。",
-			en: "Secure filesystem access: read/write/search/list within allowed directories.",
-		},
-		server: {
-			serverName: "filesystem",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "@modelcontextprotocol/server-filesystem", "/在此填入允许访问的目录绝对路径"],
-		},
-		inputs: ["args[2]"],
-	},
-	{
-		id: "memory",
-		name: "Memory",
-		description: {
-			zh: "知识图谱记忆：跨会话记住实体与关系。",
-			en: "Knowledge-graph memory: remember entities and relations across sessions.",
-		},
-		server: {
-			serverName: "memory",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "@modelcontextprotocol/server-memory"],
-		},
-	},
-	{
-		id: "sequential-thinking",
-		name: "Sequential Thinking",
-		description: {
-			zh: "结构化分步思考：复杂推理的思维链工具。",
-			en: "Structured step-by-step thinking for complex reasoning.",
-		},
-		server: {
-			serverName: "sequential-thinking",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "@modelcontextprotocol/server-sequential-thinking"],
-		},
-	},
-	{
-		id: "time",
-		name: "Time",
-		description: {
-			zh: "时间与时区：获取当前时间、换算时区。",
-			en: "Time and timezones: current time and zone conversion.",
-		},
-		server: {
-			serverName: "time",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "@modelcontextprotocol/server-time"],
-		},
-	},
-	{
-		id: "fetch",
-		name: "Fetch",
-		description: {
-			zh: "网页抓取：把 URL 内容转成 Markdown。",
-			en: "Web fetching: convert URLs to Markdown content.",
-		},
-		server: {
-			serverName: "fetch",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "@modelcontextprotocol/server-fetch"],
-		},
-	},
-	{
-		id: "brave-search",
-		name: "Brave Search",
-		description: {
-			zh: "Brave 网络搜索：网页 / 本地 / 新闻检索。",
-			en: "Brave web search: web/local/news queries.",
-		},
-		server: {
-			serverName: "brave-search",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "@modelcontextprotocol/server-brave-search"],
-			env: { BRAVE_API_KEY: "在此填入你的 Brave Search API Key" },
-		},
-		inputs: ["env.BRAVE_API_KEY"],
-	},
-	{
-		id: "puppeteer",
-		name: "Puppeteer",
-		description: {
-			zh: "浏览器自动化：导航、截图、点击、执行 JS。",
-			en: "Browser automation: navigate, screenshot, click, run JS.",
-		},
-		server: {
-			serverName: "puppeteer",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "@modelcontextprotocol/server-puppeteer"],
-		},
-	},
-	{
-		id: "gitlab",
-		name: "GitLab",
-		description: {
-			zh: "GitLab 仓库管理：Issue / MR / 仓库操作。",
-			en: "GitLab repos: issues, merge requests, and repo operations.",
-		},
-		server: {
-			serverName: "gitlab",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "@modelcontextprotocol/server-gitlab"],
-			env: { GITLAB_PERSONAL_ACCESS_TOKEN: "在此填入你的 GitLab Personal Access Token" },
-		},
-		inputs: ["env.GITLAB_PERSONAL_ACCESS_TOKEN"],
-	},
-	{
-		id: "slack",
-		name: "Slack",
-		description: {
-			zh: "Slack 工作区：频道 / 消息 / 线程 / 用户管理。",
-			en: "Slack workspace: channels, messages, threads, users.",
-		},
-		server: {
-			serverName: "slack",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "@modelcontextprotocol/server-slack"],
-			env: {
-				SLACK_BOT_TOKEN: "在此填入你的 Slack Bot Token（xoxb-...）",
-				SLACK_TEAM_ID: "在此填入你的 Slack Team ID",
-			},
-		},
-		inputs: ["env.SLACK_BOT_TOKEN", "env.SLACK_TEAM_ID"],
-	},
-	{
-		id: "sentry",
-		name: "Sentry",
-		description: {
-			zh: "Sentry 错误追踪：查询 issue 与事件。",
-			en: "Sentry error tracking: query issues and events.",
-		},
-		server: {
-			serverName: "sentry",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "@modelcontextprotocol/server-sentry"],
-			env: { SENTRY_TOKEN: "在此填入你的 Sentry Auth Token" },
-		},
-		inputs: ["env.SENTRY_TOKEN"],
-	},
-	{
-		id: "postgres",
-		name: "PostgreSQL",
-		description: {
-			zh: "PostgreSQL 数据库：只读查询与 schema 检查。",
-			en: "PostgreSQL database: read-only queries and schema inspection.",
-		},
-		server: {
-			serverName: "postgres",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "@modelcontextprotocol/server-postgres", "postgresql://user:password@localhost:5432/dbname（在此填入你的连接串）"],
-		},
-		inputs: ["args[2]"],
-	},
-	{
-		id: "sqlite",
-		name: "SQLite",
-		description: {
-			zh: "SQLite 数据库：查询与 schema 检查。",
-			en: "SQLite database: queries and schema inspection.",
-		},
-		server: {
-			serverName: "sqlite",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "@modelcontextprotocol/server-sqlite", "/在此填入数据库文件绝对路径"],
-		},
-		inputs: ["args[2]"],
-	},
-	{
-		id: "everything",
-		name: "Everything",
-		description: {
-			zh: "演示 / 测试服务器：覆盖各种 MCP 特性（echo、日志、资源）。",
-			en: "Demo/test server: covers assorted MCP features (echo, logging, resources).",
-		},
-		server: {
-			serverName: "everything",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "@modelcontextprotocol/server-everything"],
-		},
-	},
-	// ---- 逆向 / 安全分析 ----
-	{
-		id: "reqable",
-		name: "Reqable",
-		description: {
-			zh: "Reqable 抓包调试：分析抓包记录、断点 / 重写 / 脚本规则、API 集合管理（需本机 Reqable v3.2.0+ 运行中）。",
-			en: "Reqable traffic capture: analyze captures, breakpoints/rewrites/scripts, API collections (requires Reqable v3.2.0+ running locally).",
-		},
-		server: {
-			serverName: "reqable",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "reqable-mcp-server"],
-		},
-	},
-	{
-		id: "ida-pro",
-		name: "IDA Pro",
-		description: {
-			zh: "Hex-Rays 官方 IDA MCP：反编译 / 反汇编 / 交叉引用 / 重命名 / 调试（需 IDA Pro 9.4+ 与 idalib，且已安装 uv）。",
-			en: "Official Hex-Rays IDA MCP: decompile/disassemble/xrefs/rename/debug (requires IDA Pro 9.4+ with idalib and uv).",
-		},
-		server: {
-			serverName: "ida-pro",
-			transport: "stdio",
-			command: "uvx",
-			args: ["--exclude-newer=1s", "ida-mcp", "stdio", "--agent=dsh"],
-		},
-	},
-	{
-		id: "ghidra",
-		name: "Ghidra",
-		description: {
-			zh: "Ghidra 逆向：反编译 / 自动重命名 / 交叉引用（需 Ghidra 12.1.4+ 并安装 GhidraMCP 插件，默认本地 8080）。",
-			en: "Ghidra reversing: decompile/rename/xrefs (requires Ghidra 12.1.4+ with the GhidraMCP plugin, default local 8080).",
-		},
-		server: {
-			serverName: "ghidra",
-			transport: "stdio",
-			command: "uvx",
-			args: ["--from", "git+https://github.com/LaurieWired/GhidraMCP", "ghidra-mcp", "--ghidra-server", "http://127.0.0.1:8080/"],
-		},
-	},
-	{
-		id: "binary-ninja",
-		name: "Binary Ninja",
-		description: {
-			zh: "Binary Ninja 逆向：反编译 / IL / 交叉引用 / 重命名 / 补丁（需安装 binary_ninja_mcp 插件，默认本地 9009）。",
-			en: "Binary Ninja reversing: decompile/IL/xrefs/rename/patch (requires the binary_ninja_mcp plugin, default local 9009).",
-		},
-		server: {
-			serverName: "binary-ninja",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "binary-ninja-mcp", "--host", "localhost", "--port", "9009"],
-		},
-	},
-	{
-		id: "frida",
-		name: "Frida",
-		description: {
-			zh: "Frida 动态插桩：进程 / 设备管理、attach / spawn、JS 脚本注入与交互式 REPL。",
-			en: "Frida dynamic instrumentation: process/device management, attach/spawn, JS injection and interactive REPL.",
-		},
-		server: {
-			serverName: "frida",
-			transport: "stdio",
-			command: "uvx",
-			args: ["frida-mcp-server"],
-		},
-	},
-	{
-		id: "jadx",
-		name: "JADX",
-		description: {
-			zh: "Android 逆向：操控 JADX 分析 APK / DEX（反编译、搜索、交叉引用）。需先按 jadx-ai-mcp 文档安装 JADX 插件并克隆仓库。",
-			en: "Android reversing: drive JADX to analyze APK/DEX (decompile, search, xrefs). Install the JADX plugin and clone jadx-ai-mcp first.",
-		},
-		server: {
-			serverName: "jadx",
-			transport: "stdio",
-			command: "uv",
-			args: ["--directory", "/在此填入 jadx-ai-mcp/jadx-mcp-server 目录绝对路径", "run", "jadx_mcp_server.py"],
-		},
-		inputs: ["args[1]"],
-	},
-	{
-		id: "virustotal",
-		name: "VirusTotal",
-		description: {
-			zh: "官方 VirusTotal MCP（VTAI）：文件 / URL / 域名 / IP 威胁情报查询与提交分析。需先在 ai.virustotal.com 创建 VTAI Agent Token。",
-			en: "Official VirusTotal MCP (VTAI): file/URL/domain/IP threat intelligence and analysis submission. Create a VTAI Agent Token first.",
-		},
-		server: {
-			serverName: "virustotal",
-			transport: "stdio",
-			command: "uvx",
-			args: ["vt-mcp"],
-			env: { VTAI_TOKEN_FILE: "在此填入你的 VTAI Agent Token 文件路径（如 ~/.config/vt-mcp/token）" },
-		},
-		inputs: ["env.VTAI_TOKEN_FILE"],
-	},
-	{
-		id: "x64dbg",
-		name: "x64dbg",
-		description: {
-			zh: "x64dbg 动态调试：加载 / 附加进程、断点、内存与寄存器、反汇编、恶意样本分诊（仅 Windows，首次自动下载 x64dbg）。",
-			en: "x64dbg debugging: load/attach processes, breakpoints, memory/registers, disassembly, malware triage (Windows only; auto-downloads x64dbg).",
-		},
-		server: {
-			serverName: "x64dbg",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "x64dbg-mcp"],
-		},
-	},
-	{
-		id: "cyberchef",
-		name: "CyberChef",
-		description: {
-			zh: "CyberChef 数据变换：加解密 / 编解码 / 压缩 / 哈希等 500+ 操作。",
-			en: "CyberChef transformations: 500+ encryption/encoding/compression/hashing operations.",
-		},
-		server: {
-			serverName: "cyberchef",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "cyberchef-mcp"],
-		},
-	},
-	// ---- 代码托管 / 浏览器 / 搜索情报 / 云服务 ----
-	{
-		id: "gitea",
-		name: "Gitea",
-		description: {
-			zh: "Gitea 官方 MCP：仓库 / Issue / PR / Wiki / Actions / 文件管理，支持自建实例（GITEA_HOST 填你的实例地址，令牌在 设置 → 应用 生成）。",
-			en: "Official Gitea MCP: repos/issues/PRs/wiki/actions/files, self-hosted instances supported (set GITEA_HOST to your instance; token from Settings → Applications).",
-		},
-		server: {
-			serverName: "gitea",
-			transport: "stdio",
-			command: "docker",
-			args: ["run", "-i", "--rm", "-e", "GITEA_ACCESS_TOKEN", "-e", "GITEA_HOST", "docker.gitea.com/gitea-mcp-server"],
-			env: {
-				GITEA_HOST: "https://gitea.com（在此填入你的 Gitea 地址，自建填你的实例 URL）",
-				GITEA_ACCESS_TOKEN: "在此填入你的 Gitea Access Token",
-			},
-		},
-		inputs: ["env.GITEA_HOST", "env.GITEA_ACCESS_TOKEN"],
-	},
-	{
-		id: "playwright",
-		name: "Playwright",
-		description: {
-			zh: "微软官方浏览器自动化（MCP 版）：导航 / 点击 / 截图 / 表单 / 断言。",
-			en: "Official Microsoft browser automation (MCP): navigate/click/screenshot/forms/assertions.",
-		},
-		server: {
-			serverName: "playwright",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "@playwright/mcp@latest"],
-		},
-	},
-	{
-		id: "chrome-devtools",
-		name: "Chrome DevTools",
-		description: {
-			zh: "官方 Chrome DevTools MCP：性能分析 / 网络 / 控制台 / 页面调试。",
-			en: "Official Chrome DevTools MCP: performance, network, console, and page debugging.",
-		},
-		server: {
-			serverName: "chrome-devtools",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "chrome-devtools-mcp@latest"],
-		},
-	},
-	{
-		id: "tavily",
-		name: "Tavily",
-		description: {
-			zh: "Tavily 搜索：为 AI 优化的网络搜索。",
-			en: "Tavily search: AI-optimized web search.",
-		},
-		server: {
-			serverName: "tavily",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "tavily-mcp"],
-			env: { TAVILY_API_KEY: "在此填入你的 Tavily API Key" },
-		},
-		inputs: ["env.TAVILY_API_KEY"],
-	},
-	{
-		id: "firecrawl",
-		name: "Firecrawl",
-		description: {
-			zh: "Firecrawl 抓取：网页抓取 / 搜索 / 转 Markdown。",
-			en: "Firecrawl: scrape/search and convert web pages to Markdown.",
-		},
-		server: {
-			serverName: "firecrawl",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "firecrawl-mcp"],
-			env: { FIRECRAWL_API_KEY: "在此填入你的 Firecrawl API Key" },
-		},
-		inputs: ["env.FIRECRAWL_API_KEY"],
-	},
-	{
-		id: "urlscan",
-		name: "urlscan.io",
-		description: {
-			zh: "urlscan.io 扫描：提交 URL 扫描并读取结果（免费额度，无需 Key）。",
-			en: "urlscan.io: submit URL scans and read results (free tier, no key required).",
-		},
-		server: {
-			serverName: "urlscan",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "urlscan-mcp"],
-		},
-	},
-	{
-		id: "context7",
-		name: "Context7",
-		description: {
-			zh: "Context7 文档检索：查询最新库 / 框架文档。",
-			en: "Context7: up-to-date library and framework documentation lookup.",
-		},
-		server: {
-			serverName: "context7",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "@upstash/context7-mcp"],
-		},
-	},
-	{
-		id: "cloudflare",
-		name: "Cloudflare",
-		description: {
-			zh: "Cloudflare 官方 MCP：管理 Workers / KV / D1 / R2 等资源。",
-			en: "Official Cloudflare MCP: manage Workers, KV, D1, R2 and more.",
-		},
-		server: {
-			serverName: "cloudflare",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "@cloudflare/mcp-server-cloudflare"],
-			env: { CLOUDFLARE_API_TOKEN: "在此填入你的 Cloudflare API Token" },
-		},
-		inputs: ["env.CLOUDFLARE_API_TOKEN"],
-	},
-	{
-		id: "supabase",
-		name: "Supabase",
-		description: {
-			zh: "Supabase 官方 MCP：管理数据库 / 表 / 数据（Personal Access Token）。",
-			en: "Official Supabase MCP: manage databases, tables, and data (Personal Access Token).",
-		},
-		server: {
-			serverName: "supabase",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "@supabase/mcp-server-supabase"],
-			env: { SUPABASE_ACCESS_TOKEN: "在此填入你的 Supabase Personal Access Token" },
-		},
-		inputs: ["env.SUPABASE_ACCESS_TOKEN"],
-	},
-	{
-		id: "kubernetes",
-		name: "Kubernetes",
-		description: {
-			zh: "Kubernetes MCP：像 kubectl 一样管理集群资源（使用本机 kubeconfig）。",
-			en: "Kubernetes MCP: manage cluster resources like kubectl (uses your local kubeconfig).",
-		},
-		server: {
-			serverName: "kubernetes",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "kubernetes-mcp-server"],
-		},
-	},
+export const PRESETS = presetCatalog.presets;
 
-
-	// ---- 办公协作 / 数据存储 / 更多开发 ----
-	{
-		id: "git",
-		name: "Git",
-		description: {
-			zh: "GitHub 官方 Git MCP：仓库状态 / 分支 / 提交 / 暂存 / 差异（本地 git 操作）。",
-			en: "Official GitHub Git MCP: repository status, branches, commits, staging, diffs (local git).",
-		},
-		server: {
-			serverName: "git",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "git-mcp"],
-		},
-	},
-	{
-		id: "notion",
-		name: "Notion",
-		description: {
-			zh: "Notion 官方 MCP：搜索 / 读写页面、数据库与评论（NOTION_TOKEN，集成创建于 notion.so/my-integrations）。",
-			en: "Official Notion MCP: search/read/write pages, databases and comments (NOTION_TOKEN from an integration).",
-		},
-		server: {
-			serverName: "notion",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "@notionhq/notion-mcp-server"],
-			env: { NOTION_TOKEN: "在此填入你的 Notion Integration Token" },
-		},
-		inputs: ["env.NOTION_TOKEN"],
-	},
-	{
-		id: "figma",
-		name: "Figma",
-		description: {
-			zh: "Figma 官方开发者 MCP：读取设计文件 / 组件 / 样式，辅助实现设计稿。",
-			en: "Official Figma developer MCP: read design files, components and styles.",
-		},
-		server: {
-			serverName: "figma",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "figma-developer-mcp"],
-			env: { FIGMA_API_KEY: "在此填入你的 Figma Personal Access Token" },
-		},
-		inputs: ["env.FIGMA_API_KEY"],
-	},
-	{
-		id: "atlassian",
-		name: "Atlassian",
-		description: {
-			zh: "Atlassian 官方 MCP：Jira / Confluence 查询与操作（实例地址 + API Token）。",
-			en: "Official Atlassian MCP: query and manage Jira/Confluence (instance URL + API token).",
-		},
-		server: {
-			serverName: "atlassian",
-			transport: "stdio",
-			command: "uvx",
-			args: ["mcp-atlassian"],
-			env: {
-				ATLASSIAN_INSTANCE_URL: "https://your-domain.atlassian.net（在此填入你的 Atlassian 实例地址）",
-				ATLASSIAN_API_TOKEN: "在此填入你的 Atlassian API Token",
-			},
-		},
-		inputs: ["env.ATLASSIAN_INSTANCE_URL", "env.ATLASSIAN_API_TOKEN"],
-	},
-	{
-		id: "exa",
-		name: "Exa",
-		description: {
-			zh: "Exa 官方 MCP：语义搜索 / 网页内容抓取 / 多步研究。",
-			en: "Official Exa MCP: semantic search, content fetching, multi-step research.",
-		},
-		server: {
-			serverName: "exa",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "exa-mcp-server"],
-			env: { EXA_API_KEY: "在此填入你的 Exa API Key" },
-		},
-		inputs: ["env.EXA_API_KEY"],
-	},
-	{
-		id: "deepwiki",
-		name: "DeepWiki",
-		description: {
-			zh: "DeepWiki 文档检索：查询代码仓库的 DeepWiki 文档。",
-			en: "DeepWiki: query DeepWiki documentation for code repositories.",
-		},
-		server: {
-			serverName: "deepwiki",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "deepwiki-mcp"],
-		},
-	},
-	{
-		id: "mysql",
-		name: "MySQL",
-		description: {
-			zh: "MySQL 数据库：只读查询与 schema 检查（MYSQL_HOST / USER / PASSWORD / DATABASE）。",
-			en: "MySQL database: read-only queries and schema inspection (host/user/password/database).",
-		},
-		server: {
-			serverName: "mysql",
-			transport: "stdio",
-			command: "uvx",
-			args: ["mysql-mcp-server"],
-			env: {
-				MYSQL_HOST: "127.0.0.1",
-				MYSQL_USER: "在此填入你的 MySQL 用户名",
-				MYSQL_PASSWORD: "在此填入你的 MySQL 密码",
-				MYSQL_DATABASE: "在此填入你的数据库名",
-			},
-		},
-		inputs: ["env.MYSQL_USER", "env.MYSQL_PASSWORD", "env.MYSQL_DATABASE"],
-	},
-	{
-		id: "chroma",
-		name: "Chroma",
-		description: {
-			zh: "Chroma 官方向量数据库 MCP：集合 / 文档 / 检索（默认本机 localhost:8000）。",
-			en: "Official Chroma vector database MCP: collections, documents, retrieval (default localhost:8000).",
-		},
-		server: {
-			serverName: "chroma",
-			transport: "stdio",
-			command: "uvx",
-			args: ["chroma-mcp"],
-		},
-	},
-	{
-		id: "posthog",
-		name: "PostHog",
-		description: {
-			zh: "PostHog 官方 MCP：产品分析 / 事件 / 洞察查询（Personal API Key + 项目 ID）。",
-			en: "Official PostHog MCP: product analytics, events, insights (personal API key + project id).",
-		},
-		server: {
-			serverName: "posthog",
-			transport: "stdio",
-			command: "npx",
-			args: ["-y", "posthog-mcp"],
-			env: {
-				POSTHOG_PERSONAL_API_KEY: "在此填入你的 PostHog Personal API Key",
-				POSTHOG_PROJECT_ID: "在此填入你的 PostHog 项目 ID",
-			},
-		},
-		inputs: ["env.POSTHOG_PERSONAL_API_KEY", "env.POSTHOG_PROJECT_ID"],
-	},
-];
-
-
-/**
- * 预设分类：显式的 id → 预设 id 集合映射，展示顺序即此处顺序。
- * 未列出的预设归入 `other`（UI 显示「其他」）。
- */
-export const PRESET_CATEGORIES = [
-	{
-		id: "dev",
-		zh: "通用开发",
-		en: "Development",
-		presetIds: [
-			"github", "filesystem", "memory", "sequential-thinking", "time", "fetch",
-			"brave-search", "puppeteer", "slack", "sentry", "everything", "git", "deepwiki",
-		],
-	},
-	{
-		id: "git",
-		zh: "代码托管",
-		en: "Code Hosting",
-		presetIds: ["gitlab", "gitea"],
-	},
-	{
-		id: "browser",
-		zh: "浏览器 / Web",
-		en: "Browser & Web",
-		presetIds: ["playwright", "chrome-devtools"],
-	},
-	{
-		id: "intel",
-		zh: "搜索 / 情报",
-		en: "Search & Intel",
-		presetIds: ["tavily", "firecrawl", "urlscan", "context7", "exa"],
-	},
-	{
-		id: "office",
-		zh: "办公 / 协作",
-		en: "Productivity",
-		presetIds: ["notion", "figma", "atlassian"],
-	},
-	{
-		id: "data",
-		zh: "数据 / 数据库",
-		en: "Data & Databases",
-		presetIds: ["postgres", "sqlite", "mysql", "chroma", "posthog"],
-	},
-	{
-		id: "cloud",
-		zh: "云服务",
-		en: "Cloud",
-		presetIds: ["cloudflare", "supabase", "kubernetes"],
-	},
-	{
-		id: "reversing",
-		zh: "逆向 / 安全",
-		en: "Reversing & Security",
-		presetIds: ["reqable", "ida-pro", "ghidra", "binary-ninja", "frida", "jadx", "virustotal", "x64dbg", "cyberchef"],
-	},
-];
+/** 内置预设分类（同上，展示顺序即数组顺序）。 */
+export const PRESET_CATEGORIES = presetCatalog.categories;
 
 /** 预设 id → 分类 id。 */
 export function categoryOf(presetId) {
@@ -783,6 +76,87 @@ export const PLACEHOLDER_VALUES = new Set(
 		...(preset.server.args ?? []).filter((value) => typeof value === "string"),
 	]).filter((value) => value.includes(PLACEHOLDER_MARKER)),
 );
+
+/** 在线预设目录默认地址（dsh-plugins 仓库内的 presets.json，公开 raw）。 */
+export const DEFAULT_PRESET_URL = "https://hub.ifunx.com/skyle1995/dsh-plugins/raw/branch/main/packages/dsh-plugin-mcp/presets.json";
+
+/** 预设缓存文件名（与状态文件同级，拉取成功后落盘、断网时兜底）。 */
+export const PRESET_CACHE_FILENAME = "presets-cache.json";
+
+/** 从一组预设收集占位值（含「在此填入」标记的 env 值 / 参数）。 */
+export function placeholderValuesOf(presets) {
+	return new Set(
+		(presets ?? []).flatMap((preset) => [
+			...Object.values(preset.server?.env ?? {}),
+			...(preset.server?.args ?? []).filter((value) => typeof value === "string"),
+		]).filter((value) => typeof value === "string" && value.includes(PLACEHOLDER_MARKER)),
+	);
+}
+
+/**
+ * 校验并规范化在线目录载荷。结构非法时抛 McpError（mcp/preset-invalid），
+ * 调用方决定回退策略（缓存 / 内置）。
+ * @param raw - 远程 JSON 解析结果。
+ * @returns { version, categories, presets }。
+ */
+export function validatePresetCatalog(raw) {
+	if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+		throw new McpError("mcp/preset-invalid", "预设目录必须是对象");
+	}
+	const { categories, presets } = raw;
+	if (!Array.isArray(categories) || categories.length === 0) {
+		throw new McpError("mcp/preset-invalid", "预设目录缺少 categories 数组");
+	}
+	if (!Array.isArray(presets) || presets.length === 0) {
+		throw new McpError("mcp/preset-invalid", "预设目录缺少 presets 数组");
+	}
+	const categoryIds = new Set();
+	for (const category of categories) {
+		if (category === null || typeof category !== "object" || typeof category.id !== "string" || category.id === "") {
+			throw new McpError("mcp/preset-invalid", "分类缺少合法 id");
+		}
+		if (categoryIds.has(category.id)) throw new McpError("mcp/preset-invalid", `分类 id 重复：${category.id}`);
+		categoryIds.add(category.id);
+		if (!Array.isArray(category.presetIds)) throw new McpError("mcp/preset-invalid", `分类 ${category.id} 缺少 presetIds 数组`);
+	}
+	const presetIds = new Set();
+	for (const preset of presets) {
+		if (preset === null || typeof preset !== "object" || typeof preset.id !== "string" || preset.id === "") {
+			throw new McpError("mcp/preset-invalid", "预设缺少合法 id");
+		}
+		if (presetIds.has(preset.id)) throw new McpError("mcp/preset-invalid", `预设 id 重复：${preset.id}`);
+		presetIds.add(preset.id);
+		const server = preset.server;
+		if (server === null || typeof server !== "object" || typeof server.serverName !== "string" || server.serverName === "") {
+			throw new McpError("mcp/preset-invalid", `预设 ${preset.id} 缺少 server.serverName`);
+		}
+		if (server.transport !== "stdio" && server.transport !== "streamable-http") {
+			throw new McpError("mcp/preset-invalid", `预设 ${preset.id} 的 transport 非法`);
+		}
+	}
+	return { version: Number.isInteger(raw.version) ? raw.version : 1, categories, presets };
+}
+
+/**
+ * 拉取并校验在线预设目录。网络 / HTTP / JSON / 结构错误均抛
+ * McpError（mcp/preset-fetch / mcp/preset-invalid），由调用方决定回退。
+ * @param url - 目录地址。
+ * @param timeoutMs - 超时（毫秒）。
+ * @param fetchImpl - 可注入替身用于测试。
+ * @returns 校验后的目录。
+ */
+export async function fetchPresetCatalog(url, timeoutMs, fetchImpl = fetch) {
+	const response = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) });
+	if (!response.ok) throw new McpError("mcp/preset-fetch", `预设目录 HTTP ${response.status}：${url}`);
+	const text = await response.text();
+	let raw;
+	try {
+		raw = JSON.parse(text);
+	} catch {
+		throw new McpError("mcp/preset-fetch", `预设目录不是合法 JSON：${url}`);
+	}
+	return validatePresetCatalog(raw);
+}
 
 /** Fiber 状态（cordis）：2 = active。 */
 const FIBER_ACTIVE = 2;
@@ -927,6 +301,10 @@ export class McpManagerService extends Service {
 	static Config = Schema.object({
 		/** 状态文件绝对路径；留空自动使用 <profileDir>/mcp-servers.json */
 		stateFile: Schema.string().default(""),
+		/** 在线预设目录地址；留空用默认（dsh-plugins 仓库 presets.json），"off" 禁用在线目录 */
+		presetUrl: Schema.string().default(""),
+		/** 在线目录拉取超时（毫秒） */
+		presetFetchTimeoutMs: Schema.number().default(10000),
 	});
 
 	constructor(ctx, config) {
@@ -938,6 +316,16 @@ export class McpManagerService extends Service {
 		this.conflicts = new Map();
 		this.syncScheduled = false;
 		this.syncRunning = false;
+		// 活动预设目录：初始为内置（随包 presets.json），启动后异步拉取在线目录，
+		// 失败回退缓存 / 内置。placeholderValues 与 categories 均随活动目录变化。
+		this.presets = PRESETS;
+		this.categories = PRESET_CATEGORIES;
+		this.placeholderValues = PLACEHOLDER_VALUES;
+		this.presetSource = "bundled";
+		this.presetFetchedAt = null;
+		this.presetError = null;
+		this.presetUrl = config.presetUrl === "" ? DEFAULT_PRESET_URL : config.presetUrl === "off" ? null : config.presetUrl;
+		this.presetCacheFile = null;
 
 		const dir = profileDirOf(ctx);
 		this.stateFile = config.stateFile !== "" ? config.stateFile : dir !== null ? join(dir, STATE_FILENAME) : null;
@@ -952,6 +340,13 @@ export class McpManagerService extends Service {
 
 		// 树写回 / 补丁热重载会整体重建 include 子树，受管条目可能被清掉；
 		// 任何 config-update 后重新投影（幂等，微任务去抖，避免重入）。
+		if (this.stateFile !== null) {
+			this.presetCacheFile = join(dirname(this.stateFile), PRESET_CACHE_FILENAME);
+		}
+		if (this.presetUrl !== null) {
+			void this.loadRemotePresets("activate");
+		}
+
 		ctx.on("loader/config-update", () => this.scheduleSync("loader/config-update"));
 		void this.sync("activate").catch((error) => {
 			ctx.logger.warn(`dsh-plugin-mcp 初始同步失败：${error?.message ?? error}`);
@@ -979,6 +374,76 @@ export class McpManagerService extends Service {
 			}, "dsh-plugin-mcp: HTTP routes");
 			ctx.logger.info(`dsh-plugin-mcp 路由已注册：${SERVERS_ROUTE} 等`);
 		});
+	}
+
+	/** 活动目录里的分类 id 查找。 */
+	categoryOfActive(presetId) {
+		for (const category of this.categories) {
+			if (category.presetIds.includes(presetId)) return category.id;
+		}
+		return "other";
+	}
+
+	/** 应用一份已校验的目录（远程 / 缓存），更新占位值集合与来源状态。 */
+	applyPresetCatalog(catalog, source) {
+		this.presets = catalog.presets;
+		this.categories = catalog.categories;
+		this.placeholderValues = placeholderValuesOf(catalog.presets);
+		this.presetSource = source;
+		this.presetFetchedAt = new Date().toISOString();
+		this.presetError = null;
+	}
+
+	/** 在线目录信息（GET 与刷新接口共用）。 */
+	presetInfo() {
+		return {
+			presetUrl: this.presetUrl,
+			presetSource: this.presetSource,
+			presetFetchedAt: this.presetFetchedAt,
+			presetError: this.presetError,
+		};
+	}
+
+	/**
+	 * 拉取在线预设目录：成功 → 生效并写缓存；失败 → 回退缓存文件，再回退内置。
+	 * 永不抛出：错误只记录进 presetError，保证激活与列表接口可用。
+	 */
+	async loadRemotePresets(reason) {
+		try {
+			const catalog = await fetchPresetCatalog(this.presetUrl, this.config.presetFetchTimeoutMs);
+			this.applyPresetCatalog(catalog, "remote");
+			if (this.presetCacheFile !== null) {
+				try {
+					const tmp = `${this.presetCacheFile}.tmp`;
+					writeFileSync(tmp, JSON.stringify(catalog, null, "\t") + "\n");
+					renameSync(tmp, this.presetCacheFile);
+				} catch (error) {
+					this.ctx.logger.warn(`dsh-plugin-mcp 预设缓存写入失败：${error?.message ?? error}`);
+				}
+			}
+			this.ctx.logger.info(`dsh-plugin-mcp 在线预设已生效（${reason}）：${catalog.presets.length} 个预设`);
+		} catch (error) {
+			this.presetError = error?.message ?? String(error);
+			if (this.presetCacheFile !== null) {
+				try {
+					const cached = validatePresetCatalog(JSON.parse(readFileSync(this.presetCacheFile, "utf8")));
+					if (this.presetSource === "bundled") this.applyPresetCatalog(cached, "cache");
+					this.ctx.logger.info(`dsh-plugin-mcp 预设回退缓存（${reason}）：${cached.presets.length} 个预设`);
+					return;
+				} catch {
+					// 缓存不可用 → 保持内置。
+				}
+			}
+			this.ctx.logger.warn(`dsh-plugin-mcp 在线预设拉取失败（${reason}），保持内置：${this.presetError}`);
+		}
+	}
+
+	/** 手动刷新在线预设目录（POST refresh-presets 操作）。 */
+	async refreshPresets() {
+		if (this.presetUrl === null) throw new McpError("mcp/preset-off", "在线预设目录未启用（presetUrl: off）");
+		this.presetError = null;
+		await this.loadRemotePresets("refresh");
+		return this.presetInfo();
 	}
 
 	/** 去抖的重新投影（config-update 在树写回期间同步发出，微任务延后执行）。 */
@@ -1071,17 +536,17 @@ export class McpManagerService extends Service {
 		const { config, disabled, note } = normalizeServer(raw);
 		// 预设占位值不能直接保存：用户必须先替换成真实值（如 Token / 路径）。
 		for (const [key, value] of Object.entries(config.env ?? {})) {
-			if (PLACEHOLDER_VALUES.has(value)) {
+			if (this.placeholderValues.has(value)) {
 				throw new McpError("mcp/placeholder", `请先填写 ${key}：预设占位值不能直接保存`);
 			}
 		}
 		for (const [index, value] of (config.args ?? []).entries()) {
-			if (typeof value === "string" && PLACEHOLDER_VALUES.has(value)) {
+			if (typeof value === "string" && this.placeholderValues.has(value)) {
 				throw new McpError("mcp/placeholder", `请先填写 args[${index}]：预设占位值不能直接保存`);
 			}
 		}
 		for (const [key, value] of Object.entries(config.headers ?? {})) {
-			if (PLACEHOLDER_VALUES.has(value)) {
+			if (this.placeholderValues.has(value)) {
 				throw new McpError("mcp/placeholder", `请先填写 ${key}：预设占位值不能直接保存`);
 			}
 		}
@@ -1192,7 +657,7 @@ export class McpManagerService extends Service {
 			...this.servers.map((server) => server.serverName),
 			...this.manualEntries().map((entry) => entry.options.config?.serverName).filter((name) => typeof name === "string"),
 		]);
-		return PRESETS.map((preset) => ({ ...preset, category: categoryOf(preset.id), added: names.has(preset.server.serverName) }));
+		return this.presets.map((preset) => ({ ...preset, category: this.categoryOfActive(preset.id), added: names.has(preset.server.serverName) }));
 	}
 
 	/** GET {SERVERS_ROUTE} —— 列表 + 手工条目 + 预设目录 + 状态文件信息。 */
@@ -1210,8 +675,9 @@ export class McpManagerService extends Service {
 				ok: true,
 				stateFile: this.stateFile,
 				corrupt: this.stateCorrupt,
-				categories: PRESET_CATEGORIES.map(({ presetIds, ...category }) => category),
+				categories: this.categories.map(({ presetIds, ...category }) => category),
 				presets: this.presetsView(),
+				...this.presetInfo(),
 				...this.snapshot(),
 			});
 		} catch (error) {
@@ -1263,6 +729,11 @@ export class McpManagerService extends Service {
 				}
 				await this.setEnabled(serverName, body.enabled === true);
 				payload(200, { ok: true, ...this.snapshot() });
+				return;
+			}
+			if (operation === "refresh-presets") {
+				await this.refreshPresets();
+				payload(200, { ok: true, categories: this.categories.map(({ presetIds, ...category }) => category), presets: this.presetsView(), ...this.presetInfo(), ...this.snapshot() });
 				return;
 			}
 			if (operation === "detail") {

@@ -24,9 +24,11 @@ dsh plugin --profile <profile> add \
 条目）与**「预设」**（一键添加）。没有已安装服务器时默认落在预设页；预设
 直存成功后自动切回已安装页。
 
-- **热门预设（一键添加）**：内置 33 个常用 MCP 服务器预设，按**六个分类**
+- **热门预设（一键添加）**：内置 42 个常用 MCP 服务器预设，按**八个分类**
   分组展示（分类 chips 位于搜索框下方第二行），支持**搜索**（名称 / 描述）
-  与分类筛选：
+  与分类筛选。预设目录**在线更新**：默认从 dsh-plugins 仓库拉取
+  `presets.json`（成功后落盘缓存、断网回退缓存 / 内置），新增预设只需更新
+  仓库文件、无需升级插件；面板显示预设源与更新时间，可点「刷新预设」手动拉取：
   - **通用开发**：GitHub、Filesystem、Memory、Sequential Thinking、Time、Fetch、
     Brave Search、Puppeteer、Slack、Sentry、PostgreSQL、SQLite、Everything；
   - **代码托管**：GitLab、Gitea（官方，自建实例支持——GITEA_HOST 填你的地址）；

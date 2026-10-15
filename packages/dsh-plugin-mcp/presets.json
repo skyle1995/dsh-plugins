@@ -1,0 +1,961 @@
+{
+	"version": 1,
+	"categories": [
+		{
+			"id": "dev",
+			"zh": "通用开发",
+			"en": "Development",
+			"presetIds": [
+				"github",
+				"filesystem",
+				"memory",
+				"sequential-thinking",
+				"time",
+				"fetch",
+				"brave-search",
+				"puppeteer",
+				"slack",
+				"sentry",
+				"everything",
+				"git",
+				"deepwiki"
+			]
+		},
+		{
+			"id": "git",
+			"zh": "代码托管",
+			"en": "Code Hosting",
+			"presetIds": [
+				"gitlab",
+				"gitea"
+			]
+		},
+		{
+			"id": "browser",
+			"zh": "浏览器 / Web",
+			"en": "Browser & Web",
+			"presetIds": [
+				"playwright",
+				"chrome-devtools"
+			]
+		},
+		{
+			"id": "intel",
+			"zh": "搜索 / 情报",
+			"en": "Search & Intel",
+			"presetIds": [
+				"tavily",
+				"firecrawl",
+				"urlscan",
+				"context7",
+				"exa"
+			]
+		},
+		{
+			"id": "office",
+			"zh": "办公 / 协作",
+			"en": "Productivity",
+			"presetIds": [
+				"notion",
+				"figma",
+				"atlassian"
+			]
+		},
+		{
+			"id": "data",
+			"zh": "数据 / 数据库",
+			"en": "Data & Databases",
+			"presetIds": [
+				"postgres",
+				"sqlite",
+				"mysql",
+				"chroma",
+				"posthog"
+			]
+		},
+		{
+			"id": "cloud",
+			"zh": "云服务",
+			"en": "Cloud",
+			"presetIds": [
+				"cloudflare",
+				"supabase",
+				"kubernetes"
+			]
+		},
+		{
+			"id": "reversing",
+			"zh": "逆向 / 安全",
+			"en": "Reversing & Security",
+			"presetIds": [
+				"reqable",
+				"ida-pro",
+				"ghidra",
+				"binary-ninja",
+				"frida",
+				"jadx",
+				"virustotal",
+				"x64dbg",
+				"cyberchef"
+			]
+		}
+	],
+	"presets": [
+		{
+			"id": "github",
+			"name": "GitHub",
+			"description": {
+				"zh": "GitHub 仓库管理：创建 Issue / PR、搜索代码与仓库。",
+				"en": "GitHub repos: create issues/PRs, search code and repositories."
+			},
+			"server": {
+				"serverName": "github",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"@modelcontextprotocol/server-github"
+				],
+				"env": {
+					"GITHUB_PERSONAL_ACCESS_TOKEN": "在此填入你的 GitHub Token（Settings → Developer settings → Personal access tokens）"
+				}
+			},
+			"inputs": [
+				"env.GITHUB_PERSONAL_ACCESS_TOKEN"
+			]
+		},
+		{
+			"id": "filesystem",
+			"name": "Filesystem",
+			"description": {
+				"zh": "安全的文件系统访问：读写 / 搜索 / 列目录（限定允许目录）。",
+				"en": "Secure filesystem access: read/write/search/list within allowed directories."
+			},
+			"server": {
+				"serverName": "filesystem",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"@modelcontextprotocol/server-filesystem",
+					"/在此填入允许访问的目录绝对路径"
+				]
+			},
+			"inputs": [
+				"args[2]"
+			]
+		},
+		{
+			"id": "memory",
+			"name": "Memory",
+			"description": {
+				"zh": "知识图谱记忆：跨会话记住实体与关系。",
+				"en": "Knowledge-graph memory: remember entities and relations across sessions."
+			},
+			"server": {
+				"serverName": "memory",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"@modelcontextprotocol/server-memory"
+				]
+			}
+		},
+		{
+			"id": "sequential-thinking",
+			"name": "Sequential Thinking",
+			"description": {
+				"zh": "结构化分步思考：复杂推理的思维链工具。",
+				"en": "Structured step-by-step thinking for complex reasoning."
+			},
+			"server": {
+				"serverName": "sequential-thinking",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"@modelcontextprotocol/server-sequential-thinking"
+				]
+			}
+		},
+		{
+			"id": "time",
+			"name": "Time",
+			"description": {
+				"zh": "时间与时区：获取当前时间、换算时区。",
+				"en": "Time and timezones: current time and zone conversion."
+			},
+			"server": {
+				"serverName": "time",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"@modelcontextprotocol/server-time"
+				]
+			}
+		},
+		{
+			"id": "fetch",
+			"name": "Fetch",
+			"description": {
+				"zh": "网页抓取：把 URL 内容转成 Markdown。",
+				"en": "Web fetching: convert URLs to Markdown content."
+			},
+			"server": {
+				"serverName": "fetch",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"@modelcontextprotocol/server-fetch"
+				]
+			}
+		},
+		{
+			"id": "brave-search",
+			"name": "Brave Search",
+			"description": {
+				"zh": "Brave 网络搜索：网页 / 本地 / 新闻检索。",
+				"en": "Brave web search: web/local/news queries."
+			},
+			"server": {
+				"serverName": "brave-search",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"@modelcontextprotocol/server-brave-search"
+				],
+				"env": {
+					"BRAVE_API_KEY": "在此填入你的 Brave Search API Key"
+				}
+			},
+			"inputs": [
+				"env.BRAVE_API_KEY"
+			]
+		},
+		{
+			"id": "puppeteer",
+			"name": "Puppeteer",
+			"description": {
+				"zh": "浏览器自动化：导航、截图、点击、执行 JS。",
+				"en": "Browser automation: navigate, screenshot, click, run JS."
+			},
+			"server": {
+				"serverName": "puppeteer",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"@modelcontextprotocol/server-puppeteer"
+				]
+			}
+		},
+		{
+			"id": "gitlab",
+			"name": "GitLab",
+			"description": {
+				"zh": "GitLab 仓库管理：Issue / MR / 仓库操作。",
+				"en": "GitLab repos: issues, merge requests, and repo operations."
+			},
+			"server": {
+				"serverName": "gitlab",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"@modelcontextprotocol/server-gitlab"
+				],
+				"env": {
+					"GITLAB_PERSONAL_ACCESS_TOKEN": "在此填入你的 GitLab Personal Access Token"
+				}
+			},
+			"inputs": [
+				"env.GITLAB_PERSONAL_ACCESS_TOKEN"
+			]
+		},
+		{
+			"id": "slack",
+			"name": "Slack",
+			"description": {
+				"zh": "Slack 工作区：频道 / 消息 / 线程 / 用户管理。",
+				"en": "Slack workspace: channels, messages, threads, users."
+			},
+			"server": {
+				"serverName": "slack",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"@modelcontextprotocol/server-slack"
+				],
+				"env": {
+					"SLACK_BOT_TOKEN": "在此填入你的 Slack Bot Token（xoxb-...）",
+					"SLACK_TEAM_ID": "在此填入你的 Slack Team ID"
+				}
+			},
+			"inputs": [
+				"env.SLACK_BOT_TOKEN",
+				"env.SLACK_TEAM_ID"
+			]
+		},
+		{
+			"id": "sentry",
+			"name": "Sentry",
+			"description": {
+				"zh": "Sentry 错误追踪：查询 issue 与事件。",
+				"en": "Sentry error tracking: query issues and events."
+			},
+			"server": {
+				"serverName": "sentry",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"@modelcontextprotocol/server-sentry"
+				],
+				"env": {
+					"SENTRY_TOKEN": "在此填入你的 Sentry Auth Token"
+				}
+			},
+			"inputs": [
+				"env.SENTRY_TOKEN"
+			]
+		},
+		{
+			"id": "postgres",
+			"name": "PostgreSQL",
+			"description": {
+				"zh": "PostgreSQL 数据库：只读查询与 schema 检查。",
+				"en": "PostgreSQL database: read-only queries and schema inspection."
+			},
+			"server": {
+				"serverName": "postgres",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"@modelcontextprotocol/server-postgres",
+					"postgresql://user:password@localhost:5432/dbname（在此填入你的连接串）"
+				]
+			},
+			"inputs": [
+				"args[2]"
+			]
+		},
+		{
+			"id": "sqlite",
+			"name": "SQLite",
+			"description": {
+				"zh": "SQLite 数据库：查询与 schema 检查。",
+				"en": "SQLite database: queries and schema inspection."
+			},
+			"server": {
+				"serverName": "sqlite",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"@modelcontextprotocol/server-sqlite",
+					"/在此填入数据库文件绝对路径"
+				]
+			},
+			"inputs": [
+				"args[2]"
+			]
+		},
+		{
+			"id": "everything",
+			"name": "Everything",
+			"description": {
+				"zh": "演示 / 测试服务器：覆盖各种 MCP 特性（echo、日志、资源）。",
+				"en": "Demo/test server: covers assorted MCP features (echo, logging, resources)."
+			},
+			"server": {
+				"serverName": "everything",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"@modelcontextprotocol/server-everything"
+				]
+			}
+		},
+		{
+			"id": "reqable",
+			"name": "Reqable",
+			"description": {
+				"zh": "Reqable 抓包调试：分析抓包记录、断点 / 重写 / 脚本规则、API 集合管理（需本机 Reqable v3.2.0+ 运行中）。",
+				"en": "Reqable traffic capture: analyze captures, breakpoints/rewrites/scripts, API collections (requires Reqable v3.2.0+ running locally)."
+			},
+			"server": {
+				"serverName": "reqable",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"reqable-mcp-server"
+				]
+			}
+		},
+		{
+			"id": "ida-pro",
+			"name": "IDA Pro",
+			"description": {
+				"zh": "Hex-Rays 官方 IDA MCP：反编译 / 反汇编 / 交叉引用 / 重命名 / 调试（需 IDA Pro 9.4+ 与 idalib，且已安装 uv）。",
+				"en": "Official Hex-Rays IDA MCP: decompile/disassemble/xrefs/rename/debug (requires IDA Pro 9.4+ with idalib and uv)."
+			},
+			"server": {
+				"serverName": "ida-pro",
+				"transport": "stdio",
+				"command": "uvx",
+				"args": [
+					"--exclude-newer=1s",
+					"ida-mcp",
+					"stdio",
+					"--agent=dsh"
+				]
+			}
+		},
+		{
+			"id": "ghidra",
+			"name": "Ghidra",
+			"description": {
+				"zh": "Ghidra 逆向：反编译 / 自动重命名 / 交叉引用（需 Ghidra 12.1.4+ 并安装 GhidraMCP 插件，默认本地 8080）。",
+				"en": "Ghidra reversing: decompile/rename/xrefs (requires Ghidra 12.1.4+ with the GhidraMCP plugin, default local 8080)."
+			},
+			"server": {
+				"serverName": "ghidra",
+				"transport": "stdio",
+				"command": "uvx",
+				"args": [
+					"--from",
+					"git+https://github.com/LaurieWired/GhidraMCP",
+					"ghidra-mcp",
+					"--ghidra-server",
+					"http://127.0.0.1:8080/"
+				]
+			}
+		},
+		{
+			"id": "binary-ninja",
+			"name": "Binary Ninja",
+			"description": {
+				"zh": "Binary Ninja 逆向：反编译 / IL / 交叉引用 / 重命名 / 补丁（需安装 binary_ninja_mcp 插件，默认本地 9009）。",
+				"en": "Binary Ninja reversing: decompile/IL/xrefs/rename/patch (requires the binary_ninja_mcp plugin, default local 9009)."
+			},
+			"server": {
+				"serverName": "binary-ninja",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"binary-ninja-mcp",
+					"--host",
+					"localhost",
+					"--port",
+					"9009"
+				]
+			}
+		},
+		{
+			"id": "frida",
+			"name": "Frida",
+			"description": {
+				"zh": "Frida 动态插桩：进程 / 设备管理、attach / spawn、JS 脚本注入与交互式 REPL。",
+				"en": "Frida dynamic instrumentation: process/device management, attach/spawn, JS injection and interactive REPL."
+			},
+			"server": {
+				"serverName": "frida",
+				"transport": "stdio",
+				"command": "uvx",
+				"args": [
+					"frida-mcp-server"
+				]
+			}
+		},
+		{
+			"id": "jadx",
+			"name": "JADX",
+			"description": {
+				"zh": "Android 逆向：操控 JADX 分析 APK / DEX（反编译、搜索、交叉引用）。需先按 jadx-ai-mcp 文档安装 JADX 插件并克隆仓库。",
+				"en": "Android reversing: drive JADX to analyze APK/DEX (decompile, search, xrefs). Install the JADX plugin and clone jadx-ai-mcp first."
+			},
+			"server": {
+				"serverName": "jadx",
+				"transport": "stdio",
+				"command": "uv",
+				"args": [
+					"--directory",
+					"/在此填入 jadx-ai-mcp/jadx-mcp-server 目录绝对路径",
+					"run",
+					"jadx_mcp_server.py"
+				]
+			},
+			"inputs": [
+				"args[1]"
+			]
+		},
+		{
+			"id": "virustotal",
+			"name": "VirusTotal",
+			"description": {
+				"zh": "官方 VirusTotal MCP（VTAI）：文件 / URL / 域名 / IP 威胁情报查询与提交分析。需先在 ai.virustotal.com 创建 VTAI Agent Token。",
+				"en": "Official VirusTotal MCP (VTAI): file/URL/domain/IP threat intelligence and analysis submission. Create a VTAI Agent Token first."
+			},
+			"server": {
+				"serverName": "virustotal",
+				"transport": "stdio",
+				"command": "uvx",
+				"args": [
+					"vt-mcp"
+				],
+				"env": {
+					"VTAI_TOKEN_FILE": "在此填入你的 VTAI Agent Token 文件路径（如 ~/.config/vt-mcp/token）"
+				}
+			},
+			"inputs": [
+				"env.VTAI_TOKEN_FILE"
+			]
+		},
+		{
+			"id": "x64dbg",
+			"name": "x64dbg",
+			"description": {
+				"zh": "x64dbg 动态调试：加载 / 附加进程、断点、内存与寄存器、反汇编、恶意样本分诊（仅 Windows，首次自动下载 x64dbg）。",
+				"en": "x64dbg debugging: load/attach processes, breakpoints, memory/registers, disassembly, malware triage (Windows only; auto-downloads x64dbg)."
+			},
+			"server": {
+				"serverName": "x64dbg",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"x64dbg-mcp"
+				]
+			}
+		},
+		{
+			"id": "cyberchef",
+			"name": "CyberChef",
+			"description": {
+				"zh": "CyberChef 数据变换：加解密 / 编解码 / 压缩 / 哈希等 500+ 操作。",
+				"en": "CyberChef transformations: 500+ encryption/encoding/compression/hashing operations."
+			},
+			"server": {
+				"serverName": "cyberchef",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"cyberchef-mcp"
+				]
+			}
+		},
+		{
+			"id": "gitea",
+			"name": "Gitea",
+			"description": {
+				"zh": "Gitea 官方 MCP：仓库 / Issue / PR / Wiki / Actions / 文件管理，支持自建实例（GITEA_HOST 填你的实例地址，令牌在 设置 → 应用 生成）。",
+				"en": "Official Gitea MCP: repos/issues/PRs/wiki/actions/files, self-hosted instances supported (set GITEA_HOST to your instance; token from Settings → Applications)."
+			},
+			"server": {
+				"serverName": "gitea",
+				"transport": "stdio",
+				"command": "docker",
+				"args": [
+					"run",
+					"-i",
+					"--rm",
+					"-e",
+					"GITEA_ACCESS_TOKEN",
+					"-e",
+					"GITEA_HOST",
+					"docker.gitea.com/gitea-mcp-server"
+				],
+				"env": {
+					"GITEA_HOST": "https://gitea.com（在此填入你的 Gitea 地址，自建填你的实例 URL）",
+					"GITEA_ACCESS_TOKEN": "在此填入你的 Gitea Access Token"
+				}
+			},
+			"inputs": [
+				"env.GITEA_HOST",
+				"env.GITEA_ACCESS_TOKEN"
+			]
+		},
+		{
+			"id": "playwright",
+			"name": "Playwright",
+			"description": {
+				"zh": "微软官方浏览器自动化（MCP 版）：导航 / 点击 / 截图 / 表单 / 断言。",
+				"en": "Official Microsoft browser automation (MCP): navigate/click/screenshot/forms/assertions."
+			},
+			"server": {
+				"serverName": "playwright",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"@playwright/mcp@latest"
+				]
+			}
+		},
+		{
+			"id": "chrome-devtools",
+			"name": "Chrome DevTools",
+			"description": {
+				"zh": "官方 Chrome DevTools MCP：性能分析 / 网络 / 控制台 / 页面调试。",
+				"en": "Official Chrome DevTools MCP: performance, network, console, and page debugging."
+			},
+			"server": {
+				"serverName": "chrome-devtools",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"chrome-devtools-mcp@latest"
+				]
+			}
+		},
+		{
+			"id": "tavily",
+			"name": "Tavily",
+			"description": {
+				"zh": "Tavily 搜索：为 AI 优化的网络搜索。",
+				"en": "Tavily search: AI-optimized web search."
+			},
+			"server": {
+				"serverName": "tavily",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"tavily-mcp"
+				],
+				"env": {
+					"TAVILY_API_KEY": "在此填入你的 Tavily API Key"
+				}
+			},
+			"inputs": [
+				"env.TAVILY_API_KEY"
+			]
+		},
+		{
+			"id": "firecrawl",
+			"name": "Firecrawl",
+			"description": {
+				"zh": "Firecrawl 抓取：网页抓取 / 搜索 / 转 Markdown。",
+				"en": "Firecrawl: scrape/search and convert web pages to Markdown."
+			},
+			"server": {
+				"serverName": "firecrawl",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"firecrawl-mcp"
+				],
+				"env": {
+					"FIRECRAWL_API_KEY": "在此填入你的 Firecrawl API Key"
+				}
+			},
+			"inputs": [
+				"env.FIRECRAWL_API_KEY"
+			]
+		},
+		{
+			"id": "urlscan",
+			"name": "urlscan.io",
+			"description": {
+				"zh": "urlscan.io 扫描：提交 URL 扫描并读取结果（免费额度，无需 Key）。",
+				"en": "urlscan.io: submit URL scans and read results (free tier, no key required)."
+			},
+			"server": {
+				"serverName": "urlscan",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"urlscan-mcp"
+				]
+			}
+		},
+		{
+			"id": "context7",
+			"name": "Context7",
+			"description": {
+				"zh": "Context7 文档检索：查询最新库 / 框架文档。",
+				"en": "Context7: up-to-date library and framework documentation lookup."
+			},
+			"server": {
+				"serverName": "context7",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"@upstash/context7-mcp"
+				]
+			}
+		},
+		{
+			"id": "cloudflare",
+			"name": "Cloudflare",
+			"description": {
+				"zh": "Cloudflare 官方 MCP：管理 Workers / KV / D1 / R2 等资源。",
+				"en": "Official Cloudflare MCP: manage Workers, KV, D1, R2 and more."
+			},
+			"server": {
+				"serverName": "cloudflare",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"@cloudflare/mcp-server-cloudflare"
+				],
+				"env": {
+					"CLOUDFLARE_API_TOKEN": "在此填入你的 Cloudflare API Token"
+				}
+			},
+			"inputs": [
+				"env.CLOUDFLARE_API_TOKEN"
+			]
+		},
+		{
+			"id": "supabase",
+			"name": "Supabase",
+			"description": {
+				"zh": "Supabase 官方 MCP：管理数据库 / 表 / 数据（Personal Access Token）。",
+				"en": "Official Supabase MCP: manage databases, tables, and data (Personal Access Token)."
+			},
+			"server": {
+				"serverName": "supabase",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"@supabase/mcp-server-supabase"
+				],
+				"env": {
+					"SUPABASE_ACCESS_TOKEN": "在此填入你的 Supabase Personal Access Token"
+				}
+			},
+			"inputs": [
+				"env.SUPABASE_ACCESS_TOKEN"
+			]
+		},
+		{
+			"id": "kubernetes",
+			"name": "Kubernetes",
+			"description": {
+				"zh": "Kubernetes MCP：像 kubectl 一样管理集群资源（使用本机 kubeconfig）。",
+				"en": "Kubernetes MCP: manage cluster resources like kubectl (uses your local kubeconfig)."
+			},
+			"server": {
+				"serverName": "kubernetes",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"kubernetes-mcp-server"
+				]
+			}
+		},
+		{
+			"id": "git",
+			"name": "Git",
+			"description": {
+				"zh": "GitHub 官方 Git MCP：仓库状态 / 分支 / 提交 / 暂存 / 差异（本地 git 操作）。",
+				"en": "Official GitHub Git MCP: repository status, branches, commits, staging, diffs (local git)."
+			},
+			"server": {
+				"serverName": "git",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"git-mcp"
+				]
+			}
+		},
+		{
+			"id": "notion",
+			"name": "Notion",
+			"description": {
+				"zh": "Notion 官方 MCP：搜索 / 读写页面、数据库与评论（NOTION_TOKEN，集成创建于 notion.so/my-integrations）。",
+				"en": "Official Notion MCP: search/read/write pages, databases and comments (NOTION_TOKEN from an integration)."
+			},
+			"server": {
+				"serverName": "notion",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"@notionhq/notion-mcp-server"
+				],
+				"env": {
+					"NOTION_TOKEN": "在此填入你的 Notion Integration Token"
+				}
+			},
+			"inputs": [
+				"env.NOTION_TOKEN"
+			]
+		},
+		{
+			"id": "figma",
+			"name": "Figma",
+			"description": {
+				"zh": "Figma 官方开发者 MCP：读取设计文件 / 组件 / 样式，辅助实现设计稿。",
+				"en": "Official Figma developer MCP: read design files, components and styles."
+			},
+			"server": {
+				"serverName": "figma",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"figma-developer-mcp"
+				],
+				"env": {
+					"FIGMA_API_KEY": "在此填入你的 Figma Personal Access Token"
+				}
+			},
+			"inputs": [
+				"env.FIGMA_API_KEY"
+			]
+		},
+		{
+			"id": "atlassian",
+			"name": "Atlassian",
+			"description": {
+				"zh": "Atlassian 官方 MCP：Jira / Confluence 查询与操作（实例地址 + API Token）。",
+				"en": "Official Atlassian MCP: query and manage Jira/Confluence (instance URL + API token)."
+			},
+			"server": {
+				"serverName": "atlassian",
+				"transport": "stdio",
+				"command": "uvx",
+				"args": [
+					"mcp-atlassian"
+				],
+				"env": {
+					"ATLASSIAN_INSTANCE_URL": "https://your-domain.atlassian.net（在此填入你的 Atlassian 实例地址）",
+					"ATLASSIAN_API_TOKEN": "在此填入你的 Atlassian API Token"
+				}
+			},
+			"inputs": [
+				"env.ATLASSIAN_INSTANCE_URL",
+				"env.ATLASSIAN_API_TOKEN"
+			]
+		},
+		{
+			"id": "exa",
+			"name": "Exa",
+			"description": {
+				"zh": "Exa 官方 MCP：语义搜索 / 网页内容抓取 / 多步研究。",
+				"en": "Official Exa MCP: semantic search, content fetching, multi-step research."
+			},
+			"server": {
+				"serverName": "exa",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"exa-mcp-server"
+				],
+				"env": {
+					"EXA_API_KEY": "在此填入你的 Exa API Key"
+				}
+			},
+			"inputs": [
+				"env.EXA_API_KEY"
+			]
+		},
+		{
+			"id": "deepwiki",
+			"name": "DeepWiki",
+			"description": {
+				"zh": "DeepWiki 文档检索：查询代码仓库的 DeepWiki 文档。",
+				"en": "DeepWiki: query DeepWiki documentation for code repositories."
+			},
+			"server": {
+				"serverName": "deepwiki",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"deepwiki-mcp"
+				]
+			}
+		},
+		{
+			"id": "mysql",
+			"name": "MySQL",
+			"description": {
+				"zh": "MySQL 数据库：只读查询与 schema 检查（MYSQL_HOST / USER / PASSWORD / DATABASE）。",
+				"en": "MySQL database: read-only queries and schema inspection (host/user/password/database)."
+			},
+			"server": {
+				"serverName": "mysql",
+				"transport": "stdio",
+				"command": "uvx",
+				"args": [
+					"mysql-mcp-server"
+				],
+				"env": {
+					"MYSQL_HOST": "127.0.0.1",
+					"MYSQL_USER": "在此填入你的 MySQL 用户名",
+					"MYSQL_PASSWORD": "在此填入你的 MySQL 密码",
+					"MYSQL_DATABASE": "在此填入你的数据库名"
+				}
+			},
+			"inputs": [
+				"env.MYSQL_USER",
+				"env.MYSQL_PASSWORD",
+				"env.MYSQL_DATABASE"
+			]
+		},
+		{
+			"id": "chroma",
+			"name": "Chroma",
+			"description": {
+				"zh": "Chroma 官方向量数据库 MCP：集合 / 文档 / 检索（默认本机 localhost:8000）。",
+				"en": "Official Chroma vector database MCP: collections, documents, retrieval (default localhost:8000)."
+			},
+			"server": {
+				"serverName": "chroma",
+				"transport": "stdio",
+				"command": "uvx",
+				"args": [
+					"chroma-mcp"
+				]
+			}
+		},
+		{
+			"id": "posthog",
+			"name": "PostHog",
+			"description": {
+				"zh": "PostHog 官方 MCP：产品分析 / 事件 / 洞察查询（Personal API Key + 项目 ID）。",
+				"en": "Official PostHog MCP: product analytics, events, insights (personal API key + project id)."
+			},
+			"server": {
+				"serverName": "posthog",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"posthog-mcp"
+				],
+				"env": {
+					"POSTHOG_PERSONAL_API_KEY": "在此填入你的 PostHog Personal API Key",
+					"POSTHOG_PROJECT_ID": "在此填入你的 PostHog 项目 ID"
+				}
+			},
+			"inputs": [
+				"env.POSTHOG_PERSONAL_API_KEY",
+				"env.POSTHOG_PROJECT_ID"
+			]
+		}
+	]
+}

@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const pkgDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const { default: McpManagerService, McpError, entryIdOf, normalizeServer, saveStateFile, loadStateFile, MCP_MODULE, MANAGED_ID_PREFIX, PRESETS, PLACEHOLDER_VALUES, PRESET_CATEGORIES, categoryOf } = await import(join(pkgDir, "lib/index.js"));
+const { default: McpManagerService, McpError, entryIdOf, normalizeServer, saveStateFile, loadStateFile, MCP_MODULE, MANAGED_ID_PREFIX, PRESETS, PLACEHOLDER_VALUES, PRESET_CATEGORIES, categoryOf, validatePresetCatalog, fetchPresetCatalog, placeholderValuesOf } = await import(join(pkgDir, "lib/index.js"));
 
 /** 记录条目并为服务提供 EntryTree 最小 API 的内存桩 loader。 */
 class StubEntry {
@@ -282,6 +282,34 @@ const stateFile = join(tempDir, "mcp-servers.json");
 	if (categoryOf("reqable") !== "reversing" || categoryOf("github") !== "dev") throw new Error("预设分类映射错误");
 	if (reqableView.category !== "reversing" || githubView2.category !== "dev") throw new Error("presetsView 未附带分类");
 	console.log("categories: 分类覆盖全部预设，映射正确");
+	// GitHub 预设 token 环境变量名（官方服务器读取 GITHUB_PERSONAL_ACCESS_TOKEN）
+	const githubPreset2 = PRESETS.find((preset) => preset.id === "github");
+	if (!githubPreset2 || !("GITHUB_PERSONAL_ACCESS_TOKEN" in (githubPreset2.server.env ?? {})) || "GITHUB_TOKEN" in (githubPreset2.server.env ?? {})) throw new Error("github 预设 token 环境变量名错误");
+	if (!PLACEHOLDER_VALUES.has(githubPreset2.server.env.GITHUB_PERSONAL_ACCESS_TOKEN)) throw new Error("github 占位值未注册");
+	console.log("github preset: env 使用 GITHUB_PERSONAL_ACCESS_TOKEN");
+
+	// 在线目录：校验器（合法 + 非法载荷）
+	validatePresetCatalog({ version: 1, categories: PRESET_CATEGORIES, presets: PRESETS });
+	for (const bad of [
+		null,
+		{ categories: [], presets: [] },
+		{ categories: [{ id: "a", zh: "A", en: "A", presetIds: [] }], presets: [] },
+		{ categories: [{ id: "a", zh: "A", en: "A", presetIds: ["p1"] }], presets: [{ id: "p1", server: { serverName: "p1", transport: "tcp" } }] },
+		{ categories: [{ id: "a", zh: "A", en: "A", presetIds: ["p1"] }], presets: [{ id: "p1", server: { serverName: "p1", transport: "stdio" } }, { id: "p1", server: { serverName: "p1", transport: "stdio" } }] },
+	]) {
+		let rejected = false;
+		try { validatePresetCatalog(bad); } catch (error) { rejected = error.code === "mcp/preset-invalid"; }
+		if (!rejected) throw new Error(`非法目录未拒绝：${JSON.stringify(bad).slice(0, 60)}`);
+	}
+	// 在线目录：拉取（data: URL 成功 / 注入 404 失败）
+	const miniCatalog = { version: 1, categories: [{ id: "zz", zh: "Z", en: "Z", presetIds: ["z1"] }], presets: [{ id: "z1", name: "Z1", description: { zh: "z", en: "z" }, server: { serverName: "z1", transport: "stdio", command: "echo" } }] };
+	const fetched = await fetchPresetCatalog("data:application/json," + encodeURIComponent(JSON.stringify(miniCatalog)), 5000);
+	if (fetched.presets.length !== 1 || fetched.presets[0].id !== "z1") throw new Error("data: URL 拉取失败");
+	let httpFail = false;
+	try { await fetchPresetCatalog("https://example.invalid/x.json", 5000, () => Promise.resolve({ ok: false, status: 404 })); } catch (error) { httpFail = error.code === "mcp/preset-fetch"; }
+	if (!httpFail) throw new Error("HTTP 失败未抛 mcp/preset-fetch");
+	if (placeholderValuesOf(fetched.presets).size !== 0) throw new Error("占位集合应随目录变化");
+	console.log("preset catalog: 校验 + 拉取（成功/失败）正常");
 
 	const presetsView = manager.presetsView();
 	const braveView = presetsView.find((preset) => preset.id === "brave-search");
@@ -292,6 +320,30 @@ const stateFile = join(tempDir, "mcp-servers.json");
 	const githubView = presetsView.find((preset) => preset.id === "github");
 	if (githubView.added !== true) throw new Error("手工同名的预设应标记 added");
 	console.log("presetsView:", `${presetsView.length} 个预设`, "brave.added =", braveView.added, "github.added =", githubView.added, "memory.added =", memoryView.added);
+
+	// 在线目录端到端（服务级）：data: URL 加载 → 活动目录/分类/占位集合切换 + 缓存落盘
+	{
+		const root2 = new Context();
+		await root2.plugin(StubLoader, {});
+		root2.get("loader").seedInclude();
+		const remoteState = join(tempDir, "mcp-remote.json");
+		await root2.plugin(McpManagerService, {
+			stateFile: remoteState,
+			presetUrl: "data:application/json," + encodeURIComponent(JSON.stringify(miniCatalog)),
+			presetFetchTimeoutMs: 5000,
+		});
+		const manager2 = root2.get("mcpManager");
+		await manager2.loadRemotePresets("smoke");
+		if (manager2.presetSource !== "remote" || manager2.presets.length !== 1 || manager2.presets[0].id !== "z1") throw new Error("在线目录未生效");
+		const view2 = manager2.presetsView();
+		if (view2.length !== 1 || view2[0].category !== "zz" || view2[0].added !== false) throw new Error("在线目录 presetsView 不符");
+		const cacheFile = join(tempDir, "presets-cache.json");
+		const cached = JSON.parse(readFileSync(cacheFile, "utf8"));
+		if (!Array.isArray(cached.presets) || cached.presets.length !== 1) throw new Error("缓存未落盘");
+		const info = manager2.presetInfo();
+		if (info.presetSource !== "remote" || info.presetFetchedAt === null || info.presetError !== null) throw new Error("presetInfo 不符");
+		console.log("remote e2e: 在线目录加载 + 缓存 + 分类/占位切换正常");
+	}
 
 	// 持久化校验：状态文件里应是 3 台（b、c、brave-search）
 	const loaded = loadStateFile(stateFile);

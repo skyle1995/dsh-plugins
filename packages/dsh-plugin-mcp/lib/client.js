@@ -52,6 +52,14 @@ var zh = {
   catAll: "\u5168\u90E8",
   catOther: "\u5176\u4ED6",
   presetEmpty: "\u6CA1\u6709\u5339\u914D\u7684\u9884\u8BBE\u3002",
+  presetSourceRemote: "\u5728\u7EBF\u76EE\u5F55",
+  presetSourceCache: "\u7F13\u5B58\uFF08\u79BB\u7EBF\uFF09",
+  presetSourceBundled: "\u5185\u7F6E\uFF08\u79BB\u7EBF\uFF09",
+  presetSourceLabel: "\u9884\u8BBE\u6E90\uFF1A{source} \xB7 \u66F4\u65B0\u4E8E {time}",
+  presetRefresh: "\u5237\u65B0\u9884\u8BBE",
+  presetRefreshed: "\u9884\u8BBE\u76EE\u5F55\u5DF2\u5237\u65B0\uFF08{count} \u4E2A\u9884\u8BBE\uFF09\u3002",
+  presetFetchFailed: "\u9884\u8BBE\u76EE\u5F55\u5237\u65B0\u5931\u8D25\uFF1A{message}",
+  presetOff: "\u5728\u7EBF\u76EE\u5F55\u672A\u542F\u7528",
   add: "\u6DFB\u52A0\u670D\u52A1\u5668",
   edit: "\u7F16\u8F91",
   editTitle: "\u7F16\u8F91\u670D\u52A1\u5668\uFF1A{name}",
@@ -122,6 +130,14 @@ var en = {
   catAll: "All",
   catOther: "Other",
   presetEmpty: "No matching presets.",
+  presetSourceRemote: "online catalog",
+  presetSourceCache: "cache (offline)",
+  presetSourceBundled: "bundled (offline)",
+  presetSourceLabel: "Preset source: {source} \xB7 updated {time}",
+  presetRefresh: "Refresh presets",
+  presetRefreshed: "Preset catalog refreshed ({count} presets).",
+  presetFetchFailed: "Failed to refresh presets: {message}",
+  presetOff: "Online catalog disabled",
   add: "Add server",
   edit: "Edit",
   editTitle: "Edit server: {name}",
@@ -291,7 +307,7 @@ var css = `
 @media (max-width:640px){.dmc-form-grid{grid-template-columns:1fr}.dmc-presets{grid-template-columns:1fr}}
 `;
 function McpSection({ t }) {
-  const [data, setData] = (0, import_react.useState)({ status: "loading", servers: [], manual: [], presets: [], categories: [], stateFile: null, corrupt: null });
+  const [data, setData] = (0, import_react.useState)({ status: "loading", servers: [], manual: [], presets: [], categories: [], stateFile: null, corrupt: null, presetSource: "bundled", presetFetchedAt: null, presetError: null });
   const [notice, setNotice] = (0, import_react.useState)(null);
   const [busy, setBusy] = (0, import_react.useState)({});
   const [busyPreset, setBusyPreset] = (0, import_react.useState)({});
@@ -311,21 +327,46 @@ function McpSection({ t }) {
       presets: payload.presets ?? previous.presets ?? [],
       categories: payload.categories ?? previous.categories ?? [],
       stateFile: payload.stateFile ?? previous.stateFile,
-      corrupt: payload.corrupt ?? null
+      corrupt: payload.corrupt ?? null,
+      presetSource: payload.presetSource ?? previous.presetSource,
+      presetFetchedAt: payload.presetFetchedAt ?? previous.presetFetchedAt,
+      presetError: payload.presetError ?? null
     }));
   }
   async function refresh() {
     setData((previous) => ({ ...previous, status: "loading" }));
     try {
       const payload = await api("/servers");
-      setData({ status: "ok", servers: payload.servers ?? [], manual: payload.manual ?? [], presets: payload.presets ?? [], categories: payload.categories ?? [], stateFile: payload.stateFile ?? null, corrupt: payload.corrupt ?? null });
+      setData({ status: "ok", servers: payload.servers ?? [], manual: payload.manual ?? [], presets: payload.presets ?? [], categories: payload.categories ?? [], stateFile: payload.stateFile ?? null, corrupt: payload.corrupt ?? null, presetSource: payload.presetSource ?? "bundled", presetFetchedAt: payload.presetFetchedAt ?? null, presetError: payload.presetError ?? null });
+      return payload;
     } catch (error) {
-      setData({ status: "error", servers: [], manual: [], presets: [], categories: [], stateFile: null, corrupt: null, message: error.message });
+      setData({ status: "error", servers: [], manual: [], presets: [], categories: [], stateFile: null, corrupt: null, presetSource: "bundled", presetFetchedAt: null, presetError: null, message: error.message });
+      return null;
     }
   }
   (0, import_react.useEffect)(() => {
-    void refresh();
+    void (async () => {
+      const payload = await refresh();
+      if (payload !== null && payload.presetSource === "bundled") {
+        setTimeout(() => void refresh(), 2500);
+      }
+    })();
   }, []);
+  async function refreshPresets() {
+    setNotice(null);
+    try {
+      const payload = await api("/operation", { method: "POST", body: JSON.stringify({ operation: "refresh-presets" }) });
+      applySnapshot(payload);
+      setNotice({ kind: "ok", text: format(t("presetRefreshed"), { count: payload.presets?.length ?? 0 }) });
+    } catch (error) {
+      setNotice({ kind: "error", text: format(t("presetFetchFailed"), { message: error.message }) });
+    }
+  }
+  function presetSourceLabel() {
+    const source = data.presetSource === "remote" ? t("presetSourceRemote") : data.presetSource === "cache" ? t("presetSourceCache") : t("presetSourceBundled");
+    const time = data.presetFetchedAt !== null && data.presetFetchedAt !== void 0 ? new Date(data.presetFetchedAt).toLocaleString() : "\u2014";
+    return format(t("presetSourceLabel"), { source, time });
+  }
   function renderNotice() {
     if (notice === null) return null;
     return (0, import_react.createElement)("p", { className: `dmc-notice ${notice.kind === "error" ? "dmc-notice-err" : "dmc-notice-ok"}` }, notice.text);
@@ -709,6 +750,7 @@ function McpSection({ t }) {
           onClick: () => setPresetCategory(presetCategory === category.id ? null : category.id)
         }, category[lang] ?? category.id))
       ),
+      (0, import_react.createElement)("p", { className: "dmc-meta" }, data.presetError !== null && data.presetError !== void 0 ? format(t("presetFetchFailed"), { message: data.presetError }) : presetSourceLabel()),
       (0, import_react.createElement)("p", { className: "dmc-subtitle" }, t("presetsHint")),
       presetGroups.length === 0 ? (0, import_react.createElement)("p", { className: "dmc-subtitle" }, t("presetEmpty")) : (0, import_react.createElement)(import_react.Fragment, null, presetGroups.map((group) => (0, import_react.createElement)(
         "div",
@@ -756,6 +798,7 @@ function McpSection({ t }) {
           "div",
           { className: "dmc-toolbar" },
           (0, import_react.createElement)("button", { className: "dmc-btn", onClick: () => void refresh() }, t("refresh")),
+          (0, import_react.createElement)("button", { className: "dmc-btn", onClick: () => void refreshPresets() }, t("presetRefresh")),
           (0, import_react.createElement)("button", { className: "dmc-btn dmc-btn-primary", onClick: startAdd }, t("add"))
         )
       ),
