@@ -18,6 +18,20 @@
 
 </div>
 
+> **This directory is a vendored upstream mirror.** It carries the **2.3.0** release of
+> [Ebony-Vinyl/dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) (upstream stopped
+> publishing to npm after 2.1.0, so 2.3.0 ships via GitHub and a signed self-update manifest). The shipped
+> runtime files are byte-identical, with only `package.json` metadata adjusted. The plugin is maintained by
+> the upstream author — please [report issues upstream](https://github.com/Ebony-Vinyl/dsh-our-free-model/issues).
+> Install from this repository with:
+>
+> ```sh
+> dsh plugin --profile <profile> add \
+>   "https://hub.ifunx.com/skyle1995/dsh-plugins.git#main&path:packages/dsh-our-free-model"
+> ```
+>
+> Provenance, licence and the exact deviation list are in the Chinese [`README.md`](README.md#来源与归属).
+
 <div align="center">
 
 > All you do is install this plugin in dsh — no login, no sign-up, no API key, no other
@@ -521,7 +535,7 @@ or *hands-on* are behaviour a user sees in the interface.
 ### Issue #12: verification status
 
 Implementation, offline regression and live results are tracked separately in
-[`docs/issue-12-recovery.md`](docs/issue-12-recovery.md). Recovery 99/99,
+[`docs/issue-12-recovery.md`](https://github.com/Ebony-Vinyl/dsh-our-free-model/blob/main/docs/issue-12-recovery.md). Recovery 99/99,
 truncation 35/35, 11 new fingerprint checks and typecheck have passed. Twelve
 checks use the real plugin over local HTTP to verify forward success, failures,
 client disconnection and stored statistics. The technical record carries the

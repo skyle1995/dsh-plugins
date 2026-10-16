@@ -24,17 +24,8 @@ window.__ModuleLoader__.load({
     const module = { exports: {} }
     const exports = module.exports
     const React = require('react')
+    const ReactDOM = require('react-dom')
     const { createElement: h, Fragment, useState, useEffect, useMemo, useRef, useCallback } = React
-    // `react-dom` is a platform seed word in the DSH shell (its boot graph maps
-    // react, react/jsx-runtime, react-dom and react-dom/client), which is what
-    // lets a plugin put a surface outside `#root` without a build step. Resolved
-    // defensively: an older shell — or the headless lint harness — may not offer
-    // it, and every surface below falls back to rendering in place.
-    let createPortal = null
-    try {
-      const reactDom = require('react-dom')
-      if (typeof reactDom?.createPortal === 'function') createPortal = reactDom.createPortal
-    } catch { createPortal = null }
 
     const NS = 'settings.ourFreeModel'
     const inject = ['slots', 'locale']
@@ -221,7 +212,6 @@ window.__ModuleLoader__.load({
         'forward.lanAlso': '其它地址：{list}',
         'pref.enabled': '启用免费模型',
         'pref.exposeRegion': '展示地区受限模型',
-        'pref.hideChannels': '隐藏渠道模型分组',
         'pref.interval': '自动探测间隔（分钟）',
         'pref.maxTokens': '单次输出上限（token）',
         'pref.egress': '当前出口',
@@ -374,6 +364,7 @@ window.__ModuleLoader__.load({
         'nav.tab.ledger': '数据看板',
         'nav.tab.logs': '运行日志',
         'nav.tab.gateway': '网关设置',
+        'nav.tab.upgrade': '插件升级',
         'chan.titleSingle': '渠道',
         'dash.title': '数据看板',
         'dash.sub': '渠道模型的 Token 消耗与推理指标：输入/输出/思考/缓存逐项统计，账号与模型双维度透视。',
@@ -834,7 +825,6 @@ window.__ModuleLoader__.load({
         'forward.lanAlso': 'Also reachable at {list}',
         'pref.enabled': 'Enable free models',
         'pref.exposeRegion': 'Show region-limited models',
-        'pref.hideChannels': 'Hide channel model groups',
         'pref.interval': 'Auto-probe interval (minutes)',
         'pref.maxTokens': 'Output ceiling per call (tokens)',
         'pref.egress': 'Current egress',
@@ -987,6 +977,7 @@ window.__ModuleLoader__.load({
         'nav.tab.ledger': 'Dashboard',
         'nav.tab.logs': 'Request log',
         'nav.tab.gateway': 'Gateway',
+        'nav.tab.upgrade': 'Plugin upgrade',
         'chan.titleSingle': 'Channel',
         'dash.title': 'Usage dashboard',
         'dash.sub': 'Token spend and inference metrics for the channel models: input/output/reasoning/cache, pivoted by account and by model.',
@@ -1418,11 +1409,10 @@ window.__ModuleLoader__.load({
 .ofm_stat b{display:block;font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.3px}
 .ofm_stat span{font-size:10.5px;color:var(--dsw-alias-label-tertiary)}
 /* ══ 公告（首次引导） ══════════════════════════════════════════════════ */
-/* The onboarding slot is mounted inside the collapsed sidebar foot of the shell,
-   so a card that stays in flow inherits a 55 px-wide, overflow-hidden column. The
-   scrim is therefore fixed to the viewport; the shell sets no transform, filter
-   or contain on any ancestor, so nothing re-anchors it. Mask colour, blur and
-   z-index mirror the Modal layer of the shell so this reads as first-party. */
+    /* The onboarding slot is mounted inside the shell, but Announcement portals its
+       scrim into document.body so third-party sidebar stacking contexts cannot trap
+       the fixed overlay. Mask colour, blur and z-index mirror the Modal layer of the
+       shell so this reads as first-party. */
 .ofm_scrim{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;background:var(--dsw-alias-bg-mask-1, rgb(0 0 0 / 32%));backdrop-filter:var(--dsw-mask-blur, blur(8px)) saturate(140%);-webkit-backdrop-filter:var(--dsw-mask-blur, blur(8px)) saturate(140%);animation:ofm-fadein .24s ease}
 @keyframes ofm-fadein{from{opacity:0}to{opacity:1}}
 .ofm_ann{width:min(620px,92vw);max-height:min(86vh,640px);border-radius:18px;border:1px solid var(--dsw-alias-border-l2);background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 94%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255 / 8%),0 28px 80px rgb(0 0 0 / 40%);overflow:hidden;display:flex;flex-direction:column;animation:ofm-popin .36s cubic-bezier(.16,1,.3,1)}
@@ -2185,79 +2175,6 @@ window.__ModuleLoader__.load({
       ...timeout === undefined ? {} : { timeout },
     })
 
-    /**
-     * Whether the shell is showing `#root` to the user right now.
-     *
-     * A slot step lives inside `#root`, so the desktop shell's own first-run
-     * surface — which portals to `document.body` and, while it is up, sets
-     * `#root { opacity: 0 }` plus `#root.inert` — makes every descendant
-     * invisible and unclickable regardless of the descendant's own
-     * `position: fixed; z-index`. Anything this plugin gates on "is the user
-     * actually looking at us" reads that state here. Absent a `#root` (a
-     * non-shell host) or any reading error, the host counts as shown: the
-     * fallback must never be "stay silent forever".
-     *
-     * @returns {boolean} false while the shell is covering or hiding the app root.
-     */
-    function hostShown() {
-      try {
-        if (typeof document === 'undefined' || document === null) return true
-        const root = typeof document.getElementById === 'function' ? document.getElementById('root') : null
-        if (root !== null && root !== undefined) {
-          if (root.inert === true) return false
-          const inline = root.style?.opacity
-          if (typeof inline === 'string' && inline !== '' && Number(inline) === 0) return false
-          const view = root.ownerDocument?.defaultView ?? (typeof window === 'undefined' ? undefined : window)
-          if (typeof view?.getComputedStyle === 'function') {
-            const computed = view.getComputedStyle(root)
-            if (computed !== null && computed !== undefined) {
-              const opacity = computed.opacity
-              if (typeof opacity === 'string' && opacity !== '' && Number(opacity) === 0) return false
-              if (computed.visibility === 'hidden' || computed.display === 'none') return false
-            }
-          }
-        }
-        // The covering surface itself: present means the app behind it is hidden,
-        // even if a shell version forgets the opacity/inert pair above.
-        if (typeof document.querySelector === 'function' && document.querySelector('[data-desktop-onboarding-surface]') !== null) return false
-        return true
-      } catch { return true }
-    }
-
-    /**
-     * `hostShown()` as reactive state.
-     *
-     * Watches the two things the shell changes (`#root`'s attributes, and the
-     * body-level surface being added or removed) and polls as a safety net, so a
-     * shell that animates its surface away without a mutation we can observe
-     * still unblocks the caller within a second.
-     *
-     * @returns {boolean} the current host visibility.
-     */
-    function useHostShown() {
-      const [shown, setShown] = useState(() => hostShown())
-      useEffect(() => {
-        let alive = true
-        const sync = () => { if (alive) setShown(current => { const next = hostShown(); return next === current ? current : next }) }
-        sync()
-        let observer
-        try {
-          observer = new MutationObserver(sync)
-          const root = typeof document?.getElementById === 'function' ? document.getElementById('root') : null
-          if (root !== null && root !== undefined) observer.observe(root, { attributes: true, attributeFilter: ['style', 'inert', 'class'] })
-          observer.observe(document.body, { childList: true, subtree: false })
-        } catch { /* no MutationObserver: the poll below still covers it */ }
-        const poll = setInterval(sync, 1000)
-        poll?.unref?.()
-        return () => {
-          alive = false
-          try { observer?.disconnect() } catch { /* already disconnected */ }
-          clearInterval(poll)
-        }
-      }, [])
-      return shown
-    }
-
     function useAsync(loader, deps) {
       const [state, setState] = useState({ status: 'loading', data: undefined, error: '' })
       const run = useCallback(() => {
@@ -2569,27 +2486,13 @@ window.__ModuleLoader__.load({
         ok.type = 'button'
         ok.className = 'ofm_btn primary'
         ok.textContent = confirmLabel ?? 'OK'
-        // One dismissal path: confirm, Escape, and the listener teardown stay in
-        // step, so a keyboard user is not trapped in a dialog that says it is modal.
-        const dismiss = () => {
-          document.removeEventListener('keydown', onKeyDown, true)
-          scrim.remove()
-          onClose?.()
-        }
-        const onKeyDown = event => {
-          if (event.key !== 'Escape') return
-          event.preventDefault()
-          dismiss()
-        }
-        ok.addEventListener('click', dismiss)
-        document.addEventListener('keydown', onKeyDown, true)
+        ok.addEventListener('click', () => { scrim.remove(); onClose?.() })
         foot.appendChild(ok)
         modal.appendChild(head)
         modal.appendChild(body)
         modal.appendChild(foot)
         scrim.appendChild(modal)
         document.body.appendChild(scrim)
-        try { ok.focus() } catch { /* focus is best effort */ }
       } catch { /* a modal must never break its caller */ }
     }
 
@@ -3450,8 +3353,7 @@ window.__ModuleLoader__.load({
       return h(Panel, null,
         h('div', { className: 'ofm_row', style: { gap: 20 } },
           h(Switch, { checked: settings.enabled !== false, label: t('pref.enabled'), onChange: () => onApply({ enabled: !(settings.enabled !== false) }) }),
-          h(Switch, { checked: settings.exposeRegionModels !== false, label: t('pref.exposeRegion'), onChange: () => onApply({ exposeRegionModels: !(settings.exposeRegionModels !== false) }) }),
-          h(Switch, { checked: settings.hideChannelModels === true, label: t('pref.hideChannels'), onChange: () => onApply({ hideChannelModels: !(settings.hideChannelModels === true) }) })),
+          h(Switch, { checked: settings.exposeRegionModels !== false, label: t('pref.exposeRegion'), onChange: () => onApply({ exposeRegionModels: !(settings.exposeRegionModels !== false) }) })),
         h('div', { className: 'ofm_row' },
           field(t('pref.interval'), h('input', { className: 'ofm_input', style: { maxWidth: 100 }, value: draft?.probeIntervalMinutes ?? 15, onChange: e => setDraft(c => ({ ...c, probeIntervalMinutes: Number(e.target.value.replace(/\D/g, '')) || 0 })) })),
           field(t('pref.maxTokens'), h('input', { className: 'ofm_input', style: { maxWidth: 120 }, value: draft?.defaultMaxTokens ?? 32768, onChange: e => setDraft(c => ({ ...c, defaultMaxTokens: Number(e.target.value.replace(/\D/g, '')) || 0 })) })),
@@ -3626,6 +3528,13 @@ window.__ModuleLoader__.load({
           } }, phase === 'reloading' ? t('reload.reloading') : t('reload.now')),
           h(Switch, { checked: settings.autoReloadWatch === true, label: t('reload.auto'), onChange: () => onApply({ autoReloadWatch: !(settings.autoReloadWatch === true) }) }),
           h('span', { className: 'ofm_note' }, t('reload.done').replace('{n}', String(settings.reloadCount ?? 0)))))
+    }
+
+    function UpgradePage(props) {
+      const { t, settings, onApply, busy } = props
+      return h('div', { className: 'ofm_page' },
+        h(PageHero, { title: t('section.upgrade'), sub: t('section.upgradeHint') }),
+        h(UpgradePanel, { t, settings, onApply, busy }))
     }
 
     // ── 白嫖模型接入页 ────────────────────────────────────────────────────────
@@ -5633,7 +5542,7 @@ window.__ModuleLoader__.load({
     // The active page lives in localStorage so a reload — or the hot reload the
     // upgrader triggers — comes back to the page the user was reading.
     const TAB_KEY = 'ofm.tab'
-    const TABS = ['free', 'eac', 'channels', 'aggregate', 'saver', 'routing', 'ledger', 'logs', 'gateway']
+    const TABS = ['free', 'eac', 'channels', 'aggregate', 'saver', 'routing', 'ledger', 'logs', 'gateway', 'upgrade']
 
     function Shell(props) {
       const { t, data, counts, summary, stats, eacAuth, setEacAuth, eacLogin, busy, setBusy, apply, bench, benches, ctx } = props
@@ -5673,6 +5582,7 @@ window.__ModuleLoader__.load({
         ['ledger', t('nav.tab.ledger'), null],
         ['logs', t('nav.tab.logs'), null],
         ['gateway', t('nav.tab.gateway'), null],
+        ['upgrade', t('nav.tab.upgrade'), null],
       ]
       const nav = h('nav', { className: 'ofm_nav' },
         h('span', { className: 'ofm_navbrand' },
@@ -5704,6 +5614,8 @@ window.__ModuleLoader__.load({
                   ? h(LogsPage, { t, ctx })
                   : tab === 'gateway'
                     ? h(GatewayPage, { t, ctx })
+                    : tab === 'upgrade'
+                      ? h(UpgradePage, { t, settings: data.settings, onApply: apply, busy })
                     : tab === 'eac'
                       ? h(EacPage, { t, data, counts, summary, stats, eacAuth, setEacAuth, eacLogin, busy, apply, bench, benches, refresh, reprobe })
                       : h(FreePage, { t, data, counts, summary, stats, eacAuth, eacLogin, busy, apply, bench, benches, refresh, reprobe })
@@ -5770,8 +5682,7 @@ window.__ModuleLoader__.load({
         h(Section, { title: t('section.forward'), hint: t('section.forwardHint') }, h(Forward, { settings: data.settings, t, onApply: apply, busy })),
         h(Section, { title: t('section.egress'), hint: t('section.egressHint') }, h(Egress, { settings: data.settings, t, onApply: apply, busy })),
         h(Section, { title: t('section.prefs'), hint: t('section.prefsHint') }, h(Preferences, { summary: data, t, onApply: apply, busy })),
-        h(Section, { title: t('section.news'), hint: t('section.newsHint') }, h(NewsPanel, { t })),
-        h(Section, { title: t('section.upgrade'), hint: t('section.upgradeHint') }, h(UpgradePanel, { t, settings: data.settings, onApply: apply, busy })))
+        h(Section, { title: t('section.news'), hint: t('section.newsHint') }, h(NewsPanel, { t })))
     }
 
     function EacPage(props) {
@@ -5834,72 +5745,41 @@ window.__ModuleLoader__.load({
     // ── announcement ──────────────────────────────────────────────────────────
     const PAGES = ['ann.preamble', 'ann.models', 'ann.steps', 'ann.features', 'ann.updates']
 
+    function announcementPortalHost() {
+      let host = document.querySelector('[data-ofm-announcement-root]')
+      if (host === null) {
+        host = document.createElement('div')
+        host.setAttribute('data-ofm-announcement-root', 'true')
+        document.body.appendChild(host)
+      }
+      return host
+    }
+
     function Announcement(props) {
       const { t, complete, openSection, page, setPage, summary, acknowledged } = props
-      const dialog = useRef(null)
-      const finishRef = useRef(null)
       useEffect(() => { if (acknowledged) complete() }, [acknowledged, complete])
       /* Not `#root.inert`, even though the shell does that for its own onboarding
          modals: those portal out of `#root`, while a slot-mounted step stays
          inside it, and inert has no opt-out for descendants. Measured with it on,
          `document.elementFromPoint` over the next-page button returned BODY — the
          dialog could not be clicked at all. The full-viewport scrim already
-         swallows every pointer event aimed at the app behind it. This dialog now
-         portals to `document.body` (see `createPortal` above), i.e. it leaves
-         `#root` exactly like the shell's own modals do. */
+         swallows every pointer event aimed at the app behind it. */
+      if (acknowledged) return null
       const last = page === PAGES.length - 1
       const finish = async () => {
         try { await post(`/announcement/ack?version=${encodeURIComponent(summary?.announcementVersion ?? '')}`) } catch { /* ack is best effort */ }
         complete()
       }
-      useEffect(() => { finishRef.current = finish })
-      // Escape dismisses — the same outcome as "later" — and Tab cycles inside the
-      // dialog. `aria-modal="true"` promises both; without them a keyboard user
-      // reaches the app behind a surface that claims to be modal.
-      useEffect(() => {
-        const node = dialog.current
-        if (node === null || node === undefined) return undefined
-        try { node.focus() } catch { /* focus is best effort */ }
-        const onKeyDown = event => {
-          if (event.key === 'Escape') {
-            event.preventDefault()
-            void finishRef.current?.()
-            return
-          }
-          if (event.key !== 'Tab') return
-          let focusables = []
-          try {
-            focusables = Array.from(node.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'))
-          } catch { focusables = [] }
-          if (focusables.length === 0) return
-          const first = focusables[0]
-          const final = focusables[focusables.length - 1]
-          const active = document.activeElement
-          if (event.shiftKey && (active === first || !node.contains(active))) {
-            event.preventDefault()
-            final.focus()
-          } else if (!event.shiftKey && active === final) {
-            event.preventDefault()
-            first.focus()
-          }
-        }
-        document.addEventListener('keydown', onKeyDown, true)
-        return () => document.removeEventListener('keydown', onKeyDown, true)
-      }, [])
-      if (acknowledged) return null
-      const scrim = h('div', { className: 'ofm_scrim' },
-        h('div', { className: 'ofm_ann', role: 'dialog', 'aria-modal': 'true', 'aria-label': t('title'), tabIndex: -1, ref: dialog },
+      const host = announcementPortalHost()
+      useEffect(() => () => {
+        if (host.parentNode !== null) host.parentNode.removeChild(host)
+      }, [host])
+      return ReactDOM.createPortal(h('div', { className: 'ofm_scrim' },
+        h('div', { className: 'ofm_ann', role: 'dialog', 'aria-modal': 'true', 'aria-label': t('title') },
           h('div', { className: 'ofm_annhead' },
             h('h2', { className: 'ofm_anntitle' }, t('title')),
             h('p', { className: 'ofm_annsub' }, t(PAGES[page]))),
-          h('div', {
-            className: 'ofm_steps',
-            role: 'progressbar',
-            'aria-valuemin': 1,
-            'aria-valuemax': PAGES.length,
-            'aria-valuenow': page + 1,
-            'aria-label': t('ann.page').replace('{n}', page + 1).replace('{total}', PAGES.length),
-          },
+          h('div', { className: 'ofm_steps', 'aria-hidden': 'true' },
             PAGES.map((key, index) => h('span', { key, className: 'ofm_step', 'data-on': index <= page ? 'true' : 'false' }))),
           h('div', { className: 'ofm_annbody' }, h(PageBody, { page, t, summary })),
           h('div', { className: 'ofm_annfoot' },
@@ -5908,10 +5788,7 @@ window.__ModuleLoader__.load({
             page === 0 ? h(Button, { kind: 'ghost', onClick: finish }, t('ann.later')) : h(Button, { kind: 'ghost', onClick: () => setPage(p => Math.max(0, p - 1)) }, '‹'),
             last
               ? h(Button, { kind: 'primary', onClick: async () => { await finish(); openSection?.('our-free-model') } }, t('ann.openSettings'))
-              : h(Button, { kind: 'primary', onClick: () => setPage(p => Math.min(PAGES.length - 1, p + 1)) }, '›'))))
-      // Out of `#root` and onto the body: the shell hides `#root` (opacity/inert)
-      // while its own first-run surface is up, and no descendant escapes that.
-      return createPortal === null ? scrim : createPortal(scrim, document.body)
+              : h(Button, { kind: 'primary', onClick: () => setPage(p => Math.min(PAGES.length - 1, p + 1)) }, '›')))), host)
     }
 
     const list = (t, keys) => keys.map(key => h('li', { key }, t(key)))
@@ -6102,61 +5979,39 @@ window.__ModuleLoader__.load({
      * null until the ack state is known — a step that paints a skeleton then
      * removes it is worse than one that waits — and completes immediately when
      * the user already acknowledged the current copy version.
-     *
-     * It also owns the one thing a slot step cannot assume: that the user can see
-     * it. The desktop shell mounts its own first-run surface over the app and
-     * hides `#root` (opacity 0 + inert) for as long as it is up; a step inside
-     * `#root` is then neither visible nor clickable. Completing on the old
-     * unconditional 3-second fallback in that window marked this step done, so
-     * the announcement was skipped without ever having been shown. While the host
-     * is hidden the gate therefore stays pending: no fallback timer, no ack, no
-     * render — and it shows the dialog for real once the shell hands the screen
-     * back.
      */
     function AnnouncementGate(props) {
       const { t, complete, openSection, explicit } = props
       const [ack, setAck] = useState(undefined)
       const [summary, setSummary] = useState(undefined)
       const [page, setPage] = useState(0)
-      const shown = useHostShown()
       useEffect(() => {
         let alive = true
         api('/announcement')
           .then(payload => { if (alive) setAck(payload) })
-          // 拿不到 ack：只有宿主看得见时才按「已确认」放行。被壳引导遮住时放行
-          // 等于把这一步静默标记完成——用户一次都看不到公告。
-          .catch(() => { if (alive && hostShown()) setAck({ acknowledged: true, version: '' }) })
+          .catch(() => { if (alive) setAck({ acknowledged: true, version: '' }) })
         api('/summary').then(payload => { if (alive) setSummary(payload) }).catch(() => {})
-        return () => { alive = false }
-      }, [])
-      // 超时兜底：3 秒拿不到 ack（后端挂起/超时/异常）→ 当作已 ack 主动放行——
-      // 本组件是 settings.onboarding 协调器最先执行的 step（order:-50），complete 依赖 ack；
-      // ack 永远 undefined 会永久卡住 onboarding 流程（连带阻塞后续 step 与主题启动画面）。
-      // 计时只在宿主可见时进行：壳把 #root 设成 opacity:0 + inert 期间本来就没有 UI
-      // 可看，此时放行只会让协调器以为这一步已经展示过。
-      useEffect(() => {
-        if (!shown || ack !== undefined) return undefined
+        // 超时兜底：3 秒拿不到 ack（后端挂起/超时/异常）→ 当作已 ack 主动放行——
+        // 本组件是 settings.onboarding 协调器最先执行的 step（order:-50），complete 依赖 ack；
+        // ack 永远 undefined 会永久卡住 onboarding 流程（连带阻塞后续 step 与主题启动画面）。
         const timer = setTimeout(() => {
-          setAck(current => current ?? { acknowledged: true, version: '' })
+          if (alive) setAck(current => current ?? { acknowledged: true, version: '' })
         }, 3000)
-        return () => clearTimeout(timer)
-      }, [shown, ack])
+        return () => { alive = false; clearTimeout(timer) }
+      }, [])
       const acknowledged = ack?.acknowledged === true && explicit !== true
       useEffect(() => {
         if (ack === undefined) return
         if (acknowledged) complete?.()
       }, [ack, acknowledged, complete])
-      if (!shown || ack === undefined || acknowledged) return null
+      if (ack === undefined || acknowledged) return null
       return h(Announcement, { t, complete, openSection, page, setPage, summary, acknowledged: false })
     }
     exports.apply = apply
     exports.inject = inject
     exports.name = 'our-free-model'
     // Headless test seams use the same stub React as scripts/client-lint.mjs.
-    exports.__test = {
-      parseSafeHtml, safeUrl, sanitizeStyle, htmlToDom, buildHeatCells, Heatmap, ChannelsPage, UpgradePanel, useEacLogin, EacAuth,
-      hostShown, Announcement, AnnouncementGate,
-    }
+    exports.__test = { parseSafeHtml, safeUrl, sanitizeStyle, htmlToDom, buildHeatCells, Heatmap, ChannelsPage, UpgradePanel, useEacLogin, EacAuth }
     return module.exports
   },
 })

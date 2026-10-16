@@ -12,12 +12,15 @@
   <img alt="状态" src="https://img.shields.io/badge/status-beta-f0a441?style=flat-square">
   <br>
   <a href="https://trendshift.io/repositories/261203"><img alt="GITHUB TRENDING 第 1 名，日榜仓库" src="docs/images/trendshift-daily-laurel-gold.svg" width="250" height="55"></a>
-  <a href="https://trendshift.io/repositories/261203"><img alt="GITHUB TRENDING 第 1 名，周榜仓库" src="docs/images/trendshift-weekly-2026-10-11-first-gold.svg" width="250" height="55"></a>
+  <a href="https://trendshift.io/weekly?language=JavaScript"><img alt="Trendshift JavaScript 周榜第 1 名（2026-10-05 至 2026-10-11，更新中）" src="docs/images/trendshift-weekly-2026-10-11-first-gold.svg" width="250" height="55"></a>
+  <br>
+  <sub>Trendshift JavaScript 周榜第 1 · 2026-10-05 至 2026-10-11 · 更新中，截至 2026-10-11</sub>
 
 </div>
 
 > **本目录是上游镜像（vendored）**：收录 [Ebony-Vinyl/dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model)
-> 的 npm 发布件 `2.1.0`，**运行时文件逐字节未改**，仅调整 `package.json` 元数据。
+> 的 **2.3.0** 发布件（此版本上游未发布到 npm，只经 GitHub + 签名自升级清单分发），
+> **运行时文件逐字节未改**，仅调整 `package.json` 元数据。
 > 插件本身由上游作者维护，问题请反馈[上游仓库](https://github.com/Ebony-Vinyl/dsh-our-free-model)；
 > 差异清单见下方[「来源与归属」](#来源与归属)。以下文档为上游 README 原文。
 
@@ -30,44 +33,52 @@ dsh plugin --profile <profile> add \
   "https://hub.ifunx.com/skyle1995/dsh-plugins.git#main&path:packages/dsh-our-free-model"
 ```
 
-也可直接从上游 npm 安装（内容与上游发布件一致）：
-
-```bash
-dsh plugin --profile <profile> add dsh-our-free-model@2.1.0
-```
-
 安装后重启 profile（或热重载插件），模型选择器即出现 `Our Free Model` 分组，
 设置面板出现九页界面。
+
+> 注意：本插件 `package.json` 带 `"private": true`（上游已停止发布 npm）。
+> 实测该字段**不影响** git spec / pnpm 安装，仅阻止 `npm publish`。
 
 ## 来源与归属
 
 | 项 | 值 |
 | --- | --- |
 | 上游仓库 | [Ebony-Vinyl/dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) |
-| 收录版本 | `2.1.0`（npm 发布件 · `gitHead` `b208bce1dd2639fdd923bf7d6a04cab7bb4710ad`） |
-| 收录时校验 | `sha512-52W78eb+htOGTCTtHnGUzOm5Izdt14DT8uN2qgY3VCiUQHVWd2OUuUpqeRLuBBvaW6B+MmI5BI+ms4jEqDAOwA==` ✅ 通过 |
+| 收录版本 | `2.3.0`（发布件 `feed/manifest.json` · `publishedAt` `2026-10-16T07:53:07Z`） |
+| 完整性证据 | 发布清单经 **Ed25519 验签通过**（用插件自身 `src/updater.js` 钉死的 `PINNED_MANIFEST_PUBLIC_KEY` 验证），清单所列 73 个文件**逐个比对 sha256 + size 全部一致** |
+| npm 通道 | npm 最新仅 `2.1.0`（上游自 2.2 起不再发 npm），故本目录只能按签名清单收编 |
 | 许可 | MIT · © 2026 Ebony-Vinyl（见 [`LICENSE`](LICENSE)） |
 | 内嵌渠道包 | `vendor/channel-pack/` 为 MIT · © 2026 Jet，源自 [gitee.com/iJetLi/deepseek-harness-codearts](https://gitee.com/iJetLi/deepseek-harness-codearts)（见 [`vendor/channel-pack/NOTICE.md`](vendor/channel-pack/NOTICE.md)） |
 | 角色 | 本仓库仅作**镜像分发**，非上游作者 |
 
+### 为什么是 2.3.0
+
+`2.1.0` 的**免费车道已被上游关闭**，装上去等于不可用，故本目录从 2.1.0 升级到 2.3.0：
+
+- 上游 2.3.0 的 `src/upstream.js` 注释载明：免费模型已迁移到 `/inference/v1`，
+  **旧的 `/zen/v1` chat 路径对每一个模型都返回 403 `FreeTierError`**；且请求必须补发
+  `x-opencode-session-id`、session id 需现铸而非派生、工具门要求 `bash` + `read`
+  带非空参数 schema，**User-Agent 含 `deepseek-harness` 会被点名拒绝**；
+- 2.1.0 恰好踩中两点（旧路径 + `adapter/kernel.js` 会把 DSH 归属 UA 拼进请求），
+  实测表现为模型目录里 12 个免费模型 **available = 0**、真实对话 100% 失败；
+- 2.3.0 的发布公告即为「免费车道迁移与插件升级页独立化」。
+
 ### 本目录相对上游发布件的差异
 
-改动**仅在 `package.json`**；`index.js`、`client.js`、`src/`、`vendor/`、`adapter/`、
-`locale/`、`cordis.patch.yml`、`icon.svg` 与上游发布件逐字节一致（`diff -rq` 已验证）：
+改动**仅在 `package.json`**；其余与上游发布件逐字节一致（72/73 文件 sha256 与签名清单相同）：
 
 - **新增** `peerDependencies["@deepseek-ai/dsh"]: "0.2.0-rc.2"` —— 本仓库约定，让 DSH
   安装前的版本兼容预检生效（当前运行时 `0.2.0-rc.2`）；
 - **新增** `repository` 字段，指向本 monorepo 的 `packages/dsh-our-free-model`；
-- **移除** `scripts`（16 条）与 `devDependencies.typescript` —— 它们引用的 `scripts/`、
-  `packages/standalone/`、`tsconfig.json` 都是上游 **GitHub 开发树**文件，不在 npm
-  发布件里，保留即为死链。上游无 `prepare`/`postinstall`，删除不影响安装行为；
+- **移除** `scripts`（17 条）与 `devDependencies.typescript` —— 它们引用的 `scripts/`、
+  `packages/standalone/`、`tsconfig.json` 都是上游 **GitHub 开发树**文件，不在发布件
+  里，保留即为死链。上游无 `prepare`/`postinstall`，删除不影响安装行为；
+- **保留** `"private": true`（与上游一致，不影响安装）；
 - **随附** `README_EN.md` 与 `docs/images/` 三张图，取自上游 GitHub 仓库
-  （发布件 `files` 白名单不含它们，故不影响安装体积）；
-- **修正上游 README 的两处死链**（只在本仓库副本内，发布件内容未动）：
-  `docs/images/trendshift-weekly-laurel-purple.svg` 上游已改名为
-  `trendshift-weekly-2026-10-11-first-gold.svg`（周榜第 1），`src` 与 `alt` 已同步；
-  `packages/standalone/README.md` 属上游 GitHub 开发树、不在发布件内，链接改为
-  上游 GitHub 绝对地址。
+  （签名清单只覆盖运行时文件，不含文档资源，故不影响安装体积）；
+- **修正上游 README 的死链**（只在本仓库副本内）：`packages/standalone/README.md`
+  与 `README_EN.md` 里的 `docs/issue-12-recovery.md` 均属上游 GitHub 开发树、
+  不在发布件内，链接改为上游 GitHub 绝对地址。
 
 ### 自升级仍指向上游
 
@@ -79,6 +90,9 @@ dsh plugin --profile <profile> add dsh-our-free-model@2.1.0
 - **效果**：在设置页触发「一键升级」会用**上游新版**覆盖已安装副本，而不是本仓库副本。
   签名校验意味着镜像方无法借这条链路注入代码；但若你要求版本完全由本仓库固定，
   请勿在设置页触发升级。
+
+> 本次升级正是因为该自升级通道会持续把用户带到上游新版；本目录固定为 2.3.0，
+> 是为了让「从本仓库安装」得到一个**当时可用**的版本。
 
 ---
 
@@ -203,7 +217,7 @@ PROFILE_UPGRADE_REQUIRED: offline dependency migration is not yet available
 
 1. 将发布文件复制至 node_modules/dsh-our-free-model/
 （index.js、client.js、adapter/、src/、locale/、icon.svg、cordis.patch.yml、package.json——adapter/ 不可遗漏：index.js 首行即 import 该目录）
-2. 在 dependencies 中加入 "dsh-our-free-model": "2.1.0"——该版本号跟随仓库 package.json 的 version（版本变更时同步，当前为 2.1.0），不要沿用旧值，也不要写为 link:
+2. 在 dependencies 中加入 "dsh-our-free-model": "2.3.0"——该版本号跟随仓库 package.json 的 version（版本变更时同步，当前为 2.3.0），不要沿用旧值，也不要写为 link:
 3. 在 dsh.profile.bundles 末尾追加 "dsh-our-free-model"
 
 不要再向 cordis.patch.yml 添加条目。被 dsh.profile.bundles 引用的包，其自带的
