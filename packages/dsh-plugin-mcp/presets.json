@@ -96,7 +96,8 @@
 				"jadx",
 				"virustotal",
 				"x64dbg",
-				"cyberchef"
+				"cyberchef",
+				"rea"
 			]
 		}
 	],
@@ -547,6 +548,24 @@
 				"args": [
 					"-y",
 					"cyberchef-mcp"
+				]
+			}
+		},
+		{
+			"id": "rea",
+			"name": "REA (Reverse Engineer Anything)",
+			"description": {
+				"zh": "REA 逆向编排：统一封装 Hopper / Ghidra / IDA / JADX 等引擎，结论带证据与盲区；覆盖原生二进制、Go/Rust、JS/Electron、.NET、APK、固件、pcap。需 Node 22.19+/24.11+；深层原生分析需自备引擎（须合法授权）。版本钉 6.7.0。",
+				"en": "REA orchestration: wraps Hopper/Ghidra/IDA/JADX with evidence-backed findings; native binaries, Go/Rust, JS/Electron, .NET, APK, firmware, pcap. Needs Node 22.19+/24.11+; deep native analysis needs your own engines (legally licensed). Pinned to 6.7.0."
+			},
+			"server": {
+				"serverName": "rea",
+				"transport": "stdio",
+				"command": "npx",
+				"args": [
+					"-y",
+					"rea-agents@6.7.0",
+					"mcp"
 				]
 			}
 		},

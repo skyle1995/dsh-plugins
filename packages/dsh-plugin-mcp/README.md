@@ -24,7 +24,7 @@ dsh plugin --profile <profile> add \
 条目）与**「预设」**（一键添加）。没有已安装服务器时默认落在预设页；预设
 直存成功后自动切回已安装页。
 
-- **热门预设（一键添加）**：内置 42 个常用 MCP 服务器预设，按**八个分类**
+- **热门预设（一键添加）**：内置 43 个常用 MCP 服务器预设，按**八个分类**
   分组展示（分类 chips 位于搜索框下方第二行），支持**搜索**（名称 / 描述）
   与分类筛选。预设目录**在线更新**：默认从 dsh-plugins 仓库拉取
   `presets.json`（成功后落盘缓存、断网回退缓存 / 内置），新增预设只需更新
@@ -36,7 +36,7 @@ dsh plugin --profile <profile> add \
   - **搜索 / 情报**：Tavily、Firecrawl、urlscan.io、Context7；
   - **云服务**：Cloudflare、Supabase、Kubernetes；
   - **逆向 / 安全分析**：Reqable 抓包、IDA Pro 官方、Ghidra、Binary Ninja、
-    Frida、JADX、VirusTotal、x64dbg、CyberChef。
+    Frida、JADX、VirusTotal、x64dbg、CyberChef、REA（多引擎编排，结论带证据与盲区）。
   - 零配置预设点「一键添加」直接保存并生效；
   - 需要密钥 / 路径的预设（Token、自建地址、允许目录等）会先把配置**预填进弹窗表单**，
     补全必填项后保存——占位值在宿主侧会被拦截，无法带占位符保存；

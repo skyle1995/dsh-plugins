@@ -202,6 +202,9 @@ const stateFile = join(tempDir, "mcp-servers.json");
 	if (!x64dbg || !x64dbg.server.args.includes("x64dbg-mcp") || categoryOf("x64dbg") !== "reversing") throw new Error("x64dbg 预设不符");
 	const cyberchef = PRESETS.find((preset) => preset.id === "cyberchef");
 	if (!cyberchef || !cyberchef.server.args.includes("cyberchef-mcp") || categoryOf("cyberchef") !== "reversing") throw new Error("cyberchef 预设不符");
+	// REA 的 MCP 入口是 `rea-agents mcp` 子命令（CLI 内 isMcpMode 判定），版本钉死避免上游重构导致预设失效
+	const rea = PRESETS.find((preset) => preset.id === "rea");
+	if (!rea || rea.server.command !== "npx" || !rea.server.args.includes("rea-agents@6.7.0") || !rea.server.args.includes("mcp") || categoryOf("rea") !== "reversing") throw new Error("rea 预设不符");
 	const playwright = PRESETS.find((preset) => preset.id === "playwright");
 	if (!playwright || !playwright.server.args.some((arg) => arg.startsWith("@playwright/mcp")) || categoryOf("playwright") !== "browser") throw new Error("playwright 预设不符");
 	const chromeDev = PRESETS.find((preset) => preset.id === "chrome-devtools");
