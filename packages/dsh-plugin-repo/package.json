@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-repo",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "DSH 基础插件：设置面板的插件仓库（在线目录/安装/更新/卸载）、技能能力（skills 管理与导入）、规则（提示词）三个分区，以及会话右键菜单的删除会话",
   "type": "module",
   "main": "lib/index.js",
@@ -44,7 +44,7 @@
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh": "0.2.0-rc.2",
+    "@deepseek-ai/dsh": ">=0.2.0-rc.2",
     "@deepseek-ai/cordis": "~4.0.4",
     "@deepseek-ai/schemastery": "~3.18.4"
   },
