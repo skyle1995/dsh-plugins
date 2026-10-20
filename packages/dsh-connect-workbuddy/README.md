@@ -47,6 +47,7 @@ dsh plugin --profile <profile> add \
 | --- | --- |
 | 上游仓库 | [dingminhua/dsh-connect-workbuddy](https://github.com/dingminhua/dsh-connect-workbuddy) |
 | 收录版本 | `4.6.5`（npm 发布件 · `gitHead` `03ae10f94e4e7e41599194647165cf5fe1fd5906`） |
+| 本仓库版本 | `4.6.6`（仅把 `@deepseek-ai/dsh` peer 放宽为 semver 范围，无功能变更；CHANGELOG 仍为上游 `4.6.5` 内容） |
 | 收录时校验 | `sha512-b5NdfK511pUHnMShpt+Xi+dZk15ylKZtvYAg5IGCJoeWUM5uCZrTxNyaEga2L/NhrHXhEXk/OBv4PMcoe9fn4Q==` ✅ 通过 |
 | 许可 | MIT · © 2026 LaoDing（作者 dingminhua）（见 [`LICENSE`](LICENSE)） |
 | 派生关系 | 上游自行声明派生自 [`dsh-workbuddy-connect`](https://github.com/corrinehu/dsh-workbuddy-connect)（连接内核参照）与 [`dsh-connect-trae`](https://github.com/dingminhua/dsh-connect-trae)（插件外观基准），详见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) |
@@ -56,8 +57,11 @@ dsh plugin --profile <profile> add \
 
 除 `package.json`、`README.md`、`README.en.md` 外，其余文件与上游发布件逐字节一致（`diff -rq` 已验证）：
 
-- **新增** `peerDependencies["@deepseek-ai/dsh"]: "0.2.0-rc.2"` —— 本仓库约定，让 DSH
-  安装前的版本兼容预检生效（上游未声明该 peer，其既有 `dsh-*` 范围本就覆盖 `0.2.x`）；
+- **新增** `peerDependencies["@deepseek-ai/dsh"]: ">=0.2.0-rc.2"` —— 本仓库约定，让 DSH
+  安装前的版本兼容预检生效（上游未声明该 peer，其既有 `dsh-*` 范围本就覆盖 `0.2.x`）。
+  用 semver 范围而非精确版本：DSH 以 `semver.satisfies(..., { includePrerelease: true })`
+  校验，预发布参与匹配，因此 dsh 升级到 `0.2.1-rc.2` 等 0.2.x 后续版本不再被拒绝挂载
+  （本仓库 4.6.5 收录时写作精确值 `0.2.0-rc.2`，会卡住所有其它版本的宿主）；
 - **改写** `repository` 指向本 monorepo；`homepage` / `bugs` / `author` / `copyright`
   保持指向上游，便于问题回流与署名；
 - **移除** `scripts`（`prepack` / `build` / `test` / `typecheck` / `check`）与
@@ -70,6 +74,10 @@ dsh plugin --profile <profile> add \
 - **新增** 中英文 README 顶部的上游镜像声明（来源、许可、安装命令、差异去向）；
 - **保留** `dependencies["@deepseek-ai/schemastery"]: "3.18.4"` —— 与上游一致（上游同时
   以 peer 声明它；本仓库其它插件只声明 peer，此处从上游不动）。
+
+> 注：本仓库副本新增的 `@deepseek-ai/dsh` peer（`>=0.2.0-rc.2`）把「本仓库安装通道」的实际可用
+> 下限抬到 `0.2.0-rc.2`；上游 npm 通道仍按下文[受支持的宿主范围](#受支持的宿主范围)一节
+> （`0.1.7-rc.1` 起）。`0.3.0` 线仍被既有 `dsh-*` 范围（`<0.3.0-0`）明确拒绝。
 
 > 实测记录：`prepack` 的移除**不影响 git spec 安装** —— pnpm 对 git 依赖只执行
 > `prepare`、不执行 `prepack`；且以本地 git 仓库复现 `#main&path:packages/...` 安装，

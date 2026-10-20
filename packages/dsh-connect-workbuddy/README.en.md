@@ -19,8 +19,12 @@
 
 > **This directory is a vendored upstream mirror.** It carries the npm release `4.6.5` of
 > [dingminhua/dsh-connect-workbuddy](https://github.com/dingminhua/dsh-connect-workbuddy); the shipped
-> files are byte-identical, with only `package.json` metadata adjusted. The plugin is maintained by the
-> upstream author — please [report issues upstream](https://github.com/dingminhua/dsh-connect-workbuddy/issues).
+> files are byte-identical, with only `package.json` and the two READMEs adjusted. This repository re-releases it
+> as `4.6.6`: the only change is relaxing the `@deepseek-ai/dsh` peer from the exact `0.2.0-rc.2` to
+> the semver range `>=0.2.0-rc.2`; everything else (CHANGELOG included) is still upstream `4.6.5`
+> content. The install channel from this repository therefore requires dsh `>=0.2.0-rc.2`; the upstream
+> npm channel is covered by [Supported host range](#supported-host-range) below. The plugin is maintained
+> by the upstream author — please [report issues upstream](https://github.com/dingminhua/dsh-connect-workbuddy/issues).
 > Install from this repository with:
 >
 > ```sh
