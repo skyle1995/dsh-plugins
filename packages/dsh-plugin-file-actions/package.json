@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-file-actions",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DSH 文件列表增强插件：文件右键菜单（剪切/复制/粘贴/删除/压缩/复制路径）、Ctrl/Cmd 多选与批量操作栏",
   "type": "module",
   "main": "lib/index.js",
@@ -44,7 +44,7 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.0.4",
-    "@deepseek-ai/dsh": "0.2.0-rc.2",
+    "@deepseek-ai/dsh": ">=0.2.0-rc.2",
     "@deepseek-ai/schemastery": "~3.18.4"
   },
   "devDependencies": {
