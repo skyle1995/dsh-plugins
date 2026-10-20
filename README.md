@@ -49,10 +49,11 @@ monorepo 形态下有几件事裸 pnpm 做不了：
 1. `package.json`：
    - `"type": "module"`，`main`/`exports` 指向 `lib/index.js`；
    - **`"dsh": { "bundle": { "patch": "./cordis.patch.yml" } }`** —— 声明为组合包；
-   - `peerDependencies` 中声明 `"@deepseek-ai/dsh": "<精确运行时版本>"`（可用
-     `dsh --version` 查询），DSH 安装与启动会据此做版本兼容检查；用到的
-     harness 包（`@deepseek-ai/cordis`、`@deepseek-ai/schemastery`、`@deepseek-ai/dsh-*`）
-     同样以精确范围声明为 peer，由 DSH 运行时解析器供应；
+   - `peerDependencies` 中声明 `"@deepseek-ai/dsh": ">=0.2.0-rc.2"` 这类 **semver
+     范围**（也可用 `engines.dsh`，其优先级更高），DSH 安装与启动会按
+     `semver.satisfies(..., { includePrerelease: true })` 做版本兼容检查；
+     用到的 harness 包（`@deepseek-ai/cordis`、`@deepseek-ai/schemastery`、
+     `@deepseek-ai/dsh-*`）同样以范围声明为 peer，由 DSH 运行时解析器供应；
    - `files` 含 `lib/`、`cordis.patch.yml`、`README.md`。
 2. `cordis.patch.yml`：loader patch 条目（`- insert: [{ id, name }]`），行 id
    唯一、模块名指向插件入口。
@@ -75,8 +76,11 @@ monorepo 形态下有几件事裸 pnpm 做不了：
 
 ## 版本兼容
 
-插件以 `peerDependencies["@deepseek-ai/dsh"]` 声明支持的 DSH 运行时版本
-（精确版本，如 `0.2.0-rc.2`）。安装和 profile 启动会检查该范围；不兼容的
+插件以 `peerDependencies["@deepseek-ai/dsh"]`（或优先级更高的 `engines.dsh`）
+声明支持的 DSH 运行时 **semver 范围**，例如 `>=0.2.0-rc.2`、`^0.2.0-rc.2`、
+`workspace:^`。安装和 profile 启动会用
+`semver.satisfies(runtimeVersion, range, { includePrerelease: true })` 检查，
+预发布版本同样参与匹配（`0.2.1-rc.2` 满足 `>=0.2.0-rc.2`）。不满足范围的
 插件需要用户通过 `dsh plugin allow-version`（或 Web 插件页）按「插件版本 +
 DSH 版本」精确豁免后才可运行。
 
