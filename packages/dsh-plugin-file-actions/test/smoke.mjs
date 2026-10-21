@@ -187,6 +187,47 @@ console.log("delete:", JSON.stringify(deleted));
 if (deleted.count !== 1 || deleted.missing !== 0) throw new Error("删除统计不符");
 if (await exists(join(workspace, "dest", "sub"))) throw new Error("删除未生效");
 
+// ─── 4.2) 重命名：文件 / 目录 / 非法名字 / 冲突 / 边界 ──────────────────
+await mkdir(join(workspace, "ren", "inner"), { recursive: true });
+await writeFile(join(workspace, "ren", "a.txt"), "a\n");
+const renamed = await actions.renameEntry({ workspaceRoot: workspace, path: join(workspace, "ren", "a.txt"), name: "b.txt" });
+console.log("rename(file):", JSON.stringify(renamed));
+if (renamed.name !== "b.txt" || renamed.from !== "a.txt") throw new Error("文件重命名返回值不符");
+if (!(await exists(join(workspace, "ren", "b.txt"))) || (await exists(join(workspace, "ren", "a.txt")))) throw new Error("文件重命名未生效");
+// 目录重命名：子项随目录一起走
+const renamedDir = await actions.renameEntry({ workspaceRoot: workspace, path: join(workspace, "ren"), name: "ren2" });
+console.log("rename(dir):", JSON.stringify(renamedDir));
+if (!(await exists(join(workspace, "ren2", "inner"))) || (await exists(join(workspace, "ren")))) throw new Error("目录重命名未生效");
+// 名字未变：返回 unchanged，不产生写操作
+const unchanged = await actions.renameEntry({ workspaceRoot: workspace, path: join(workspace, "ren2", "b.txt"), name: "b.txt" });
+if (unchanged.unchanged !== true) throw new Error("同名重命名应返回 unchanged");
+// 重命名到目录名（目标已存在）→ exists
+const renameClash = await actions.renameEntry({ workspaceRoot: workspace, path: join(workspace, "ren2", "b.txt"), name: "inner" }).then(() => null, (error) => error);
+console.log("rename(clash):", renameClash?.code);
+if (renameClash?.code !== "file-actions/exists") throw new Error("重命名同名冲突未按预期报错：" + renameClash?.code);
+// 非法名字（含分隔符 / 空 / ".." / NUL）一律拒绝
+for (const bad of ["x/y.txt", "", "..", ".", "a\\b.txt", "a\0b"]) {
+	const rejected = await actions.renameEntry({ workspaceRoot: workspace, path: join(workspace, "ren2", "b.txt"), name: bad }).then(() => false, (error) => error?.code === "file-actions/invalid-name");
+	if (!rejected) throw new Error(`非法重命名名字未被拒绝：${JSON.stringify(bad)}`);
+}
+// 工作区根目录本身不可重命名
+const rootRename = await actions.renameEntry({ workspaceRoot: workspace, path: workspace, name: "nope" }).then(() => false, (error) => error?.code === "file-actions/workspace-root");
+if (!rootRename) throw new Error("工作区根目录未被保护（重命名）");
+// 不存在的路径 → not-found
+const ghostRename = await actions.renameEntry({ workspaceRoot: workspace, path: join(workspace, "nope.txt"), name: "x.txt" }).then(() => false, (error) => error?.code === "file-actions/not-found");
+if (!ghostRename) throw new Error("不存在的路径未被拒绝（重命名）");
+// 工作区外的路径 → outside-workspace
+const outRename = await actions.renameEntry({ workspaceRoot: workspace, path: join(outside, "sneaky.txt"), name: "x.txt" }).then(() => false, (error) => error?.code === "file-actions/outside-workspace");
+if (!outRename) throw new Error("工作区外的路径未被拒绝（重命名）");
+// 仅改大小写：大小写敏感卷上是普通改名，不敏感卷上命中同一 inode 也应放行
+await writeFile(join(workspace, "ren2", "Case.txt"), "c\n");
+const caseRename = await actions.renameEntry({ workspaceRoot: workspace, path: join(workspace, "ren2", "Case.txt"), name: "case.txt" });
+if (caseRename.name !== "case.txt" || !(await exists(join(workspace, "ren2", "case.txt")))) throw new Error("大小写重命名未生效");
+// 目录带扩展名的重命名不改变类型
+await mkdir(join(workspace, "dir.with.dot", "sub"), { recursive: true });
+await actions.renameEntry({ workspaceRoot: workspace, path: join(workspace, "dir.with.dot"), name: "dir.v2" });
+if (!(await exists(join(workspace, "dir.v2", "sub")))) throw new Error("带点目录重命名未生效");
+
 // ─── 4.5) 文本编辑：读取 / 保存 / 一键格式化 ─────────────────────────────
 const jsonSource = '{"name":"dsh-plugin-file-actions","items":[1,2,3,4,5,6,7,8,9,10],"nested":{"key":"value","flag":true}}';
 await writeFile(join(workspace, "code.json"), jsonSource);
@@ -244,7 +285,7 @@ if (!badWorkspace) throw new Error("未知工作区未被拒绝");
 // ─── 6) HTTP 路由（走 handleRequest 全链路） ──────────────────────────────
 await new Promise((done) => setImmediate(done));
 const web = root.get("webServer");
-for (const op of ["copy", "move", "delete", "compress", "read", "save", "format"]) {
+for (const op of ["copy", "move", "rename", "delete", "compress", "read", "save", "format"]) {
 	if (!web.routes.has(`/api/dsh-file-actions/${op}`)) throw new Error(`路由未注册：${op}`);
 }
 const captured = { status: 0, body: null };
@@ -269,6 +310,18 @@ if (captured.status !== 200 || captured.body.ok !== true) throw new Error("HTTP 
 await web.routes.get("/api/dsh-file-actions/copy")(fakeReq, fakeRes);
 console.log("http copy(again):", captured.status, JSON.stringify(captured.body));
 if (captured.status !== 400 || captured.body.code !== "file-actions/exists") throw new Error("HTTP 冲突链路结果不符");
+// 重命名走同一条路由链路
+await writeFile(join(workspace, "http-ren.txt"), "r\n");
+const renameReq = {
+	method: "POST",
+	async *[Symbol.asyncIterator]() {
+		yield Buffer.from(JSON.stringify({ workspaceRoot: workspace, path: join(workspace, "http-ren.txt"), name: "http-ren2.txt" }));
+	},
+};
+await web.routes.get("/api/dsh-file-actions/rename")(renameReq, fakeRes);
+console.log("http rename:", captured.status, JSON.stringify(captured.body));
+if (captured.status !== 200 || captured.body.ok !== true || captured.body.name !== "http-ren2.txt") throw new Error("HTTP 重命名链路结果不符");
+if (!(await exists(join(workspace, "http-ren2.txt")))) throw new Error("HTTP 重命名未生效");
 
 console.log("SMOKE OK");
 await root.dispose?.();

@@ -49,8 +49,9 @@ var zh = {
   "menu.compressN": "\u538B\u7F29 {count} \u9879\u4E3A ZIP",
   "menu.delete": "\u5220\u9664",
   "menu.deleteN": "\u5220\u9664 {count} \u9879",
+  "menu.rename": "\u91CD\u547D\u540D",
   "menu.clearSelection": "\u53D6\u6D88\u9009\u62E9",
-  "menu.hint": "\u6309\u4F4F \u2318/Ctrl \u70B9\u51FB\u53EF\u591A\u9009",
+  "menu.hint": "\u2318/Ctrl \u70B9\u51FB\u591A\u9009\uFF0CShift \u70B9\u51FB\u9009\u62E9\u8FDE\u7EED\u533A\u95F4",
   "delete.title": "\u5220\u9664\u6587\u4EF6",
   "delete.description": "\u4EE5\u4E0B {count} \u9879\u5C06\u88AB\u6C38\u4E45\u5220\u9664\uFF0C\u6B64\u64CD\u4F5C\u4E0D\u53EF\u6062\u590D\uFF1A\n{preview}",
   "delete.acknowledge": "\u6211\u5DF2\u77E5\u6653\u5220\u9664\u4E0D\u53EF\u6062\u590D",
@@ -60,6 +61,10 @@ var zh = {
   "compress.description": "\u538B\u7F29\u5305\u6587\u4EF6\u540D\uFF08\u53EF\u4FEE\u6539\uFF09\uFF1A",
   "compress.cancel": "\u53D6\u6D88",
   "compress.confirm": "\u538B\u7F29",
+  "rename.title": "\u91CD\u547D\u540D",
+  "rename.description": "\u4E3A\u300C{name}\u300D\u8F93\u5165\u65B0\u540D\u5B57\uFF08\u4E0D\u80FD\u5305\u542B\u8DEF\u5F84\u5206\u9694\u7B26\uFF09\uFF1A",
+  "rename.cancel": "\u53D6\u6D88",
+  "rename.confirm": "\u91CD\u547D\u540D",
   "menu.edit": "\u7F16\u8F91",
   "edit.title": "\u7F16\u8F91",
   "edit.loading": "\u52A0\u8F7D\u4E2D\u2026",
@@ -101,6 +106,7 @@ var zh = {
   "toast.deleted": "\u5DF2\u5220\u9664 {count} \u9879",
   "toast.compressed": "\u5DF2\u538B\u7F29\u4E3A {name}",
   "toast.compressedSkipped": "\u5DF2\u538B\u7F29\u4E3A {name}\uFF08\u8DF3\u8FC7 {skipped} \u9879\uFF09",
+  "toast.renamed": "\u5DF2\u91CD\u547D\u540D\u4E3A {name}",
   "toast.pathCopied": "\u8DEF\u5F84\u5DF2\u590D\u5236\u5230\u526A\u8D34\u677F",
   "toast.clipboardFailed": "\u590D\u5236\u5230\u526A\u8D34\u677F\u5931\u8D25",
   "toast.dismiss": "\u5173\u95ED"
@@ -118,8 +124,9 @@ var en = {
   "menu.compressN": "Compress {count} items to ZIP",
   "menu.delete": "Delete",
   "menu.deleteN": "Delete {count} items",
+  "menu.rename": "Rename",
   "menu.clearSelection": "Clear selection",
-  "menu.hint": "Hold \u2318/Ctrl and click to multi-select",
+  "menu.hint": "\u2318/Ctrl+click to multi-select, Shift+click to select a range",
   "delete.title": "Delete files",
   "delete.description": "These {count} items will be permanently removed. This cannot be undone:\n{preview}",
   "delete.acknowledge": "I understand this cannot be undone",
@@ -129,6 +136,10 @@ var en = {
   "compress.description": "Archive file name (editable):",
   "compress.cancel": "Cancel",
   "compress.confirm": "Compress",
+  "rename.title": "Rename",
+  "rename.description": "Enter a new name for {name} (path separators are not allowed):",
+  "rename.cancel": "Cancel",
+  "rename.confirm": "Rename",
   "menu.edit": "Edit",
   "edit.title": "Edit",
   "edit.loading": "Loading\u2026",
@@ -170,6 +181,7 @@ var en = {
   "toast.deleted": "Deleted {count} items",
   "toast.compressed": "Compressed to {name}",
   "toast.compressedSkipped": "Compressed to {name} ({skipped} skipped)",
+  "toast.renamed": "Renamed to {name}",
   "toast.pathCopied": "Path copied to clipboard",
   "toast.clipboardFailed": "Failed to write clipboard",
   "toast.dismiss": "Dismiss"
@@ -198,6 +210,10 @@ var state = {
     /** @type {CompressRequest | null} */
     null
   ),
+  renameRequest: (
+    /** @type {RenameRequest | null} */
+    null
+  ),
   toasts: (
     /** @type {ToastItem[]} */
     []
@@ -211,7 +227,7 @@ function notify() {
 }
 function setState(patch) {
   const next = { ...state, ...patch };
-  if (next.clipboard === state.clipboard && next.selection === state.selection && next.menu === state.menu && next.deleteRequest === state.deleteRequest && next.compressRequest === state.compressRequest && next.toasts === state.toasts && next.treeVisible === state.treeVisible) return;
+  if (next.clipboard === state.clipboard && next.selection === state.selection && next.menu === state.menu && next.deleteRequest === state.deleteRequest && next.compressRequest === state.compressRequest && next.renameRequest === state.renameRequest && next.toasts === state.toasts && next.treeVisible === state.treeVisible) return;
   Object.assign(state, next);
   notify();
 }
@@ -303,6 +319,33 @@ function clearSelection() {
   setState({ selection: /* @__PURE__ */ new Set() });
   syncSelectionMarks();
 }
+var selectionAnchor = null;
+function visibleRowPaths() {
+  const tree = currentTree();
+  if (tree === null) return [];
+  const out = [];
+  for (const row of tree.querySelectorAll("[data-files-path][data-files-entry]")) {
+    const entry = row.getAttribute("data-files-entry");
+    if (entry !== "file" && entry !== "directory") continue;
+    if (row.getClientRects().length === 0) continue;
+    const path = row.getAttribute("data-files-path");
+    if (path !== null) out.push(path);
+  }
+  return out;
+}
+function selectRange(path, additive) {
+  const paths = visibleRowPaths();
+  const to = paths.indexOf(path);
+  if (to < 0) return false;
+  let from = selectionAnchor === null ? to : paths.indexOf(selectionAnchor);
+  if (from < 0) from = to;
+  const next = additive ? new Set(state.selection) : /* @__PURE__ */ new Set();
+  const [lo, hi] = from <= to ? [from, to] : [to, from];
+  for (let i = lo; i <= hi; i++) next.add(paths[i]);
+  setState({ selection: next });
+  syncSelectionMarks();
+  return true;
+}
 function setClipboard(clipboard) {
   setState({ clipboard });
   syncCutMarks();
@@ -327,6 +370,13 @@ function requestCompress(request) {
 function settleCompress() {
   if (state.compressRequest === null) return;
   setState({ compressRequest: null });
+}
+function requestRename(request) {
+  setState({ renameRequest: request });
+}
+function settleRename() {
+  if (state.renameRequest === null) return;
+  setState({ renameRequest: null });
 }
 function openEdit(path, workspaceRoot = currentTreeRoot()) {
   if (workspaceRoot === null || path === null || path === "") return;
@@ -383,6 +433,20 @@ function performCompress(request, rawName) {
   }).then((payload) => {
     clearSelection();
     pushToast(payload.skipped > 0 ? t("toast.compressedSkipped", { name: payload.name, skipped: payload.skipped }) : t("toast.compressed", { name: payload.name }));
+  }).catch((error) => {
+    pushToast(error.message, "error");
+  });
+}
+function renamePath(path, workspaceRoot = currentTreeRoot()) {
+  if (workspaceRoot === null || path === null || path === "") return;
+  requestRename({ path, workspaceRoot, name: basenameOf(path) });
+}
+function performRename(request, rawName) {
+  const name = String(rawName ?? "").trim();
+  if (name === "" || name === request.name) return;
+  api("rename", { workspaceRoot: request.workspaceRoot, path: request.path, name }).then((payload) => {
+    clearSelection();
+    pushToast(t("toast.renamed", { name: payload.name }));
   }).catch((error) => {
     pushToast(error.message, "error");
   });
@@ -463,6 +527,15 @@ function ContextMenu() {
             },
             children: t("menu.edit")
           }),
+          // 重命名：文件与目录都适用，且只在单目标时出现（多选重命名语义不明）
+          targets.length === 1 && menu.path !== null && (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, {
+            icon: (0, import_react.createElement)(import_dsh_client_ui_primitives.IconListPenOutlineRegular, { size: 14 }),
+            onSelect: () => {
+              closeMenu();
+              renamePath(targets[0], menu.workspaceRoot);
+            },
+            children: t("menu.rename")
+          }),
           (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, {
             icon: (0, import_react.createElement)(import_dsh_client_ui_primitives.IconEditOutlineRegular, { size: 14 }),
             onSelect: () => {
@@ -518,6 +591,8 @@ function BatchBar() {
   return (0, import_react.createElement)("div", { className: "dfa-bar", "data-dfa-ui": "bar", role: "toolbar", style: { pointerEvents: "auto" } }, [
     (0, import_react.createElement)("span", { className: "dfa-bar-count" }, t("menu.hint")),
     (0, import_react.createElement)("span", { className: "dfa-bar-divider" }),
+    // 重命名只对单选项出现（多选重命名语义不明）
+    paths.length === 1 && barButton(import_dsh_client_ui_primitives.IconListPenOutlineRegular, t("menu.rename"), () => renamePath(paths[0])),
     barButton(import_dsh_client_ui_primitives.IconEditOutlineRegular, itemLabel("menu.cut", "menu.cutN", paths.length), () => stagePaths(paths, "cut")),
     barButton(import_dsh_client_ui_primitives.IconCopyOutlineRegular, itemLabel("menu.copy", "menu.copyN", paths.length), () => stagePaths(paths, "copy")),
     barButton(import_dsh_client_ui_primitives.IconArchiveOutlineRegular, itemLabel("menu.compress", "menu.compressN", paths.length), () => compressPaths(paths)),
@@ -600,6 +675,57 @@ function CompressDialog() {
         onChange: (event) => setName(event.currentTarget.value),
         onKeyDown: (event) => {
           if (event.key === "Enter" && name.trim() !== "") {
+            event.preventDefault();
+            confirm();
+          }
+        }
+      })
+    ])
+  });
+}
+function RenameDialog() {
+  const request = useStore((s) => s.renameRequest);
+  const [name, setName] = (0, import_react.useState)("");
+  const inputRef = (0, import_react.useRef)(null);
+  (0, import_react.useEffect)(() => {
+    if (request === null) return;
+    setName(request.name);
+    const frame = requestAnimationFrame(() => {
+      const input = inputRef.current;
+      if (input === null) return;
+      input.focus();
+      const dot = request.name.lastIndexOf(".");
+      input.setSelectionRange(0, dot > 0 ? dot : request.name.length);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [request]);
+  const next = name.trim();
+  const invalid = next === "" || /[/\\]/.test(next);
+  const confirm = () => {
+    const pending = request;
+    if (pending === null || invalid) return;
+    settleRename();
+    performRename(pending, next);
+  };
+  return (0, import_react.createElement)(import_dsh_client_ui_primitives.Modal, {
+    open: request !== null,
+    title: t("rename.title"),
+    onClose: settleRename,
+    footer: (0, import_react.createElement)(import_react.Fragment, { children: [
+      (0, import_react.createElement)(import_dsh_client_ui_primitives.Button, { variant: "outline", onClick: settleRename, children: t("rename.cancel") }),
+      (0, import_react.createElement)(import_dsh_client_ui_primitives.Button, { variant: "primary", disabled: invalid, onClick: confirm, children: t("rename.confirm") })
+    ] }),
+    children: (0, import_react.createElement)("div", { className: "dfa-rename" }, [
+      (0, import_react.createElement)("p", { className: "dfa-rename-desc", children: request === null ? "" : t("rename.description", { name: request.name }) }),
+      (0, import_react.createElement)("input", {
+        ref: inputRef,
+        className: "dfa-rename-input",
+        type: "text",
+        value: name,
+        spellCheck: false,
+        onChange: (event) => setName(event.currentTarget.value),
+        onKeyDown: (event) => {
+          if (event.key === "Enter") {
             event.preventDefault();
             confirm();
           }
@@ -930,7 +1056,7 @@ function EditorTab(props) {
       el.focus();
     }
   };
-  const selectRange = (start, end) => {
+  const selectRange2 = (start, end) => {
     const el = inputRef.current;
     if (el === null) return;
     el.setSelectionRange(start, end);
@@ -952,7 +1078,7 @@ function EditorTab(props) {
     if (matches.length === 0) return;
     const next = (currentMatch + step + matches.length) % matches.length;
     setFindIndex(next);
-    selectRange(matches[next].start, matches[next].end);
+    selectRange2(matches[next].start, matches[next].end);
   };
   const replaceOne = () => {
     const match = matches[currentMatch];
@@ -973,7 +1099,7 @@ function EditorTab(props) {
     if (!Number.isFinite(line) || line < 1) return;
     const index = Math.min(line, content.split("\n").length) - 1;
     const pos = lineStartPos(content, index);
-    selectRange(pos, pos);
+    selectRange2(pos, pos);
   };
   const load = () => {
     if (parsed === null) return;
@@ -1339,13 +1465,15 @@ var CSS = `
 	width: 15px;
 	height: 15px;
 }
-.dfa-compress-desc {
+.dfa-compress-desc,
+.dfa-rename-desc {
 	margin: 0 0 10px;
 	color: var(--dsw-alias-label-secondary);
 	font-size: 13px;
 	line-height: 1.5;
 }
-.dfa-compress-input {
+.dfa-compress-input,
+.dfa-rename-input {
 	box-sizing: border-box;
 	width: 100%;
 	height: 32px;
@@ -1359,7 +1487,8 @@ var CSS = `
 	line-height: 1.5;
 	outline: none;
 }
-.dfa-compress-input:focus {
+.dfa-compress-input:focus,
+.dfa-rename-input:focus {
 	border-color: var(--dsw-alias-state-business-primary);
 }
 .dfa-editor-root {
@@ -1762,6 +1891,12 @@ function apply(ctx) {
     locale: NS,
     inject: () => ({})
   }, CompressDialog));
+  ctx.slots.inject("shell.overlay", () => ctx.slots.register({
+    name: "shell.overlay",
+    id: "file-actions-rename-dialog",
+    locale: NS,
+    inject: () => ({})
+  }, RenameDialog));
   sidebarRight = ctx.sidebarRight;
   sidebarRightTabs = ctx.sidebarRightTabs;
   ctx.effect(() => sidebarRightTabs.register({
@@ -1832,31 +1967,39 @@ function apply(ctx) {
       const target = event.target;
       if (!(target instanceof Element)) return;
       if (target.closest(OWN_UI) || target.closest(import_dsh_client_ui_primitives.modalSelector)) return;
+      const row = target.closest("[data-files-path]");
+      const tree = target.closest('[data-files-state="tree"]');
+      const rowPathOf = () => {
+        if (row === null || tree === null) return null;
+        const entry = row.getAttribute("data-files-entry");
+        if (entry !== "file" && entry !== "directory") return null;
+        return row.getAttribute("data-files-path");
+      };
+      const rowPath = rowPathOf();
+      if (event.shiftKey && rowPath !== null) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (selectRange(rowPath, event.ctrlKey || event.metaKey) && selectionAnchor === null) selectionAnchor = rowPath;
+        return;
+      }
       if (event.ctrlKey || event.metaKey) {
-        const row = target.closest("[data-files-path]");
-        const tree = target.closest('[data-files-state="tree"]');
-        if (row !== null && tree !== null) {
-          const entry = row.getAttribute("data-files-entry");
-          if (entry === "file" || entry === "directory") {
-            const path = row.getAttribute("data-files-path");
-            if (path !== null) {
-              event.preventDefault();
-              event.stopPropagation();
-              toggleSelect(path);
-              return;
-            }
-          }
+        if (rowPath !== null) {
+          event.preventDefault();
+          event.stopPropagation();
+          toggleSelect(rowPath);
+          selectionAnchor = rowPath;
         }
         return;
       }
-      if (target.closest("[data-files-path]") !== null) {
+      if (row !== null) {
+        if (rowPath !== null) selectionAnchor = rowPath;
         clearSelection();
         return;
       }
-      if (target.closest('[data-files-state="tree"]') === null) clearSelection();
+      if (tree === null) clearSelection();
     };
     const onKeyDown = (event) => {
-      if (event.key !== "Escape" && event.key !== "Delete" && event.key !== "Backspace") return;
+      if (event.key !== "Escape" && event.key !== "Delete" && event.key !== "Backspace" && event.key !== "F2") return;
       const target = event.target;
       const editable = target instanceof HTMLElement && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
       if (editable) return;
@@ -1866,13 +2009,17 @@ function apply(ctx) {
         return;
       }
       const snapshot = readState();
-      if (snapshot.selection.size > 0 && snapshot.treeVisible) {
-        const root = currentTreeRoot();
-        if (root !== null) {
-          event.preventDefault();
-          requestDelete({ paths: [...snapshot.selection], workspaceRoot: root });
-        }
+      if (snapshot.selection.size === 0 || !snapshot.treeVisible) return;
+      const root = currentTreeRoot();
+      if (root === null) return;
+      if (event.key === "F2") {
+        if (snapshot.selection.size !== 1) return;
+        event.preventDefault();
+        renamePath([...snapshot.selection][0], root);
+        return;
       }
+      event.preventDefault();
+      requestDelete({ paths: [...snapshot.selection], workspaceRoot: root });
     };
     document.addEventListener("contextmenu", onContextMenu, true);
     document.addEventListener("click", onClick, true);
@@ -1887,6 +2034,7 @@ function apply(ctx) {
         setState({ treeVisible: visible });
         if (!visible) {
           clearSelection();
+          selectionAnchor = null;
           closeMenu();
           if (readState().clipboard !== null) setClipboard(null);
           return;

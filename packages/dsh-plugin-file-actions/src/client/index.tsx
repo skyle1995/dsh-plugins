@@ -1,9 +1,11 @@
 /**
  * dsh-plugin-file-actions 浏览器半区：文件列表（右侧 files 标签页）增强。
  *
- * - 右键菜单：剪切 / 复制 / 粘贴 / 复制路径 / 压缩 / 删除（删除需确认）；
- * - Ctrl/Cmd+点击 多选，选中行高亮；批量操作栏（剪切/复制/压缩/删除/
- *   复制路径/取消）悬浮在窗口底部；Delete 键直接进入删除确认；
+ * - 右键菜单：编辑 / 重命名 / 剪切 / 复制 / 粘贴 / 复制路径 / 压缩 / 删除
+ *   （删除需确认）；重命名对文件与目录均适用，Enter 确认、Esc 取消；
+ * - Ctrl/Cmd+点击 多选、Shift+点击 选中锚点到该行的连续区间（Ctrl/Cmd+Shift
+ *   并入已有选择），选中行高亮；批量操作栏（剪切/复制/压缩/删除/复制路径/
+ *   取消）悬浮在窗口底部；Delete 键直接进入删除确认，F2 重命名单选项；
  * - 文件树顶部（sidebar.right.tab.files.actions 官方槽位）追加「粘贴」按钮；
  * - 剪贴板为模块级内存缓冲（剪切项半透明标记，粘贴成功后清空）；切换
  *   工作区自动清空；
@@ -23,6 +25,7 @@ import {
 	IconEditOutlineRegular,
 	IconFolderOpenOutlineRegular,
 	IconLinkOutlineRegular,
+	IconListPenOutlineRegular,
 	IconTrashOutlineRegular,
 	IconWarningOutlineRegular,
 	IconCheckOutlineRegular,
@@ -59,8 +62,9 @@ const zh = {
 	"menu.compressN": "压缩 {count} 项为 ZIP",
 	"menu.delete": "删除",
 	"menu.deleteN": "删除 {count} 项",
+	"menu.rename": "重命名",
 	"menu.clearSelection": "取消选择",
-	"menu.hint": "按住 ⌘/Ctrl 点击可多选",
+	"menu.hint": "⌘/Ctrl 点击多选，Shift 点击选择连续区间",
 	"delete.title": "删除文件",
 	"delete.description": "以下 {count} 项将被永久删除，此操作不可恢复：\n{preview}",
 	"delete.acknowledge": "我已知晓删除不可恢复",
@@ -70,6 +74,10 @@ const zh = {
 	"compress.description": "压缩包文件名（可修改）：",
 	"compress.cancel": "取消",
 	"compress.confirm": "压缩",
+	"rename.title": "重命名",
+	"rename.description": "为「{name}」输入新名字（不能包含路径分隔符）：",
+	"rename.cancel": "取消",
+	"rename.confirm": "重命名",
 	"menu.edit": "编辑",
 	"edit.title": "编辑",
 	"edit.loading": "加载中…",
@@ -111,6 +119,7 @@ const zh = {
 	"toast.deleted": "已删除 {count} 项",
 	"toast.compressed": "已压缩为 {name}",
 	"toast.compressedSkipped": "已压缩为 {name}（跳过 {skipped} 项）",
+	"toast.renamed": "已重命名为 {name}",
 	"toast.pathCopied": "路径已复制到剪贴板",
 	"toast.clipboardFailed": "复制到剪贴板失败",
 	"toast.dismiss": "关闭",
@@ -129,8 +138,9 @@ const en = {
 	"menu.compressN": "Compress {count} items to ZIP",
 	"menu.delete": "Delete",
 	"menu.deleteN": "Delete {count} items",
+	"menu.rename": "Rename",
 	"menu.clearSelection": "Clear selection",
-	"menu.hint": "Hold ⌘/Ctrl and click to multi-select",
+	"menu.hint": "⌘/Ctrl+click to multi-select, Shift+click to select a range",
 	"delete.title": "Delete files",
 	"delete.description": "These {count} items will be permanently removed. This cannot be undone:\n{preview}",
 	"delete.acknowledge": "I understand this cannot be undone",
@@ -140,6 +150,10 @@ const en = {
 	"compress.description": "Archive file name (editable):",
 	"compress.cancel": "Cancel",
 	"compress.confirm": "Compress",
+	"rename.title": "Rename",
+	"rename.description": "Enter a new name for {name} (path separators are not allowed):",
+	"rename.cancel": "Cancel",
+	"rename.confirm": "Rename",
 	"menu.edit": "Edit",
 	"edit.title": "Edit",
 	"edit.loading": "Loading…",
@@ -181,6 +195,7 @@ const en = {
 	"toast.deleted": "Deleted {count} items",
 	"toast.compressed": "Compressed to {name}",
 	"toast.compressedSkipped": "Compressed to {name} ({skipped} skipped)",
+	"toast.renamed": "Renamed to {name}",
 	"toast.pathCopied": "Path copied to clipboard",
 	"toast.clipboardFailed": "Failed to write clipboard",
 	"toast.dismiss": "Dismiss",
@@ -198,6 +213,7 @@ function format(text, params) {
  *             workspaceRoot: string }} MenuState
  * @typedef {{ paths: string[], workspaceRoot: string }} DeleteRequest
  * @typedef {{ paths: string[], workspaceRoot: string, name: string }} CompressRequest
+ * @typedef {{ path: string, workspaceRoot: string, name: string }} RenameRequest
  * @typedef {{ id: number, text: string, kind: "ok" | "error" }} ToastItem
  */
 const state = {
@@ -206,6 +222,7 @@ const state = {
 	menu: /** @type {MenuState | null} */ (null),
 	deleteRequest: /** @type {DeleteRequest | null} */ (null),
 	compressRequest: /** @type {CompressRequest | null} */ (null),
+	renameRequest: /** @type {RenameRequest | null} */ (null),
 	toasts: /** @type {ToastItem[]} */ ([]),
 	treeVisible: false,
 };
@@ -224,6 +241,7 @@ function setState(patch) {
 		&& next.menu === state.menu
 		&& next.deleteRequest === state.deleteRequest
 		&& next.compressRequest === state.compressRequest
+		&& next.renameRequest === state.renameRequest
 		&& next.toasts === state.toasts
 		&& next.treeVisible === state.treeVisible
 	) return;
@@ -340,6 +358,44 @@ function clearSelection() {
 	syncSelectionMarks();
 }
 
+/** Shift 范围选择的锚点行；只影响交互，不影响渲染，故不进 state。 */
+let selectionAnchor = null;
+
+/** 当前工作区可见行的路径序列（DOM 顺序即树的展开顺序，折叠行跳过）。 */
+function visibleRowPaths() {
+	const tree = currentTree();
+	if (tree === null) return [];
+	const out = [];
+	for (const row of tree.querySelectorAll("[data-files-path][data-files-entry]")) {
+		const entry = row.getAttribute("data-files-entry");
+		if (entry !== "file" && entry !== "directory") continue;
+		if (row.getClientRects().length === 0) continue;
+		const path = row.getAttribute("data-files-path");
+		if (path !== null) out.push(path);
+	}
+	return out;
+}
+
+/**
+ * Shift+点击：选中锚点到目标行的连续区间；additive（Ctrl/Cmd+Shift）时并入
+ * 已有选择。锚点缺失或已不在可见树里时退化为「只选目标行」。
+ * 锚点本身不随 Shift+点击移动，符合文件管理器的一贯行为。
+ * @returns 是否成功选中（目标行不在可见树里时为 false）。
+ */
+function selectRange(path, additive) {
+	const paths = visibleRowPaths();
+	const to = paths.indexOf(path);
+	if (to < 0) return false;
+	let from = selectionAnchor === null ? to : paths.indexOf(selectionAnchor);
+	if (from < 0) from = to;
+	const next = additive ? new Set(state.selection) : new Set();
+	const [lo, hi] = from <= to ? [from, to] : [to, from];
+	for (let i = lo; i <= hi; i++) next.add(paths[i]);
+	setState({ selection: next });
+	syncSelectionMarks();
+	return true;
+}
+
 function setClipboard(clipboard) {
 	setState({ clipboard });
 	syncCutMarks();
@@ -370,6 +426,15 @@ function requestCompress(request) {
 function settleCompress() {
 	if (state.compressRequest === null) return;
 	setState({ compressRequest: null });
+}
+
+function requestRename(request) {
+	setState({ renameRequest: request });
+}
+
+function settleRename() {
+	if (state.renameRequest === null) return;
+	setState({ renameRequest: null });
 }
 
 /** 在右侧栏打开文件编辑 tab（单选文件右键菜单最上方的「编辑」）。 */
@@ -440,6 +505,24 @@ function performCompress(request, rawName) {
 	}).then((payload) => {
 		clearSelection();
 		pushToast(payload.skipped > 0 ? t("toast.compressedSkipped", { name: payload.name, skipped: payload.skipped }) : t("toast.compressed", { name: payload.name }));
+	}).catch((error) => {
+		pushToast(error.message, "error");
+	});
+}
+
+/** 打开重命名对话框（右键「重命名」/ F2），预填当前名字。 */
+function renamePath(path, workspaceRoot = currentTreeRoot()) {
+	if (workspaceRoot === null || path === null || path === "") return;
+	requestRename({ path, workspaceRoot, name: basenameOf(path) });
+}
+
+/** 重命名确认后发宿主请求；成功后清除多选（树由官方文件面板自行刷新）。 */
+function performRename(request, rawName) {
+	const name = String(rawName ?? "").trim();
+	if (name === "" || name === request.name) return;
+	api("rename", { workspaceRoot: request.workspaceRoot, path: request.path, name }).then((payload) => {
+		clearSelection();
+		pushToast(t("toast.renamed", { name: payload.name }));
 	}).catch((error) => {
 		pushToast(error.message, "error");
 	});
@@ -528,6 +611,15 @@ function ContextMenu() {
 					},
 					children: t("menu.edit"),
 				}),
+				// 重命名：文件与目录都适用，且只在单目标时出现（多选重命名语义不明）
+				targets.length === 1 && menu.path !== null && h(MenuItemButton, {
+					icon: h(IconListPenOutlineRegular, { size: 14 }),
+					onSelect: () => {
+						closeMenu();
+						renamePath(targets[0], menu.workspaceRoot);
+					},
+					children: t("menu.rename"),
+				}),
 				h(MenuItemButton, {
 						icon: h(IconEditOutlineRegular, { size: 14 }),
 						onSelect: () => {
@@ -585,6 +677,8 @@ function BatchBar() {
 	return h("div", { className: "dfa-bar", "data-dfa-ui": "bar", role: "toolbar", style: { pointerEvents: "auto" } }, [
 		h("span", { className: "dfa-bar-count" }, t("menu.hint")),
 		h("span", { className: "dfa-bar-divider" }),
+		// 重命名只对单选项出现（多选重命名语义不明）
+		paths.length === 1 && barButton(IconListPenOutlineRegular, t("menu.rename"), () => renamePath(paths[0])),
 		barButton(IconEditOutlineRegular, itemLabel("menu.cut", "menu.cutN", paths.length), () => stagePaths(paths, "cut")),
 		barButton(IconCopyOutlineRegular, itemLabel("menu.copy", "menu.copyN", paths.length), () => stagePaths(paths, "copy")),
 		barButton(IconArchiveOutlineRegular, itemLabel("menu.compress", "menu.compressN", paths.length), () => compressPaths(paths)),
@@ -672,6 +766,60 @@ function CompressDialog() {
 				onChange: (event) => setName(event.currentTarget.value),
 				onKeyDown: (event) => {
 					if (event.key === "Enter" && name.trim() !== "") {
+						event.preventDefault();
+						confirm();
+					}
+				},
+			}),
+		]),
+	});
+}
+
+// ─── 重命名输入框 ─────────────────────────────────────────────────────────
+function RenameDialog() {
+	const request = useStore((s) => s.renameRequest);
+	const [name, setName] = useState("");
+	const inputRef = useRef(null);
+	useEffect(() => {
+		if (request === null) return;
+		setName(request.name);
+		const frame = requestAnimationFrame(() => {
+			const input = inputRef.current;
+			if (input === null) return;
+			input.focus();
+			// 预选主名（不含扩展名），与资源管理器的 F2 行为一致
+			const dot = request.name.lastIndexOf(".");
+			input.setSelectionRange(0, dot > 0 ? dot : request.name.length);
+		});
+		return () => cancelAnimationFrame(frame);
+	}, [request]);
+	const next = name.trim();
+	const invalid = next === "" || /[/\\]/.test(next);
+	const confirm = () => {
+		const pending = request;
+		if (pending === null || invalid) return;
+		settleRename();
+		performRename(pending, next);
+	};
+	return h(Modal, {
+		open: request !== null,
+		title: t("rename.title"),
+		onClose: settleRename,
+		footer: h(Fragment, { children: [
+			h(Button, { variant: "outline", onClick: settleRename, children: t("rename.cancel") }),
+			h(Button, { variant: "primary", disabled: invalid, onClick: confirm, children: t("rename.confirm") }),
+		] }),
+		children: h("div", { className: "dfa-rename" }, [
+			h("p", { className: "dfa-rename-desc", children: request === null ? "" : t("rename.description", { name: request.name }) }),
+			h("input", {
+				ref: inputRef,
+				className: "dfa-rename-input",
+				type: "text",
+				value: name,
+				spellCheck: false,
+				onChange: (event) => setName(event.currentTarget.value),
+				onKeyDown: (event) => {
+					if (event.key === "Enter") {
 						event.preventDefault();
 						confirm();
 					}
@@ -1478,13 +1626,15 @@ const CSS = `
 	width: 15px;
 	height: 15px;
 }
-.dfa-compress-desc {
+.dfa-compress-desc,
+.dfa-rename-desc {
 	margin: 0 0 10px;
 	color: var(--dsw-alias-label-secondary);
 	font-size: 13px;
 	line-height: 1.5;
 }
-.dfa-compress-input {
+.dfa-compress-input,
+.dfa-rename-input {
 	box-sizing: border-box;
 	width: 100%;
 	height: 32px;
@@ -1498,7 +1648,8 @@ const CSS = `
 	line-height: 1.5;
 	outline: none;
 }
-.dfa-compress-input:focus {
+.dfa-compress-input:focus,
+.dfa-rename-input:focus {
 	border-color: var(--dsw-alias-state-business-primary);
 }
 .dfa-editor-root {
@@ -1904,6 +2055,12 @@ export function apply(ctx) {
 		locale: NS,
 		inject: () => ({}),
 	}, CompressDialog));
+	ctx.slots.inject("shell.overlay", () => ctx.slots.register({
+		name: "shell.overlay",
+		id: "file-actions-rename-dialog",
+		locale: NS,
+		inject: () => ({}),
+	}, RenameDialog));
 	sidebarRight = ctx.sidebarRight;
 	sidebarRightTabs = ctx.sidebarRightTabs;
 	// 文件编辑 tab 类型：仅在显式指定 kind 时打开（patterns 只匹配本插件的
@@ -1978,32 +2135,42 @@ export function apply(ctx) {
 			const target = event.target;
 			if (!(target instanceof Element)) return;
 			if (target.closest(OWN_UI) || target.closest(modalSelector)) return;
+			const row = target.closest("[data-files-path]");
+			const tree = target.closest('[data-files-state="tree"]');
+			/** 该行对应的可操作路径（"other" 类入口返回 null）。 */
+			const rowPathOf = () => {
+				if (row === null || tree === null) return null;
+				const entry = row.getAttribute("data-files-entry");
+				if (entry !== "file" && entry !== "directory") return null;
+				return row.getAttribute("data-files-path");
+			};
+			const rowPath = rowPathOf();
+			// Shift+点击：选中锚点到该行的连续区间（Ctrl/Cmd+Shift 并入已有选择）。
+			if (event.shiftKey && rowPath !== null) {
+				event.preventDefault();
+				event.stopPropagation();
+				if (selectRange(rowPath, event.ctrlKey || event.metaKey) && selectionAnchor === null) selectionAnchor = rowPath;
+				return;
+			}
 			if (event.ctrlKey || event.metaKey) {
-				const row = target.closest('[data-files-path]');
-				const tree = target.closest('[data-files-state="tree"]');
-				if (row !== null && tree !== null) {
-					const entry = row.getAttribute("data-files-entry");
-					if (entry === "file" || entry === "directory") {
-						const path = row.getAttribute("data-files-path");
-						if (path !== null) {
-							event.preventDefault();
-							event.stopPropagation();
-							toggleSelect(path);
-							return;
-						}
-					}
+				if (rowPath !== null) {
+					event.preventDefault();
+					event.stopPropagation();
+					toggleSelect(rowPath);
+					selectionAnchor = rowPath;
 				}
 				return;
 			}
 			// 无修饰键：普通点击行或点击文件树之外 → 清空多选（不阻止默认行为）。
-			if (target.closest('[data-files-path]') !== null) {
+			if (row !== null) {
+				if (rowPath !== null) selectionAnchor = rowPath;
 				clearSelection();
 				return;
 			}
-			if (target.closest('[data-files-state="tree"]') === null) clearSelection();
+			if (tree === null) clearSelection();
 		};
 		const onKeyDown = (event) => {
-			if (event.key !== "Escape" && event.key !== "Delete" && event.key !== "Backspace") return;
+			if (event.key !== "Escape" && event.key !== "Delete" && event.key !== "Backspace" && event.key !== "F2") return;
 			const target = event.target;
 			const editable = target instanceof HTMLElement
 				&& (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
@@ -2014,13 +2181,18 @@ export function apply(ctx) {
 				return;
 			}
 			const snapshot = readState();
-			if (snapshot.selection.size > 0 && snapshot.treeVisible) {
-				const root = currentTreeRoot();
-				if (root !== null) {
-					event.preventDefault();
-					requestDelete({ paths: [...snapshot.selection], workspaceRoot: root });
-				}
+			if (snapshot.selection.size === 0 || !snapshot.treeVisible) return;
+			const root = currentTreeRoot();
+			if (root === null) return;
+			if (event.key === "F2") {
+				// 重命名只对单选项开放（多选重命名语义不明，故不提供）
+				if (snapshot.selection.size !== 1) return;
+				event.preventDefault();
+				renamePath([...snapshot.selection][0], root);
+				return;
 			}
+			event.preventDefault();
+			requestDelete({ paths: [...snapshot.selection], workspaceRoot: root });
 		};
 		document.addEventListener("contextmenu", onContextMenu, true);
 		document.addEventListener("click", onClick, true);
@@ -2037,6 +2209,7 @@ export function apply(ctx) {
 				setState({ treeVisible: visible });
 				if (!visible) {
 					clearSelection();
+					selectionAnchor = null;
 					closeMenu();
 					if (readState().clipboard !== null) setClipboard(null);
 					return;

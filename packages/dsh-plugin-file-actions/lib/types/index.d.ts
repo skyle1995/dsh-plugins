@@ -17,16 +17,19 @@ export declare class FileActionsError extends Error {
 	constructor(code: string, message: string, options?: ErrorOptions);
 }
 
-/** 复制 / 移动 / 删除 / 压缩的请求体（浏览器半区提交工作区绝对路径）。 */
+/** 复制 / 移动 / 重命名 / 删除 / 压缩的请求体（浏览器半区提交工作区绝对路径）。 */
 export interface FileActionsRequest {
 	/** 文件树根目录（工作区根），宿主据此匹配会话。 */
 	workspaceRoot: string;
 	/** 源路径（复制/移动/压缩）；删除时为待删除路径。 */
 	sources?: string[];
 	paths?: string[];
+	/** 待重命名的单个路径（重命名）。 */
+	path?: string;
 	/** 目标目录（复制/移动/压缩）。 */
 	destination?: string;
-	/** 压缩包文件名（可选；自动剥离目录部分并补 .zip 后缀）。 */
+	/** 压缩包文件名（可选；自动剥离目录部分并补 .zip 后缀）；
+	 *  重命名时为新的单段名字（不含路径分隔符）。 */
 	name?: string;
 }
 
@@ -42,12 +45,13 @@ export declare class FileActionsService extends Service {
 	confine(workspaceRoot: string, path: string, options?: { signal?: AbortSignal }): Promise<string>;
 	copyEntries(request: FileActionsRequest): Promise<{ count: number; destination: string }>;
 	moveEntries(request: FileActionsRequest): Promise<{ count: number; destination: string }>;
+	renameEntry(request: FileActionsRequest): Promise<{ name: string; from?: string; unchanged?: boolean }>;
 	deleteEntries(request: FileActionsRequest): Promise<{ count: number; missing: number }>;
 	compressEntries(request: FileActionsRequest): Promise<{ name: string; count: number; skipped: number }>;
 	readTextEntry(request: FileActionsRequest): Promise<{ content: string; bytes: number; truncated: boolean }>;
 	saveTextEntry(request: FileActionsRequest & { content?: string }): Promise<{ bytes: number }>;
 	formatTextEntry(request: FileActionsRequest & { content?: string }): Promise<{ content: string; parser: string }>;
-	handleRequest(req: any, res: any, operation: "copy" | "move" | "delete" | "compress" | "read" | "save" | "format"): Promise<void>;
+	handleRequest(req: any, res: any, operation: "copy" | "move" | "rename" | "delete" | "compress" | "read" | "save" | "format"): Promise<void>;
 }
 
 export default FileActionsService;
@@ -56,4 +60,5 @@ export const DEFAULT_MAX_ZIP_FILE_BYTES: number;
 export const DEFAULT_MAX_EDIT_BYTES: number;
 export declare function zipNameFor(sourceNames: string[]): string;
 export declare function sanitizeZipName(name: unknown): string;
+export declare function sanitizeEntryName(name: unknown): string;
 export declare function parserForPath(path: unknown): string | null;

@@ -1,6 +1,6 @@
 /**
- * dsh-plugin-file-actions —— 文件操作服务：复制 / 剪切（移动）/ 删除 / 压缩 /
- * 文本编辑（读取 / 保存 / 一键格式化）。
+ * dsh-plugin-file-actions —— 文件操作服务：复制 / 剪切（移动）/ 重命名 / 删除 /
+ * 压缩 / 文本编辑（读取 / 保存 / 一键格式化）。
  *
  * 设计要点：
  * - 服务键 `fileActions`（ctx.fileActions），注入 fs / sessions / sandboxPolicy
@@ -10,6 +10,8 @@
  *   逐条校验，越界一律拒绝；工作区根目录本身禁止删除/移动；
  * - 复制/移动目标必须是工作区内已存在的目录，同名冲突报
  *   file-actions/exists；跨设备移动（EXDEV）自动退化为复制 + 删除；
+ * - 重命名只接受单段新名字（路径分隔符 / 空名 / "." / ".." 一律拒绝），
+ *   在自身目录内生效，文件与目录均可；仅改大小写时按同一 inode 放行；
  * - 压缩用自带的 ZIP 写入器（lib/zip.js，无第三方依赖，deflate + CRC32）；
  * - 文本编辑的读取/保存受 maxEditBytes 上限约束（默认 1MB），拒绝含 NUL
  *   的非文本文件；一键格式化由 prettier 按扩展名推断 parser（babel /
@@ -21,7 +23,7 @@
 import { Service } from "@deepseek-ai/cordis";
 import Schema from "@deepseek-ai/schemastery";
 import { cp, lstat, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { format as prettierFormat } from "prettier";
 import { createZipBuffer } from "./zip.js";
 
@@ -59,6 +61,19 @@ export function sanitizeZipName(name) {
 	if (base === "" || base === "." || base === "..") return "";
 	if (!base.toLowerCase().endsWith(".zip")) return `${base}.zip`;
 	return base;
+}
+
+/**
+ * 规范化重命名提交的新名字：只接受单段名称（不含路径分隔符），
+ * 非空、非 "." / ".."、不含 NUL；非法输入抛 FileActionsError。
+ */
+export function sanitizeEntryName(name) {
+	const value = String(name ?? "").trim();
+	if (value === "") throw new FileActionsError("file-actions/invalid-name", "新名字不能为空");
+	if (value === "." || value === "..") throw new FileActionsError("file-actions/invalid-name", `新名字不合法："${value}"`);
+	if (value.includes("\0")) throw new FileActionsError("file-actions/invalid-name", "新名字包含非法字符");
+	if (value.includes("/") || value.includes("\\")) throw new FileActionsError("file-actions/invalid-name", "新名字不能包含路径分隔符，跨目录请用移动");
+	return value;
 }
 
 /** 从扩展名推断 prettier parser（一键格式化用）；未知类型返回 null。 */
@@ -125,7 +140,7 @@ export class FileActionsService extends Service {
 		// profile 里保持休眠、不影响本服务。
 		ctx.inject(["webServer"], (webCtx) => {
 			webCtx.effect(() => {
-				const disposers = ["copy", "move", "delete", "compress", "read", "save", "format"].map((operation) =>
+				const disposers = ["copy", "move", "rename", "delete", "compress", "read", "save", "format"].map((operation) =>
 					webCtx.webServer.register({
 						kind: "exact",
 						path: `${FILE_ACTIONS_API}/${operation}`,
@@ -277,6 +292,34 @@ export class FileActionsService extends Service {
 		return { count: hosts.length, destination: hostDest };
 	}
 
+	/**
+	 * 重命名：在各项目所在目录内改名，文件与目录均可。
+	 * 只接受单段新名字（跨目录移动请用 move）；目标已存在同名项时报
+	 * file-actions/exists。大小写不敏感卷（macOS / Windows 默认）上「只改
+	 * 大小写」时目标会命中同一 inode，此时按同一项处理而非冲突。
+	 * @returns `{ name }`（最终生效的名字），原名未变时附 `unchanged: true`。
+	 */
+	async renameEntry({ workspaceRoot, path, name }) {
+		const root = await this.bindWorkspace(workspaceRoot);
+		const [host] = await this.confineSources(root, [path]);
+		const nextName = sanitizeEntryName(name);
+		const target = join(dirname(host), nextName);
+		if (target === host) return { name: nextName, unchanged: true };
+		if (await exists(target)) {
+			const [fromInfo, toInfo] = await Promise.all([lstat(host), lstat(target)]);
+			const same = fromInfo.ino !== undefined && toInfo.ino !== undefined
+				&& fromInfo.ino === toInfo.ino && fromInfo.dev === toInfo.dev;
+			if (!same) throw new FileActionsError("file-actions/exists", `目标已存在同名项："${nextName}"`);
+		}
+		try {
+			await rename(host, target);
+		} catch (error) {
+			if (error?.code === "ENOENT") throw new FileActionsError("file-actions/not-found", `要重命名的项不存在："${path}"`, { cause: error });
+			throw error;
+		}
+		return { name: nextName, from: basename(host) };
+	}
+
 	/** 删除：逐条 rm（recursive）；不存在的路径记入 missing 而非报错。 */
 	async deleteEntries({ workspaceRoot, paths }) {
 		const root = await this.bindWorkspace(workspaceRoot);
@@ -387,6 +430,10 @@ export class FileActionsService extends Service {
 			}
 			if (operation === "move") {
 				payload(200, { ok: true, ...(await this.moveEntries(body)) });
+				return;
+			}
+			if (operation === "rename") {
+				payload(200, { ok: true, ...(await this.renameEntry(body)) });
 				return;
 			}
 			if (operation === "delete") {
