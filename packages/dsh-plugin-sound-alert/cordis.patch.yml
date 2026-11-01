@@ -1,0 +1,15 @@
+# dsh-plugin-sound-alert bundle patch：注册提示音插件的宿主行。
+#
+# 该行加载本包默认导出的 Cordis 服务（服务键 soundAlert，即 ctx.soundAlert）。
+# 宿主行本身不做音频工作，它是浏览器半区（dsh.client / lib/client.js）能够被
+# client-modules 扫描并组合进 Web 前端的必要条件。
+#
+# 可选配置（写在 profile 的 cordis.patch.yml 里覆盖；当前版本无配置项，
+# 提示音偏好由设置面板「提示音」分区保存在浏览器 localStorage 中）：
+#
+# - id: sound-alert
+#   name: 'dsh-plugin-sound-alert'
+#
+- insert:
+    - id: sound-alert
+      name: 'dsh-plugin-sound-alert'

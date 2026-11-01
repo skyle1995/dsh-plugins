@@ -26,6 +26,7 @@ dsh plugin --profile web add \
 | [`dsh-plugin-repo`](packages/dsh-plugin-repo) | `packages/dsh-plugin-repo` | **基础插件**：设置面板三个分区——插件仓库（在线目录/安装/更新/卸载）、技能能力（skills 管理+导入）、规则提示词（system-prompt persona 编辑，热加载）；另在会话右键菜单底部提供「删除会话」（红色警示+确认弹窗） |
 | [`dsh-plugin-file-actions`](packages/dsh-plugin-file-actions) | `packages/dsh-plugin-file-actions` | **文件列表增强**：文件树右键菜单与批量操作——侧边栏编辑 tab（编辑态实时语法高亮 + prettier 一键格式化）、**重命名**（文件/目录，右键或 `F2`，命名弹窗）、剪切/复制/粘贴、删除（确认弹窗）、压缩为 ZIP（命名弹窗）、复制路径、**多选与范围选择**（`⌘/Ctrl` 点击切换、`Shift` 点击选中连续区间）+ 底部批量操作栏（宿主半区路由 + 工作区安全约束） |
 | [`dsh-plugin-mcp`](packages/dsh-plugin-mcp) | `packages/dsh-plugin-mcp` | **MCP 服务器管理器**：设置面板「MCP 服务器」分区（已安装/预设分页）——可视化增删改/启停外部 MCP 服务器（stdio 本地进程 / streamable-http 远程），基于内置 `@deepseek-ai/dsh-mcp-client` 桥接（工具名 `mcp__<name>__<tool>`）；**43 个热门预设一键添加**（在线目录：更新仓库 presets.json 即可下发新预设，无需升级插件）（通用开发 / 代码托管（Gitea 官方·自建）/ 浏览器 Web / 搜索情报 / 云服务 / 逆向安全：Reqable、IDA Pro、Ghidra、Binary Ninja、Frida、JADX、VirusTotal、x64dbg、CyberChef、REA（多引擎编排）；八分类分组 + 搜索 + 弹窗表单 + 占位拦截 + $env:/$file: 动态参数解析）；状态存 JSON、运行时投影为 loader 树条目，重启自动重建；手工 cordis.patch.yml 条目只读展示 |
+| [`dsh-plugin-sound-alert`](packages/dsh-plugin-sound-alert) | `packages/dsh-plugin-sound-alert` | **手动交互提示音**：Agent 停下来需要你动手时响一声——会话出现待处理交互（选方向 / 确认 / 审批 / plan 复核）播上行双音铃，任务结束或停止播下行双音铃；子代理会话静默、同场景 280ms 合并连发；设置面板「提示音」分区（总开关 / 音量 / **按场景单独禁用** / **逐条替换成本地音频（wav·mp3·m4a·ogg·flac ≤4MB，存 IndexedDB）** / 恢复默认 / 逐条试听 / 依次试听）；音频随 bundle 内联下发、不依赖宿主路由，被浏览器自动播放策略拦截时自动挂手势解锁并提示 |
 | [`dsh-connect-workbuddy`](packages/dsh-connect-workbuddy) | `packages/dsh-connect-workbuddy` | **WorkBuddy 账号接入（第三方 · 上游镜像 v4.6.5 / 本仓库 v4.6.6，仅放宽 peer 范围）**：复用本机 WorkBuddy 桌面 App 的登录态（**无需二次登录、无需 Key**），把其模型接进 DSH 模型选择器；**国内版与国际版并行**（`workbuddy` / `workbuddy-global` 两个供应商，设置卡片以 tab 区分）；**账号池**（多账号添加/切换/轮换、凭据写入宿主凭据库）+ 模型勾选开关 + 只读积分/额度概览（侧栏用量卡、内联额度提示）；附带状态 CLI（`dsh-connect-workbuddy`）；Windows / macOS / Linux 三平台并列支持（Windows 为一等目标）。**注意**：MIT 上游镜像，产物文件逐字节未改，仅元数据对齐本仓库（新增 `@deepseek-ai/dsh` peer（semver 范围 `>=0.2.0-rc.2`）、移除失效的 `prepack`/构建脚本）；其派生关系（`dsh-workbuddy-connect`、`dsh-connect-trae`）由上游在 `THIRD_PARTY_NOTICES.md` 声明 |
 
 ## 为什么需要「仓库插件」
@@ -90,6 +91,8 @@ DSH 版本」精确豁免后才可运行。
 - [x] 设置里的「插件仓库」独立分区：在线列表查看、安装、更新、卸载（浏览器半区）
 - [x] `dsh-plugin-mcp`：设置面板 MCP 服务器管理器（增删改/启停 + 状态投影 + 重启重建）
 - [x] `dsh-plugin-mcp`：21 个热门预设一键添加（通用开发 + 逆向/安全，零配置直存 / 需密钥预填表单 + 占位拦截）
+- [x] `dsh-plugin-sound-alert`：手动交互提示音（待操作 / 任务结束）+ 设置面板试听与音量
+- [ ] `dsh-plugin-sound-alert`：会话标题闪烁 / 桌面通知、自定义音频导入
 - [ ] `plugin_repo` agent 工具（目录搜索 + 安装，需评估启用策略）
 - [ ] `dsh-plugin-mcp`：MCP 服务器状态自检（工具列表预览）、`$env:` 环境变量引用（避免明文落盘）
 - [ ] 更多业务插件（session-manager 等迁入）
