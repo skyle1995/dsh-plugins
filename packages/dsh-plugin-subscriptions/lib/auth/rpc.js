@@ -326,7 +326,16 @@ async function dispatch(controller, speed, proxy, modelDefaults, endpoint, paylo
             return ok({ providers: Object.fromEntries(entries.map(([provider, status]) => {
                     const displayName = providerSettings?.displayName?.(provider);
                     const visibleModels = providerSettings?.visibleModels?.(provider);
-                    return [provider, { ...status, ...(displayName ? { displayName } : {}),
+                    // Per-account model selections ride the same local-only path: the usage
+                    // list filters each account's windows with them, and no catalog fetch is
+                    // involved in answering `status`.
+                    const accounts = providerSettings?.accountModels === undefined
+                        ? status.accounts
+                        : status.accounts.map((account) => {
+                            const poolModels = providerSettings.accountModels?.(provider, account.key);
+                            return poolModels === undefined ? account : { ...account, poolModels };
+                        });
+                    return [provider, { ...status, accounts, ...(displayName ? { displayName } : {}),
                             ...(visibleModels === undefined ? {} : { visibleModels }) }];
                 })) });
         }

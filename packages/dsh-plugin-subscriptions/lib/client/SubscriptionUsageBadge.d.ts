@@ -89,6 +89,7 @@ type Translate = (key: SubscriptionsKey, params?: Record<string, unknown>) => st
  * @param input.windowsOf - Last-known windows of one account.
  * @param input.planOf - Plan label of one account.
  * @param input.visibleModelsOf - Saved picker selection; `undefined` = automatic.
+ * @param input.accountModelsOf - One account's own saved model list.
  * @param input.nameOf - Provider header label (saved display name, else brand).
  * @returns Provider rows in roster order; providers with no visible account are
  * omitted.
@@ -101,6 +102,8 @@ export declare function buildUsageDisplays(input: {
     windowsOf: (provider: SubscriptionProvider, account: AccountStatus) => UsageWindow[] | undefined;
     planOf: (provider: SubscriptionProvider, account: AccountStatus) => string | undefined;
     visibleModelsOf: (provider: SubscriptionProvider) => readonly string[] | undefined;
+    /** One account's own saved model list; `undefined` means every model. */
+    accountModelsOf?: (provider: SubscriptionProvider, account: AccountStatus) => readonly string[] | undefined;
     nameOf: (provider: SubscriptionProvider) => string;
 }): ProviderUsageDisplay[];
 /**

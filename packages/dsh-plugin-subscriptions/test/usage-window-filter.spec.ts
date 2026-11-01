@@ -90,3 +90,30 @@ test('other providers drop id-scoped windows of disabled models once the catalog
     scoped,
   )
 })
+
+test('an account-level model list hides its own deselected models, intersecting the picker', () => {
+  // The account manager's model checkboxes save `poolModels`; a deselected model
+  // must lose its quota windows even when the provider picker still lists it.
+  assert.deepEqual(
+    visibleUsageWindows('antigravity', windows, undefined, undefined, ['gemini-3-flash']),
+    windows.slice(0, 2),
+  )
+  assert.deepEqual(
+    visibleUsageWindows('antigravity', windows, undefined, undefined, []),
+    [],
+    'an empty account list disables every model-scoped window',
+  )
+  // Intersection: enabled only where BOTH lists agree.
+  assert.deepEqual(
+    visibleUsageWindows('antigravity', windows, ['gemini-3-flash', 'claude-sonnet-4-6'], undefined, ['gemini-3-flash']),
+    windows.slice(0, 2),
+  )
+  // An account list that names nothing the picker allows hides everything.
+  assert.deepEqual(
+    visibleUsageWindows('antigravity', windows, ['gemini-3-flash'], undefined, ['claude-sonnet-4-6']),
+    [],
+  )
+  // Account-wide windows survive either selection.
+  const unscoped: UsageWindow[] = [{ kind: 'session', usedPercent: 10 }]
+  assert.deepEqual(visibleUsageWindows('antigravity', unscoped, undefined, undefined, []), unscoped)
+})

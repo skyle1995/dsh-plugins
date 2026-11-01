@@ -189,6 +189,7 @@ function usageWindowLabel(t, window) {
  * @param input.windowsOf - Last-known windows of one account.
  * @param input.planOf - Plan label of one account.
  * @param input.visibleModelsOf - Saved picker selection; `undefined` = automatic.
+ * @param input.accountModelsOf - One account's own saved model list.
  * @param input.nameOf - Provider header label (saved display name, else brand).
  * @returns Provider rows in roster order; providers with no visible account are
  * omitted.
@@ -202,7 +203,7 @@ export function buildUsageDisplays(input) {
         // Disabled models drop out entirely: an account whose every window belongs
         // to a disabled model reads as "no usage" rather than as a row full of
         // quotas the user cannot use.
-        const windows = visibleUsageWindows(provider, reported, input.visibleModelsOf(provider));
+        const windows = visibleUsageWindows(provider, reported, input.visibleModelsOf(provider), undefined, input.accountModelsOf?.(provider, account));
         if (windows.length === 0)
             continue;
         const plan = input.planOf(provider, account);
@@ -315,6 +316,7 @@ export function SubscriptionUsageBadge({ rpc, currentModel, t }) {
                 windowsOf: (provider, account) => lastKnown.get(keyOf(provider, account)),
                 planOf: (provider, account) => plans.get(keyOf(provider, account)) ?? account.plan,
                 visibleModelsOf: provider => visibility.get(provider),
+                accountModelsOf: (_provider, account) => account.poolModels,
                 nameOf: provider => statusResp.providers[provider]?.displayName || PROVIDER_NAMES[provider],
             });
             // A save during a slow quota poll wins over that poll's old status snapshot.

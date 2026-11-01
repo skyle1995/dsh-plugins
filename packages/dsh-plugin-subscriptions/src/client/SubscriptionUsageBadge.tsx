@@ -260,6 +260,7 @@ function usageWindowLabel(t: Translate, window: UsageWindow): string {
  * @param input.windowsOf - Last-known windows of one account.
  * @param input.planOf - Plan label of one account.
  * @param input.visibleModelsOf - Saved picker selection; `undefined` = automatic.
+ * @param input.accountModelsOf - One account's own saved model list.
  * @param input.nameOf - Provider header label (saved display name, else brand).
  * @returns Provider rows in roster order; providers with no visible account are
  * omitted.
@@ -269,6 +270,8 @@ export function buildUsageDisplays(input: {
   windowsOf: (provider: SubscriptionProvider, account: AccountStatus) => UsageWindow[] | undefined
   planOf: (provider: SubscriptionProvider, account: AccountStatus) => string | undefined
   visibleModelsOf: (provider: SubscriptionProvider) => readonly string[] | undefined
+  /** One account's own saved model list; `undefined` means every model. */
+  accountModelsOf?: (provider: SubscriptionProvider, account: AccountStatus) => readonly string[] | undefined
   nameOf: (provider: SubscriptionProvider) => string
 }): ProviderUsageDisplay[] {
   const byProvider = new Map<SubscriptionProvider, ProviderUsageDisplay>()
@@ -278,7 +281,9 @@ export function buildUsageDisplays(input: {
     // Disabled models drop out entirely: an account whose every window belongs
     // to a disabled model reads as "no usage" rather than as a row full of
     // quotas the user cannot use.
-    const windows = visibleUsageWindows(provider, reported, input.visibleModelsOf(provider))
+    const windows = visibleUsageWindows(
+      provider, reported, input.visibleModelsOf(provider), undefined, input.accountModelsOf?.(provider, account),
+    )
     if (windows.length === 0) continue
     const plan = input.planOf(provider, account)
     const row: AccountUsageDisplay = {
@@ -393,6 +398,7 @@ export function SubscriptionUsageBadge({ rpc, currentModel, t }: SubscriptionUsa
         windowsOf: (provider, account) => lastKnown.get(keyOf(provider, account)),
         planOf: (provider, account) => plans.get(keyOf(provider, account)) ?? account.plan,
         visibleModelsOf: provider => visibility.get(provider),
+        accountModelsOf: (_provider, account) => account.poolModels,
         nameOf: provider => statusResp.providers[provider]?.displayName || PROVIDER_NAMES[provider],
       })
       // A save during a slow quota poll wins over that poll's old status snapshot.

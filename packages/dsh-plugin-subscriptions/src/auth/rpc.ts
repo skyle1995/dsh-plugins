@@ -93,6 +93,12 @@ export interface AccountStatus {
   plan?: string
   /** Whether direct (non-pool) routes serve this account. */
   isDefault: boolean
+  /**
+   * Models this account may serve, from its own saved model selection
+   * (`poolModels`); absent means "every model". Presentation only: the usage
+   * list hides the quota windows of models unchecked here.
+   */
+  poolModels?: string[]
 }
 
 /** Login state of one provider, as rendered by the Settings page. */
@@ -158,6 +164,8 @@ export interface ProviderSettingsController {
   displayName?(provider: ProviderId): string | undefined
   /** Local picker selection, without triggering model discovery. */
   visibleModels?(provider: ProviderId): string[] | undefined
+  /** One account's saved model selection, without triggering model discovery. */
+  accountModels?(provider: ProviderId, account: string): string[] | undefined
   get(provider: ProviderId, force: boolean): Promise<unknown>
   set(provider: ProviderId, settings: unknown): Promise<void>
 }
@@ -553,7 +561,16 @@ async function dispatch(
       return ok({ providers: Object.fromEntries(entries.map(([provider, status]) => {
         const displayName = providerSettings?.displayName?.(provider)
         const visibleModels = providerSettings?.visibleModels?.(provider)
-        return [provider, { ...status, ...(displayName ? { displayName } : {}),
+        // Per-account model selections ride the same local-only path: the usage
+        // list filters each account's windows with them, and no catalog fetch is
+        // involved in answering `status`.
+        const accounts = providerSettings?.accountModels === undefined
+          ? status.accounts
+          : status.accounts.map((account) => {
+            const poolModels = providerSettings.accountModels?.(provider, account.key)
+            return poolModels === undefined ? account : { ...account, poolModels }
+          })
+        return [provider, { ...status, accounts, ...(displayName ? { displayName } : {}),
           ...(visibleModels === undefined ? {} : { visibleModels }) }]
       })) })
     }

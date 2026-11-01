@@ -725,7 +725,7 @@ export function SubscriptionsSection(props) {
                 return (_jsxs("div", { style: styles.card, children: [_jsxs("div", { style: styles.cardHeader, children: [_jsx("span", { style: { ...styles.dot, background: dotColor(status) } }), _jsx("span", { style: styles.name, children: status?.displayName || name }), status?.displayName && _jsx("small", { style: styles.statusLine, children: name }), _jsx(ClientVersionTag, { clientVersion: status?.clientVersion, t: t })] }), _jsx("p", { style: styles.statusLine, children: statusText(t, status) }), status?.detail !== undefined && status.detail !== '' && (_jsx("p", { style: styles.statusLine, children: status.detail })), errors[id] !== undefined && _jsx("p", { style: styles.errorLine, children: errors[id] }), accounts.map((account) => {
                             const usageKey = `${id}:${account.key}`;
                             const usage = usages[usageKey];
-                            const shownWindows = visibleUsageWindows(id, usage?.windows, status?.visibleModels);
+                            const shownWindows = visibleUsageWindows(id, usage?.windows, status?.visibleModels, undefined, account.poolModels);
                             const usageError = usageErrors[usageKey];
                             const display = account.account ?? account.key;
                             const sortedCredits = [...(usage?.resetCredits ?? [])].sort((a, b) => (a.expiresAt ?? Infinity) - (b.expiresAt ?? Infinity));

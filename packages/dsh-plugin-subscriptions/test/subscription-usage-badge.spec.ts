@@ -159,6 +159,32 @@ test('model reader observes switches within the same provider and handles missin
   assert.equal(await createCurrentModelReader(() => ({ directoryFor: () => ({ load: async () => ({ current: null }) }) }), 'session')(), undefined)
 })
 
+test('an account-level model list removes its deselected windows from the dialog', () => {
+  const quotas: UsageWindow[] = [
+    { kind: 'other', scope: 'gemini-3-flash', usedPercent: 20 },
+    { kind: 'other', scope: 'gemini-2.5-pro', usedPercent: 70 },
+  ]
+  const roster = [{ provider: 'antigravity' as const, account: { key: 'a@example.com', isDefault: true } }]
+  const displays = buildUsageDisplays({
+    roster,
+    windowsOf: () => quotas,
+    planOf: () => undefined,
+    visibleModelsOf: () => undefined,
+    accountModelsOf: () => ['gemini-3-flash'],
+    nameOf: provider => provider,
+  })
+  assert.deepEqual(displays[0]?.accounts[0]?.windows, [quotas[0]])
+  // Every model deselected for that account: the row (and provider) disappears.
+  assert.deepEqual(buildUsageDisplays({
+    roster,
+    windowsOf: () => quotas,
+    planOf: () => undefined,
+    visibleModelsOf: () => undefined,
+    accountModelsOf: () => [],
+    nameOf: provider => provider,
+  }), [])
+})
+
 test('usage displays drop the windows of disabled models and with them empty accounts', () => {
   const quotas: UsageWindow[] = [
     { kind: 'other', scope: 'gemini-3-flash', usedPercent: 20 },

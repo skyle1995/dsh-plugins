@@ -13,8 +13,11 @@ function scopeMatchesModel(scope, model) {
  * (`visibleModels`), so a disabled model stops showing up in the usage list and
  * in the composer badge. Rules:
  *
- * - `visibleModels === undefined` means "follow discovery" — nothing is
- *   disabled yet, so every window stays.
+ * - An absent selection (`visibleModels` provider-wide, `accountModels` for one
+ *   account) means "follow discovery" — nothing is disabled there.
+ * - The two selections intersect: a window shows only when the model is enabled
+ *   in BOTH the provider picker and the account's own model list, which is what
+ *   the user unchecked.
  * - Windows without a `scope` are account-wide quotas; no single model owns
  *   them and no selection can disable them.
  * - A scope that resolves to an enabled model stays. Resolution uses the saved
@@ -29,13 +32,18 @@ function scopeMatchesModel(scope, model) {
  * @param windows - Raw usage windows as reported by the `usage` endpoint.
  * @param visibleModels - Saved picker selection; `undefined` means automatic.
  * @param models - Optional catalog for name-style scopes (never fetched here).
+ * @param accountModels - One account's own saved model list (`poolModels`);
+ *   `undefined` means every model, `[]` hides every model-scoped window.
  * @returns A new array when filtering applies; the input array otherwise.
  */
-export function visibleUsageWindows(provider, windows, visibleModels, models) {
+export function visibleUsageWindows(provider, windows, visibleModels, models, accountModels) {
     const all = windows ?? [];
-    if (visibleModels === undefined)
+    if (visibleModels === undefined && accountModels === undefined)
         return all;
-    const enabled = new Set(visibleModels);
+    const picker = visibleModels === undefined ? undefined : new Set(visibleModels);
+    const account = accountModels === undefined ? undefined : new Set(accountModels);
+    // A model must be enabled in both lists; a missing list imposes no restriction.
+    const enabled = new Set([...(picker ?? account ?? [])].filter(id => picker?.has(id) !== false && account?.has(id) !== false));
     const kept = all.filter(window => {
         const scope = window.scope;
         if (scope === undefined || scope === '')

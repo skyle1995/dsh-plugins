@@ -10,6 +10,8 @@ export interface AccountStatus {
     expiresAt?: number;
     plan?: string;
     isDefault: boolean;
+    /** This account's own saved model list; absent means every model. */
+    poolModels?: string[];
 }
 /** One provider's login state as answered by the `status` endpoint. */
 export interface ProviderStatus {

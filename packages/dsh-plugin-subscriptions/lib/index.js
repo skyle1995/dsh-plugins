@@ -1089,6 +1089,7 @@ export function apply(ctx, config) {
     }, modelDefaults, {
         displayName: provider => preferences.get(provider).displayName,
         visibleModels: provider => preferences.get(provider).visibleModels,
+        accountModels: (provider, account) => preferences.get(provider).accounts?.[account]?.poolModels,
         async get(provider, force) {
             await loadModelDefaults();
             const adapter = adapters.get(provider);

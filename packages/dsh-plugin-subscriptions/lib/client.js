@@ -441,8 +441,11 @@ function scopeMatchesModel(scope, model) {
 * (`visibleModels`), so a disabled model stops showing up in the usage list and
 * in the composer badge. Rules:
 *
-* - `visibleModels === undefined` means "follow discovery" — nothing is
-*   disabled yet, so every window stays.
+* - An absent selection (`visibleModels` provider-wide, `accountModels` for one
+*   account) means "follow discovery" — nothing is disabled there.
+* - The two selections intersect: a window shows only when the model is enabled
+*   in BOTH the provider picker and the account's own model list, which is what
+*   the user unchecked.
 * - Windows without a `scope` are account-wide quotas; no single model owns
 *   them and no selection can disable them.
 * - A scope that resolves to an enabled model stays. Resolution uses the saved
@@ -457,12 +460,16 @@ function scopeMatchesModel(scope, model) {
 * @param windows - Raw usage windows as reported by the `usage` endpoint.
 * @param visibleModels - Saved picker selection; `undefined` means automatic.
 * @param models - Optional catalog for name-style scopes (never fetched here).
+* @param accountModels - One account's own saved model list (`poolModels`);
+*   `undefined` means every model, `[]` hides every model-scoped window.
 * @returns A new array when filtering applies; the input array otherwise.
 */
-function visibleUsageWindows(provider, windows, visibleModels, models) {
+function visibleUsageWindows(provider, windows, visibleModels, models, accountModels) {
 	const all = windows ?? [];
-	if (visibleModels === void 0) return all;
-	const enabled = new Set(visibleModels);
+	if (visibleModels === void 0 && accountModels === void 0) return all;
+	const picker = visibleModels === void 0 ? void 0 : new Set(visibleModels);
+	const account = accountModels === void 0 ? void 0 : new Set(accountModels);
+	const enabled = new Set([...picker ?? account ?? []].filter((id) => picker?.has(id) !== false && account?.has(id) !== false));
 	const kept = all.filter((window$1) => {
 		const scope = window$1.scope;
 		if (scope === void 0 || scope === "") return true;
@@ -2737,7 +2744,7 @@ function SubscriptionsSection(props) {
 						accounts.map((account) => {
 							const usageKey = `${id}:${account.key}`;
 							const usage = usages[usageKey];
-							const shownWindows = visibleUsageWindows(id, usage?.windows, status?.visibleModels);
+							const shownWindows = visibleUsageWindows(id, usage?.windows, status?.visibleModels, void 0, account.poolModels);
 							const usageError = usageErrors[usageKey];
 							const display = account.account ?? account.key;
 							const sortedCredits = [...usage?.resetCredits ?? []].sort((a, b) => (a.expiresAt ?? Infinity) - (b.expiresAt ?? Infinity));
@@ -4308,6 +4315,7 @@ function usageWindowLabel(t, window$1) {
 * @param input.windowsOf - Last-known windows of one account.
 * @param input.planOf - Plan label of one account.
 * @param input.visibleModelsOf - Saved picker selection; `undefined` = automatic.
+* @param input.accountModelsOf - One account's own saved model list.
 * @param input.nameOf - Provider header label (saved display name, else brand).
 * @returns Provider rows in roster order; providers with no visible account are
 * omitted.
@@ -4317,7 +4325,7 @@ function buildUsageDisplays(input) {
 	for (const { provider, account } of input.roster) {
 		const reported = input.windowsOf(provider, account);
 		if (reported === void 0) continue;
-		const windows = visibleUsageWindows(provider, reported, input.visibleModelsOf(provider));
+		const windows = visibleUsageWindows(provider, reported, input.visibleModelsOf(provider), void 0, input.accountModelsOf?.(provider, account));
 		if (windows.length === 0) continue;
 		const plan = input.planOf(provider, account);
 		const row = {
@@ -4415,6 +4423,7 @@ function SubscriptionUsageBadge({ rpc, currentModel, t }) {
 				windowsOf: (provider, account) => lastKnown.get(keyOf(provider, account)),
 				planOf: (provider, account) => plans.get(keyOf(provider, account)) ?? account.plan,
 				visibleModelsOf: (provider) => visibility.get(provider),
+				accountModelsOf: (_provider, account) => account.poolModels,
 				nameOf: (provider) => statusResp.providers[provider]?.displayName || PROVIDER_NAMES[provider]
 			}).map((row) => {
 				const saved = recentNames.current.get(row.provider);

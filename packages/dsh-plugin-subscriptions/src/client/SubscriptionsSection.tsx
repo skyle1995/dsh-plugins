@@ -44,6 +44,8 @@ export interface AccountStatus {
   expiresAt?: number
   plan?: string
   isDefault: boolean
+  /** This account's own saved model list; absent means every model. */
+  poolModels?: string[]
 }
 
 /** One provider's login state as answered by the `status` endpoint. */
@@ -871,7 +873,7 @@ export function SubscriptionsSection(props: SubscriptionsSectionProps) {
             {accounts.map((account) => {
               const usageKey = `${id}:${account.key}`
               const usage = usages[usageKey]
-              const shownWindows = visibleUsageWindows(id, usage?.windows, status?.visibleModels)
+              const shownWindows = visibleUsageWindows(id, usage?.windows, status?.visibleModels, undefined, account.poolModels)
               const usageError = usageErrors[usageKey]
               const display = account.account ?? account.key
               const sortedCredits = [...(usage?.resetCredits ?? [])].sort((a, b) => (a.expiresAt ?? Infinity) - (b.expiresAt ?? Infinity))

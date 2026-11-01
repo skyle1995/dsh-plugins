@@ -26,13 +26,16 @@ interface FakeStore {
 }
 
 /** Mount the plugin with fake llm/connection (and optional attachments); return the RPC handler. */
-async function mount(attachments?: FakeStore): Promise<ConnectionRpcHandler> {
+async function mount(
+  attachments?: FakeStore,
+  config: Record<string, unknown> = { providers: ['codex'] },
+): Promise<ConnectionRpcHandler> {
   const ctx = new Context()
   ctx.provide('llm', { registerAdapter: () => Object.assign(() => {}, { replace: () => {} }) })
   const fake = createFakeConnection()
   ctx.provide('connection', fake.connection)
   if (attachments !== undefined) ctx.provide('attachments', attachments)
-  ctx.plugin(plugin, { providers: ['codex'] })
+  ctx.plugin(plugin, config)
   await new Promise(resolve => setTimeout(resolve, 50))
   assert.ok(fake.registered(), 'the subscriptions-auth routes were registered')
   return fake.handler
@@ -195,4 +198,28 @@ test('status endpoint: one corrupt provider entry degrades alone, others still r
   const providers = (result.value as { providers: Record<string, { accounts: unknown[]; detail?: string }> }).providers
   assert.equal(providers.codex.accounts.length, 1, 'codex still reports its account')
   assert.equal(providers.claude.accounts.length, 0, 'the corrupt claude entry is skipped')
+})
+
+test('status endpoint: each account carries its own saved model list for usage filtering', async () => {
+  const home = process.env.DSH_HOME as string
+  mkdirSync(join(home, 'plugins', 'subscriptions'), { recursive: true })
+  writeFileSync(join(home, 'plugins', 'subscriptions', 'auth.json'), JSON.stringify({
+    antigravity: { default: 'a@example.com', accounts: { 'a@example.com': {
+      accessToken: 'at', refreshToken: 'rt', expiresAt: Date.now() + 3600_000, projectId: 'proj',
+      account: 'a@example.com',
+    } } },
+  }), { mode: 0o600 })
+  writeFileSync(join(home, 'plugins', 'subscriptions', 'provider-settings.json'), JSON.stringify({
+    providers: { antigravity: { accounts: { 'a@example.com': { poolModels: ['gemini-3-flash'] } } } },
+    toolHistory: [],
+  }))
+  const handler = await mount(undefined, { providers: ['antigravity'] })
+  const result = await handler('status', {}, new AbortController().signal)
+  assert.ok(result.ok)
+  if (!result.ok) return
+  const providers = (result.value as {
+    providers: Record<string, { accounts: { key: string; poolModels?: string[] }[]; visibleModels?: string[] }>
+  }).providers
+  assert.deepEqual(providers.antigravity.accounts.map(account => account.poolModels), [['gemini-3-flash']])
+  assert.equal(providers.antigravity.visibleModels, undefined, 'an unset picker selection stays absent')
 })
