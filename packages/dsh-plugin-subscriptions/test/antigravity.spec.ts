@@ -951,6 +951,36 @@ test('Antigravity picker enumeration hides tab and chat lanes but the catalog ke
   assert.equal((await adapter.resolveOwnModel('antigravity', 'tab_flash_lite_preview', 'alice')).defaultMaxTokens, 4096)
 })
 
+test('Antigravity collapses one shared quota pool into a single window and drops editor lanes', async () => {
+  const modelsURL = `${runtime.baseURL}/v1internal:fetchAvailableModels`
+  const loadURL = `${runtime.baseURL}/v1internal:loadCodeAssist`
+  const reset = '2026-08-24T00:00:00Z'
+  const usage = await fetchAntigravityUsage(session, runtime, routed({
+    [modelsURL]: { models: {
+      // Two Gemini ids reporting the identical measurement: ONE account pool.
+      'gemini-3-flash': { quotaInfo: { remainingFraction: 0.9, resetTime: reset } },
+      'gemini-2.5-pro': { quotaInfo: { remainingFraction: 0.9, resetTime: reset } },
+      // A different measurement stays its own, model-scoped window.
+      'gemini-2.5-flash-lite': { quotaInfo: { remainingFraction: 0.5, resetTime: reset } },
+      // Editor lanes carry untouched counters and are not chat quotas.
+      'tab_flash_lite_preview': { quotaInfo: { remainingFraction: 1 } },
+      'chat_20706': { quotaInfo: { remainingFraction: 1 } },
+    } },
+    [loadURL]: { paidTier: { name: 'Google AI Pro' } },
+  }))
+  const round = (value: number) => Math.round(value * 100) / 100
+  assert.deepEqual(usage.windows?.map(window => ({
+    kind: window.kind,
+    scope: window.scope,
+    used: round(window.usedPercent),
+    resetsAt: window.resetsAt,
+  })), [
+    // The shared pool is reported once, and unscoped: no single model owns it.
+    { kind: 'other', scope: undefined, used: 10, resetsAt: Date.parse(reset) },
+    { kind: 'other', scope: 'gemini-2.5-flash-lite', used: 50, resetsAt: Date.parse(reset) },
+  ])
+})
+
 test('Antigravity sorts the catalog by label and keeps every row distinguishable across accounts', async () => {
   const { tokens } = accountTokens()
   // Each account labels a different id with the same name; the union must not

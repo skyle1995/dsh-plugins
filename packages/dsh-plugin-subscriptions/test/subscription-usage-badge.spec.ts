@@ -44,7 +44,7 @@ function display(provider: ProviderUsageDisplay['provider'] = 'antigravity', val
 
 test('Antigravity compact readout selects exact current model, not the entire catalog', () => {
   const d = display('antigravity', [...windows, { kind: 'weekly', scope: 'gemini-model-59', usedPercent: 81 }])
-  assert.equal(compactSegment(d, 'gemini-model-59'), 'Antigravity Window 59% · Weekly 81%')
+  assert.equal(compactSegment(d, 'gemini-model-59'), 'Antigravity Window 59% used · Weekly 81% used')
   assert.equal(compactSegment(d), 'Antigravity 60 model quotas')
   assert.equal(compactSegment(d, 'missing'), 'Antigravity Current model quota unavailable')
   assert.ok(compactSegment(d, 'gemini-model-1').length < 60)
@@ -53,7 +53,7 @@ test('Antigravity compact readout selects exact current model, not the entire ca
 test('compact summary uses default account and preserves bounded non-Antigravity windows', () => {
   const d = display('codex', [{ kind: 'session', usedPercent: 13 }, { kind: 'weekly', usedPercent: 25 }])
   d.accounts.unshift({ key: 'other', isDefault: false, windows: [{ kind: 'session', usedPercent: 99 }] })
-  assert.equal(compactSegment(d), 'Codex 5h 13% · Wk 25%')
+  assert.equal(compactSegment(d), 'Codex 5h 13% used · Wk 25% used')
   assert.ok(compactSegment(display('codex')).endsWith('+58'))
 })
 
@@ -223,4 +223,15 @@ test('usage displays drop the windows of disabled models and with them empty acc
     nameOf: provider => provider,
   })
   assert.deepEqual(scopedOnly, [])
+})
+
+test('an account-wide Antigravity window serves every model rather than reading as unavailable', () => {
+  // One shared pool (the shape Antigravity reports for its Gemini families).
+  const shared: UsageWindow[] = [{ kind: 'other', usedPercent: 8 }, { kind: 'weekly', usedPercent: 40 }]
+  const d = display('antigravity', shared)
+  assert.equal(compactSegment(d, 'gemini-3-flash'), 'Antigravity Window 8% used · Weekly 40% used')
+  assert.equal(compactSegment(d, 'gemini-2.5-pro'), 'Antigravity Window 8% used · Weekly 40% used')
+  const { shown, hidden } = previewWindows(shared, 'gemini-3-flash', 'antigravity')
+  assert.deepEqual(shown, shared)
+  assert.deepEqual(hidden, [])
 })

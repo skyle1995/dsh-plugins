@@ -59,6 +59,8 @@ The composer's stats row gains a **subscription usage** pill showing the used pe
 
 A model that was deselected no longer keeps its quota windows in any usage list — neither Settings → Subscriptions nor the composer usage pill. Both selections count and they intersect: the provider-wide **Edit model list** checkboxes (`visibleModels`) and each account's own **Models** checkboxes (`poolModels`). Account-wide windows (the 5-hour/weekly quotas no single model owns) are unaffected, and leaving both selections on automatic still shows everything.
 
+Antigravity usage rows follow the measurement: when several models report the identical share and reset instant they share one account pool, so the list shows a single account-wide window instead of a copy per model, and the number states its direction — `8% used · 92% left`. Editor-lane counters (`tab_*`, `chat_*`) never enter the usage list.
+
 Antigravity model labels follow the catalog's `displayName`. When upstream aliases several ids onto one release (`gemini-2.5-flash`, `-flash-lite`, `-flash-thinking`, and `gemini-3.5-flash-lite` all arrive as "Gemini 3.5 Flash Lite"), the plugin labels each row from its own id instead (`Gemini 2.5 Flash`, `Gemini 2.5 Flash Lite`, `Gemini 2.5 Flash Thinking`, `Gemini 3.5 Flash Lite`). Editor-only lanes (`tab_*`, `chat_*`) no longer appear in the picker; they remain resolvable by id.
 
 Antigravity models are ordered **by label** (case-insensitive, numeric-aware — `Gemini 3`, then `Gemini 3.1`, then `Gemini 3.5` — and the merged account/pool list keeps that order), and every row is **unique**: when two ids would read alike, the later row carries ` · <model id>` so the exact wire model stays visible.

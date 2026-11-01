@@ -36,7 +36,7 @@ import { en } from './locales.js'
 import type { SubscriptionsKey } from './locales.js'
 import { hostIcon } from './host-icons.js'
 import { useUsageBadgeMode } from './usage-badge-preferences.js'
-import { visibleUsageWindows } from './usage-window-filter.js'
+import { formatUsagePercent, visibleUsageWindows } from './usage-window-filter.js'
 import { DISPLAY_NAME_CHANGED, type DisplayNameChange } from './display-name-events.js'
 
 /** DSH renamed the data icon in 0.1.7; retain older supported hosts too. */
@@ -167,8 +167,9 @@ export const WINDOW_PREVIEW_LIMIT = 4
 export function previewWindows(windows: readonly UsageWindow[], model?: string, provider?: SubscriptionProvider) {
   const ordered = prioritizeWindows(windows, model)
   // Antigravity has many model-specific quotas: preview only the current model.
+  // Account-wide windows (no scope) apply to every model, so they always count.
   const limit = provider === 'antigravity'
-    ? Math.min(2, model === undefined ? 0 : windows.filter(w => w.scope === model).length)
+    ? Math.min(2, model === undefined ? 0 : windows.filter(w => w.scope === undefined || w.scope === model).length)
     : WINDOW_PREVIEW_LIMIT
   return { shown: ordered.slice(0, limit), hidden: ordered.slice(limit) }
 }
@@ -177,16 +178,17 @@ export function previewWindows(windows: readonly UsageWindow[], model?: string, 
 export function compactSegment(d: ProviderUsageDisplay, model?: string, t: Translate = fallbackTranslate): string {
   const windows = pillAccountOf(d).windows
   if (d.provider === 'antigravity') {
-    const matching = model === undefined ? [] : windows.filter(w => w.scope === model)
+    // A window without a scope is the account pool every model draws from.
+    const matching = model === undefined ? [] : windows.filter(w => w.scope === undefined || w.scope === model)
     if (matching.length === 0) {
       return `${d.name} ${t(model === undefined ? 'usageBadgeModelCount' : 'usageBadgeModelUnavailable', {
         count: new Set(windows.map(w => w.scope).filter(Boolean)).size,
       })}`
     }
-    const parts = matching.slice(0, 2).map(w => `${w.kind === 'weekly' ? t('usageWeekly') : t('usageWindow')} ${usedPercent(w)}%`)
+    const parts = matching.slice(0, 2).map(w => `${w.kind === 'weekly' ? t('usageWeekly') : t('usageWindow')} ${t('usageUsedPercent', { percent: formatUsagePercent(w.usedPercent) })}`)
     return `${d.name} ${parts.join(' · ')}`
   }
-  const parts = windows.slice(0, 2).map(w => `${windowLabel(w)} ${usedPercent(w)}%`)
+  const parts = windows.slice(0, 2).map(w => `${windowLabel(w)} ${t('usageUsedPercent', { percent: formatUsagePercent(w.usedPercent) })}`)
   if (windows.length > 2) parts.push(`+${windows.length - 2}`)
   return `${d.name} ${parts.join(' · ')}`
 }
@@ -625,7 +627,7 @@ export function AccountWindows({ windows, model, provider, translate }: {
   const rows = (items: readonly UsageWindow[]) => (
     <dl style={styles.details}>
       {items.map((w, i) => (
-        <WindowRow key={i} label={`${usageWindowLabel(translate, w)}${model !== undefined && w.scope === model ? ` · ${translate('usageBadgeCurrent')}` : ''}`} window={w} />
+        <WindowRow key={i} label={`${usageWindowLabel(translate, w)}${model !== undefined && w.scope === model ? ` · ${translate('usageBadgeCurrent')}` : ''}`} window={w} translate={translate} />
       ))}
     </dl>
   )
@@ -639,13 +641,13 @@ export function AccountWindows({ windows, model, provider, translate }: {
 }
 
 /** One `dt`/`dd` pair: window name → `25% · 6d 1h`, with the bar underneath. */
-function WindowRow({ label, window: w }: { label: string; window: UsageWindow }) {
+function WindowRow({ label, window: w, translate }: { label: string; window: UsageWindow; translate: Translate }) {
   const percent = usedPercent(w)
   return (
     <>
       <dt style={styles.dt}>{label}</dt>
       <dd style={styles.dd}>
-        {percent}%
+        {translate('usageUsedRemaining', { used: formatUsagePercent(w.usedPercent), remaining: formatUsagePercent(100 - w.usedPercent) })}
         {w.resetsAt !== undefined && <span style={styles.reset}> · {windowLabel(w)}</span>}
       </dd>
       <div style={styles.bar} aria-hidden>

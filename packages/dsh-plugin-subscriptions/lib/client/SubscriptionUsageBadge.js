@@ -31,7 +31,7 @@ import { callSubscriptionsAuth, usageBarColor } from './SubscriptionsSection.js'
 import { en } from './locales.js';
 import { hostIcon } from './host-icons.js';
 import { useUsageBadgeMode } from './usage-badge-preferences.js';
-import { visibleUsageWindows } from './usage-window-filter.js';
+import { formatUsagePercent, visibleUsageWindows } from './usage-window-filter.js';
 import { DISPLAY_NAME_CHANGED } from './display-name-events.js';
 /** DSH renamed the data icon in 0.1.7; retain older supported hosts too. */
 export function usageBadgeIcon(icons) {
@@ -115,8 +115,9 @@ export const WINDOW_PREVIEW_LIMIT = 4;
 export function previewWindows(windows, model, provider) {
     const ordered = prioritizeWindows(windows, model);
     // Antigravity has many model-specific quotas: preview only the current model.
+    // Account-wide windows (no scope) apply to every model, so they always count.
     const limit = provider === 'antigravity'
-        ? Math.min(2, model === undefined ? 0 : windows.filter(w => w.scope === model).length)
+        ? Math.min(2, model === undefined ? 0 : windows.filter(w => w.scope === undefined || w.scope === model).length)
         : WINDOW_PREVIEW_LIMIT;
     return { shown: ordered.slice(0, limit), hidden: ordered.slice(limit) };
 }
@@ -124,16 +125,17 @@ export function previewWindows(windows, model, provider) {
 export function compactSegment(d, model, t = fallbackTranslate) {
     const windows = pillAccountOf(d).windows;
     if (d.provider === 'antigravity') {
-        const matching = model === undefined ? [] : windows.filter(w => w.scope === model);
+        // A window without a scope is the account pool every model draws from.
+        const matching = model === undefined ? [] : windows.filter(w => w.scope === undefined || w.scope === model);
         if (matching.length === 0) {
             return `${d.name} ${t(model === undefined ? 'usageBadgeModelCount' : 'usageBadgeModelUnavailable', {
                 count: new Set(windows.map(w => w.scope).filter(Boolean)).size,
             })}`;
         }
-        const parts = matching.slice(0, 2).map(w => `${w.kind === 'weekly' ? t('usageWeekly') : t('usageWindow')} ${usedPercent(w)}%`);
+        const parts = matching.slice(0, 2).map(w => `${w.kind === 'weekly' ? t('usageWeekly') : t('usageWindow')} ${t('usageUsedPercent', { percent: formatUsagePercent(w.usedPercent) })}`);
         return `${d.name} ${parts.join(' · ')}`;
     }
-    const parts = windows.slice(0, 2).map(w => `${windowLabel(w)} ${usedPercent(w)}%`);
+    const parts = windows.slice(0, 2).map(w => `${windowLabel(w)} ${t('usageUsedPercent', { percent: formatUsagePercent(w.usedPercent) })}`);
     if (windows.length > 2)
         parts.push(`+${windows.length - 2}`);
     return `${d.name} ${parts.join(' · ')}`;
@@ -460,13 +462,13 @@ function AccountMeta({ account, translate }) {
 /** Preview each account independently; all remaining quotas stay accessible. */
 export function AccountWindows({ windows, model, provider, translate }) {
     const { shown, hidden } = previewWindows(windows, model, provider);
-    const rows = (items) => (_jsx("dl", { style: styles.details, children: items.map((w, i) => (_jsx(WindowRow, { label: `${usageWindowLabel(translate, w)}${model !== undefined && w.scope === model ? ` · ${translate('usageBadgeCurrent')}` : ''}`, window: w }, i))) }));
+    const rows = (items) => (_jsx("dl", { style: styles.details, children: items.map((w, i) => (_jsx(WindowRow, { label: `${usageWindowLabel(translate, w)}${model !== undefined && w.scope === model ? ` · ${translate('usageBadgeCurrent')}` : ''}`, window: w, translate: translate }, i))) }));
     return _jsxs(_Fragment, { children: [rows(shown), hidden.length > 0 && _jsxs("details", { style: styles.moreWindows, children: [_jsx("summary", { style: styles.moreSummary, children: translate('usageBadgeMoreWindows', { count: hidden.length }) }), rows(hidden)] })] });
 }
 /** One `dt`/`dd` pair: window name → `25% · 6d 1h`, with the bar underneath. */
-function WindowRow({ label, window: w }) {
+function WindowRow({ label, window: w, translate }) {
     const percent = usedPercent(w);
-    return (_jsxs(_Fragment, { children: [_jsx("dt", { style: styles.dt, children: label }), _jsxs("dd", { style: styles.dd, children: [percent, "%", w.resetsAt !== undefined && _jsxs("span", { style: styles.reset, children: [" \u00B7 ", windowLabel(w)] })] }), _jsx("div", { style: styles.bar, "aria-hidden": true, children: _jsx("div", { style: { ...styles.barFill, width: `${percent}%`, background: usageBarColor(percent) } }) })] }));
+    return (_jsxs(_Fragment, { children: [_jsx("dt", { style: styles.dt, children: label }), _jsxs("dd", { style: styles.dd, children: [translate('usageUsedRemaining', { used: formatUsagePercent(w.usedPercent), remaining: formatUsagePercent(100 - w.usedPercent) }), w.resetsAt !== undefined && _jsxs("span", { style: styles.reset, children: [" \u00B7 ", windowLabel(w)] })] }), _jsx("div", { style: styles.bar, "aria-hidden": true, children: _jsx("div", { style: { ...styles.barFill, width: `${percent}%`, background: usageBarColor(percent) } }) })] }));
 }
 /**
  * Unplaced portal panel: hidden but laid out so the clamp measures real

@@ -90,6 +90,11 @@ export const en = {
     usageSession: '5-hour window',
     usageWeekly: 'Weekly',
     usageWindow: 'Window',
+    // Says which direction the number reads: the bar and the colour track usage,
+    // and a bare percentage next to a subscription quota is read as remaining.
+    usageUsedPercent: '{percent}% used',
+    // Detailed rows name both directions; the bar alone leaves it ambiguous.
+    usageUsedRemaining: '{used}% used · {remaining}% left',
     usageResets: 'resets {date}',
     usagePlan: 'Plan: {plan}',
     resetCreditsTitle: 'Usage limit resets',
@@ -279,6 +284,8 @@ export const zh = {
     usageSession: '5 小时窗口',
     usageWeekly: '每周',
     usageWindow: '窗口',
+    usageUsedPercent: '已用 {percent}%',
+    usageUsedRemaining: '已用 {used}% · 剩余 {remaining}%',
     usageResets: '{date} 重置',
     usagePlan: '计划：{plan}',
     resetCreditsTitle: '用量限制重置',

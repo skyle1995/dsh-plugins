@@ -356,6 +356,40 @@ function usageWindow(kind, scope, quota) {
         ...resetsAt === undefined ? {} : { resetsAt },
     };
 }
+/**
+ * Collapse the windows several models report identically.
+ *
+ * Antigravity meters most Gemini models against ONE account pool: every id
+ * returns the same `remainingFraction` down to the reset instant. Repeating that
+ * measurement as one row per model reads as many different quotas that all
+ * happen to be at the same percentage, so an identical group is reported once,
+ * unscoped (an account-wide window). Windows that differ stay model-scoped.
+ * @param windows - the per-model measurements, in catalog order.
+ * @returns one window per distinct measurement.
+ */
+function collapseSharedWindows(windows) {
+    const groups = new Map();
+    for (const window of windows) {
+        // The reset instant belongs to the key: two models at the same percentage
+        // with different rollovers are different windows.
+        const key = `${window.kind}|${window.usedPercent.toFixed(6)}|${window.resetsAt ?? ''}`;
+        const group = groups.get(key);
+        if (group === undefined)
+            groups.set(key, [window]);
+        else
+            group.push(window);
+    }
+    const collapsed = [];
+    for (const group of groups.values()) {
+        if (group.length === 1) {
+            collapsed.push(group[0]);
+            continue;
+        }
+        const { scope: _shared, ...accountWide } = group[0];
+        collapsed.push(accountWide);
+    }
+    return collapsed;
+}
 /** Fetch plan and per-model quota windows when the upstream exposes them. */
 export async function fetchAntigravityUsage(session, runtime = {}, fetchFn = proxiedFetch, signal) {
     const metadata = { ideType: 'ANTIGRAVITY', platform: 'PLATFORM_UNSPECIFIED', pluginType: 'GEMINI' };
@@ -363,15 +397,20 @@ export async function fetchAntigravityUsage(session, runtime = {}, fetchFn = pro
         callInternal('fetchAvailableModels', { project: session.projectId }, session.accessToken, runtime, fetchFn, signal),
         callInternal('loadCodeAssist', { metadata }, session.accessToken, runtime, fetchFn, signal),
     ]);
-    const windows = [];
+    const measured = [];
     for (const [modelId, model] of Object.entries(models.models ?? {})) {
+        // Editor lanes (tab completion, internal chat helpers) carry their own
+        // untouched counters; they are not chat quotas and must not pad the list.
+        if (!isPickerModel(modelId))
+            continue;
         const ordinary = usageWindow('other', modelId, model.quotaInfo);
         const weekly = usageWindow('weekly', modelId, model.weeklyQuotaInfo ?? model.weeklyQuota);
         if (ordinary !== undefined)
-            windows.push(ordinary);
+            measured.push(ordinary);
         if (weekly !== undefined)
-            windows.push(weekly);
+            measured.push(weekly);
     }
+    const windows = collapseSharedWindows(measured);
     const plan = account.paidTier?.name ?? account.paidTier?.id
         ?? account.currentTier?.name ?? account.currentTier?.id ?? session.plan;
     const credits = account.paidTier?.availableCredits?.[0]?.creditAmount;

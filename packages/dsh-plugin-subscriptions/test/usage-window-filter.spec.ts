@@ -117,3 +117,22 @@ test('an account-level model list hides its own deselected models, intersecting 
   const unscoped: UsageWindow[] = [{ kind: 'session', usedPercent: 10 }]
   assert.deepEqual(visibleUsageWindows('antigravity', unscoped, undefined, undefined, []), unscoped)
 })
+
+test('usage rows say which direction the percentage reads', () => {
+  assert.equal(en.usageUsedPercent, '{percent}% used')
+  assert.equal(zh.usageUsedPercent, '已用 {percent}%')
+  assert.match(en.usageUsedRemaining, /\{used\}% used · \{remaining\}% left/)
+  assert.match(zh.usageUsedRemaining, /已用 \{used\}% · 剩余 \{remaining\}%/)
+  assert.notEqual(zh.usageUsedPercent, zh.usageEmpty)
+})
+
+test('usage percentages keep one decimal instead of rounding a real 7.5% up to 8%', async () => {
+  const { formatUsagePercent } = await import('../src/client/usage-window-filter.js')
+  assert.equal(formatUsagePercent(7.516), '7.5')
+  assert.equal(formatUsagePercent(7.5), '7.5')
+  assert.equal(formatUsagePercent(59), '59')
+  assert.equal(formatUsagePercent(100), '100')
+  assert.equal(formatUsagePercent(-3), '0')
+  assert.equal(formatUsagePercent(120), '100')
+  assert.equal(formatUsagePercent(92.484), '92.5')
+})

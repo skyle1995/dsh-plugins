@@ -16,7 +16,7 @@ import type { CSSProperties } from 'react'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
 import { en } from './locales.js'
 import { resetActionBlock } from './reset-action.js'
-import { visibleUsageWindows } from './usage-window-filter.js'
+import { formatUsagePercent, visibleUsageWindows } from './usage-window-filter.js'
 import { ProviderAccountManager } from './ProviderAccountManager.js'
 import { providerSettingsCss } from './provider-settings-styles.js'
 import { UsageBadgeDisplaySetting } from './UsageBadgeDisplaySetting.js'
@@ -948,7 +948,10 @@ export function SubscriptionsSection(props: SubscriptionsSectionProps) {
                             <div style={styles.usageMeta}>
                               <span>{usageWindowLabel(t, window)}</span>
                               <span>
-                                {`${String(Math.round(percent))}%`}
+                                {t('usageUsedRemaining', {
+                                  used: formatUsagePercent(percent),
+                                  remaining: formatUsagePercent(100 - percent),
+                                })}
                                 {window.resetsAt !== undefined
                                   && ` · ${t('usageResets', { date: new Date(window.resetsAt).toLocaleString() })}`}
                               </span>

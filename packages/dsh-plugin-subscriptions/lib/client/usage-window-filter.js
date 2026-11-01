@@ -62,3 +62,15 @@ export function visibleUsageWindows(provider, windows, visibleModels, models, ac
     // "selection hides everything".
     return kept.length === all.length ? all : kept;
 }
+/**
+ * Format a usage share without inventing precision: whole numbers stay whole
+ * (`59%`), anything else keeps one decimal (`7.5%`). Rounding 7.5 to 8 was
+ * reading as a different quota next to the provider's own 92.5% remaining.
+ * @param value - the share in percent.
+ * @returns the display string.
+ */
+export function formatUsagePercent(value) {
+    const clamped = Math.min(100, Math.max(0, value));
+    const rounded = Math.round(clamped * 10) / 10;
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}

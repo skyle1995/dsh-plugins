@@ -39,3 +39,11 @@ export interface UsageWindowModelRef {
  * @returns A new array when filtering applies; the input array otherwise.
  */
 export declare function visibleUsageWindows(provider: SubscriptionProvider, windows: UsageWindow[] | undefined, visibleModels: readonly string[] | undefined, models?: readonly UsageWindowModelRef[], accountModels?: readonly string[] | undefined): UsageWindow[];
+/**
+ * Format a usage share without inventing precision: whole numbers stay whole
+ * (`59%`), anything else keeps one decimal (`7.5%`). Rounding 7.5 to 8 was
+ * reading as a different quota next to the provider's own 92.5% remaining.
+ * @param value - the share in percent.
+ * @returns the display string.
+ */
+export declare function formatUsagePercent(value: number): string;

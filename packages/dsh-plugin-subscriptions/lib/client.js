@@ -125,6 +125,8 @@ const en = {
 	usageSession: "5-hour window",
 	usageWeekly: "Weekly",
 	usageWindow: "Window",
+	usageUsedPercent: "{percent}% used",
+	usageUsedRemaining: "{used}% used · {remaining}% left",
 	usageResets: "resets {date}",
 	usagePlan: "Plan: {plan}",
 	resetCreditsTitle: "Usage limit resets",
@@ -314,6 +316,8 @@ const zh = {
 	usageSession: "5 小时窗口",
 	usageWeekly: "每周",
 	usageWindow: "窗口",
+	usageUsedPercent: "已用 {percent}%",
+	usageUsedRemaining: "已用 {used}% · 剩余 {remaining}%",
 	usageResets: "{date} 重置",
 	usagePlan: "计划：{plan}",
 	resetCreditsTitle: "用量限制重置",
@@ -481,6 +485,18 @@ function visibleUsageWindows(provider, windows, visibleModels, models, accountMo
 		return provider !== "antigravity";
 	});
 	return kept.length === all.length ? all : kept;
+}
+/**
+* Format a usage share without inventing precision: whole numbers stay whole
+* (`59%`), anything else keeps one decimal (`7.5%`). Rounding 7.5 to 8 was
+* reading as a different quota next to the provider's own 92.5% remaining.
+* @param value - the share in percent.
+* @returns the display string.
+*/
+function formatUsagePercent(value) {
+	const clamped = Math.min(100, Math.max(0, value));
+	const rounded = Math.round(clamped * 10) / 10;
+	return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
 //#endregion
@@ -2837,7 +2853,10 @@ function SubscriptionsSection(props) {
 												style: styles$5.usageRow,
 												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 													style: styles$5.usageMeta,
-													children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: usageWindowLabel$1(t, window$1) }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [`${String(Math.round(percent))}%`, window$1.resetsAt !== void 0 && ` · ${t("usageResets", { date: new Date(window$1.resetsAt).toLocaleString() })}`] })]
+													children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: usageWindowLabel$1(t, window$1) }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [t("usageUsedRemaining", {
+														used: formatUsagePercent(percent),
+														remaining: formatUsagePercent(100 - percent)
+													}), window$1.resetsAt !== void 0 && ` · ${t("usageResets", { date: new Date(window$1.resetsAt).toLocaleString() })}`] })]
 												}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 													style: styles$5.usageTrack,
 													children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { style: {
@@ -4247,7 +4266,7 @@ function prioritizeWindows(windows, model) {
 const WINDOW_PREVIEW_LIMIT = 4;
 function previewWindows(windows, model, provider) {
 	const ordered = prioritizeWindows(windows, model);
-	const limit = provider === "antigravity" ? Math.min(2, model === void 0 ? 0 : windows.filter((w) => w.scope === model).length) : WINDOW_PREVIEW_LIMIT;
+	const limit = provider === "antigravity" ? Math.min(2, model === void 0 ? 0 : windows.filter((w) => w.scope === void 0 || w.scope === model).length) : WINDOW_PREVIEW_LIMIT;
 	return {
 		shown: ordered.slice(0, limit),
 		hidden: ordered.slice(limit)
@@ -4257,12 +4276,12 @@ function previewWindows(windows, model, provider) {
 function compactSegment(d, model, t = fallbackTranslate) {
 	const windows = pillAccountOf(d).windows;
 	if (d.provider === "antigravity") {
-		const matching = model === void 0 ? [] : windows.filter((w) => w.scope === model);
+		const matching = model === void 0 ? [] : windows.filter((w) => w.scope === void 0 || w.scope === model);
 		if (matching.length === 0) return `${d.name} ${t(model === void 0 ? "usageBadgeModelCount" : "usageBadgeModelUnavailable", { count: new Set(windows.map((w) => w.scope).filter(Boolean)).size })}`;
-		const parts$1 = matching.slice(0, 2).map((w) => `${w.kind === "weekly" ? t("usageWeekly") : t("usageWindow")} ${usedPercent(w)}%`);
+		const parts$1 = matching.slice(0, 2).map((w) => `${w.kind === "weekly" ? t("usageWeekly") : t("usageWindow")} ${t("usageUsedPercent", { percent: formatUsagePercent(w.usedPercent) })}`);
 		return `${d.name} ${parts$1.join(" · ")}`;
 	}
-	const parts = windows.slice(0, 2).map((w) => `${windowLabel(w)} ${usedPercent(w)}%`);
+	const parts = windows.slice(0, 2).map((w) => `${windowLabel(w)} ${t("usageUsedPercent", { percent: formatUsagePercent(w.usedPercent) })}`);
 	if (windows.length > 2) parts.push(`+${windows.length - 2}`);
 	return `${d.name} ${parts.join(" · ")}`;
 }
@@ -4670,7 +4689,8 @@ function AccountWindows({ windows, model, provider, translate }) {
 		style: styles.details,
 		children: items.map((w, i) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(WindowRow, {
 			label: `${usageWindowLabel(translate, w)}${model !== void 0 && w.scope === model ? ` · ${translate("usageBadgeCurrent")}` : ""}`,
-			window: w
+			window: w,
+			translate
 		}, i))
 	});
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [rows(shown), hidden.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("details", {
@@ -4682,7 +4702,7 @@ function AccountWindows({ windows, model, provider, translate }) {
 	})] });
 }
 /** One `dt`/`dd` pair: window name → `25% · 6d 1h`, with the bar underneath. */
-function WindowRow({ label, window: w }) {
+function WindowRow({ label, window: w, translate }) {
 	const percent = usedPercent(w);
 	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
 		/* @__PURE__ */ (0, react_jsx_runtime.jsx)("dt", {
@@ -4691,14 +4711,13 @@ function WindowRow({ label, window: w }) {
 		}),
 		/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("dd", {
 			style: styles.dd,
-			children: [
-				percent,
-				"%",
-				w.resetsAt !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-					style: styles.reset,
-					children: [" · ", windowLabel(w)]
-				})
-			]
+			children: [translate("usageUsedRemaining", {
+				used: formatUsagePercent(w.usedPercent),
+				remaining: formatUsagePercent(100 - w.usedPercent)
+			}), w.resetsAt !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+				style: styles.reset,
+				children: [" · ", windowLabel(w)]
+			})]
 		}),
 		/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 			style: styles.bar,
