@@ -1,2 +1,42 @@
 packages:
   - packages/*
+
+# dsh-plugin-subscriptions 的单测与浏览器 bundle 会在 Node 里直接加载已发布的
+# @deepseek-ai/dsh-client-* 组件包；这些包在 npm 上未声明其浏览器依赖
+# （clsx / shiki / katex / simple-icons 等），DSH 在浏览器里由平台模块表供应，
+# 但在本仓库的 Node 测试环境里必须补进依赖图。上游把这段写在它自己的根
+# package.json 的 pnpm.packageExtensions 里；本仓库是 monorepo，扩展只能声明在
+# 工作区根目录，于是搬到这里（仅开发/测试期生效，不影响插件运行时）。
+allowBuilds:
+  esbuild: true
+
+packageExtensions:
+  '@deepseek-ai/dsh-client-store@0.2.1-rc.2':
+    dependencies:
+      zustand: ~4.4.7
+      immer: ^10.1.1
+  '@deepseek-ai/dsh-client-ui-primitives@0.2.1-rc.2':
+    dependencies:
+      '@deepseek-ai/dsh-client-store': 0.2.1-rc.2
+      '@deepseek-ai/dsh-util-code-language': 0.2.1-rc.2
+      '@deepseek-ai/dsh-util-workspace-path': 0.2.1-rc.2
+      '@shikijs/langs': ^4.3.1
+      anser: ^2.3.5
+      clsx: ^2.0.0
+      diff: ^9.0.0
+      katex: ^0.16.47
+      mdast-util-from-markdown: ^2.0.3
+      mdast-util-gfm: ^3.1.0
+      mdast-util-math: ^3.0.0
+      micromark-core-commonmark: ^2.0.3
+      micromark-extension-gfm: ^3.0.0
+      micromark-extension-math: ^3.1.0
+      micromark-factory-space: ^2.0.1
+      micromark-util-character: ^2.1.1
+      micromark-util-classify-character: ^2.0.1
+      micromark-util-sanitize-uri: ^2.0.1
+      micromark-util-symbol: ^2.0.1
+      react: ^18.2.0
+      react-dom: ^18.2.0
+      shiki: ^4.3.1
+      simple-icons: 16.31.0
