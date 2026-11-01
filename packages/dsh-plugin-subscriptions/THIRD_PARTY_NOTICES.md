@@ -48,3 +48,21 @@
 - 本目录继续以 MIT 分发；`lib/` 是上游源码的编译产物，其版权仍归上游作者。
 - 上游第三方依赖（`undici`、`react`、`tsdown` 等）的许可证随各自 npm 包携带，
   不属于本文件范围。
+
+## 五、本仓库补丁记录（0.9.13）
+
+本包版本号在移植时为 `0.9.12`（与上游一致），此后累积了下列本地修复，因此升到
+**`0.9.13`**（补丁号 +1）。每个补丁都只改本仓库的 `src/`、`test/`、`lib/` 与文档，
+上游源码语义未被改写；同步上游新版本时按此表逐条重放即可。
+
+| 版本 | 提交 | 修复 |
+|---|---|---|
+| 0.9.13 | `16b06e9` | 用量窗口按模型选择过滤（服务商级 `visibleModels`）；`REGION_BLOCKED` 识别（Google 400 / OpenAI 403 / Claude 403 的地区拒绝），不再误判 AUTH、不再重试，按账号短冷却 |
+| 0.9.13 | `d7451b6` | 同一过滤接入**账号级**模型选择（`poolModels`）：`status` 端点回传每个账号的模型列表，设置页与用量胶囊同时生效 |
+| 0.9.13 | `791acc0` | Antigravity 目录：`displayName` 撞名时按 id 命名、`tab_*`/`chat_*` 通道不进选择器、按名字排序、合并后仍保证唯一；`CatalogSnapshot.version` 使旧缓存自动失效 |
+| 0.9.13 | `619fab6` | Antigravity 额度：多个模型上报相同数值+重置时刻时合并为一行账户级窗口；`已用 x% · 剩余 y%` 标注方向并保留一位小数；账户级窗口对所有模型生效 |
+
+补丁涉及的源码文件（相对上游）：`src/providers/antigravity.ts`、
+`src/providers/common.ts`、`src/providers/pool-health.ts`、`src/providers/catalog-store.ts`、
+`src/auth/rpc.ts`、`src/index.ts`、`src/client/{usage-window-filter.ts,SubscriptionsSection.tsx,SubscriptionUsageBadge.tsx,locales.ts}`。
+对应单测在 `test/` 内同文件旁，`pnpm test` 覆盖。

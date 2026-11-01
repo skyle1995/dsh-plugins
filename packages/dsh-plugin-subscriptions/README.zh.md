@@ -2,12 +2,14 @@
 
 [English](README.md) | 中文
 
-> **移植说明（本仓库）**：本目录是上游
+> **移植说明（本仓库）**：本目录把上游
 > [V1ki/dsh-plugin-subscriptions](https://github.com/V1ki/dsh-plugin-subscriptions)
-> （v0.9.12，commit `b802311`）移植进 `dsh-plugins` monorepo 的版本。改动只限于
-> 打包层面：仓库元数据、改为提交 `lib/` 构建产物（去掉 `prepare` 构建）、把
-> `pnpm.packageExtensions` 移到工作区根（见 `../../pnpm-workspace.yaml`）。来源与
-> 改动清单见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。以下为上游 README 原文。
+> （v0.9.12，commit `b802311`）移植进 `dsh-plugins` monorepo。**本包版本为
+> `0.9.13`**：比上游高一个补丁号，携带 THIRD_PARTY_NOTICES.md §5 记录的本地修复
+> （用量窗口按模型选择过滤、`REGION_BLOCKED` 分类、目录命名与排序、Antigravity
+> 额度按实际计量合并）。其余差异只限于打包层面：仓库元数据、改为提交 `lib/`
+> 构建产物（去掉 `prepare` 构建）、把 `pnpm.packageExtensions` 移到工作区根
+> （见 `../../pnpm-workspace.yaml`）。以下为上游 README 原文。
 >
 > 本仓库安装（无需发布 npm，直接装 monorepo 子目录）：
 >

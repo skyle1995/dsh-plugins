@@ -2,13 +2,16 @@
 
 English | [中文](README.zh.md)
 
-> **Port notice (this repository).** This directory is a port of the upstream
+> **Port notice (this repository).** This directory ports the upstream
 > [V1ki/dsh-plugin-subscriptions](https://github.com/V1ki/dsh-plugin-subscriptions)
-> (v0.9.12, commit `b802311`) into the `dsh-plugins` monorepo. Differences are
-> limited to packaging: repository metadata, committed `lib/` build artifacts
-> instead of a `prepare` build, and `pnpm.packageExtensions` moved to the
-> workspace root (see `../../pnpm-workspace.yaml`). Provenance and change list:
-> [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Upstream README below is otherwise verbatim.
+> (v0.9.12, commit `b802311`) into the `dsh-plugins` monorepo. **This package is
+> version `0.9.13`**: one patch level above upstream, carrying the local fixes
+> listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) §5 (usage windows
+> filtered by model selection, `REGION_BLOCKED` classification, catalog naming /
+> ordering, Antigravity quota collapsing). Packaging-only differences: repository
+> metadata, committed `lib/` build artifacts instead of a `prepare` build, and
+> `pnpm.packageExtensions` moved to the workspace root (see
+> `../../pnpm-workspace.yaml`). Upstream README below is otherwise verbatim.
 >
 > Install from this repository (no npm publish needed):
 >
