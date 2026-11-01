@@ -10,6 +10,7 @@ import type { GenerateOptions, Message, StreamChunk } from '@deepseek-ai/dsh-llm
 import type { AntigravitySession } from '../src/auth/store.js'
 import {
   AntigravityAdapter,
+  ANTIGRAVITY_CATALOG_VERSION,
   ANTIGRAVITY_AUTHORIZE_URL,
   ANTIGRAVITY_TOKEN_URL,
   ANTIGRAVITY_USERINFO_URL,
@@ -18,6 +19,7 @@ import {
   exchangeAntigravityCode,
   fetchAntigravityModels,
   fetchAntigravityUsage,
+  isPickerModel,
   refreshAntigravity,
   requestAntigravityContent,
 } from '../src/providers/antigravity.js'
@@ -872,4 +874,113 @@ test('Gemini 4 reuses a real signature only for the same provider and model', ()
     const call = switched.request.contents.flatMap(content => content.parts).find(part => part.functionCall)
     assert.equal(call?.thoughtSignature, 'skip_thought_signature_validator')
   }
+})
+
+test('Antigravity names aliased ids from their own id and keeps editor lanes out of the picker', async () => {
+  const modelsURL = `${runtime.baseURL}/v1internal:fetchAvailableModels`
+  const payload = { models: {
+    // The live catalog aliases four ids onto one release: same label everywhere.
+    'gemini-2.5-flash': { displayName: 'Gemini 3.5 Flash Lite' },
+    'gemini-2.5-flash-lite': { displayName: 'Gemini 3.5 Flash Lite' },
+    'gemini-2.5-flash-thinking': { displayName: 'Gemini 3.5 Flash Lite' },
+    'gemini-3.5-flash-lite': { displayName: 'Gemini 3.5 Flash Lite' },
+    // No label at all: the id must spell itself out rather than crash the row.
+    'gemini-3.8-flash-tiered': {},
+    'tab_flash_lite_preview': { isInternal: true },
+    'chat_20706': { isInternal: true },
+    // A genuinely unique label is kept verbatim.
+    'claude-opus-5-5-high': { displayName: 'Claude Opus 5.5 (High)' },
+  } }
+  const models = await fetchAntigravityModels(session, runtime, routed({ [modelsURL]: payload }))
+  const names = Object.fromEntries(models.map(model => [model.id, model.name]))
+  assert.equal(names['gemini-2.5-flash'], 'Gemini 2.5 Flash')
+  assert.equal(names['gemini-2.5-flash-lite'], 'Gemini 2.5 Flash Lite')
+  assert.equal(names['gemini-2.5-flash-thinking'], 'Gemini 2.5 Flash Thinking')
+  assert.equal(names['gemini-3.5-flash-lite'], 'Gemini 3.5 Flash Lite')
+  assert.equal(names['gemini-3.8-flash-tiered'], 'Gemini 3.8 Flash Tiered')
+  assert.equal(names['claude-opus-5-5-high'], 'Claude Opus 5.5 (High)')
+  assert.equal(new Set(models.map(model => model.name)).size, models.length, 'no two rows share a label')
+  // Editor lanes stay resolvable but are not offered as chat models.
+  assert.equal(isPickerModel('tab_flash_lite_preview'), false)
+  assert.equal(isPickerModel('chat_20706'), false)
+  assert.equal(isPickerModel('gemini-3-flash'), true)
+})
+
+test('Antigravity discards a catalog snapshot written under an older labeling scheme', async () => {
+  const { tokens } = accountTokens()
+  let fetches = 0
+  let saved: CatalogSnapshot | undefined = {
+    at: Date.now(),
+    // The shape this plugin used to persist: aliased display labels, no scheme version.
+    models: [{ id: 'gemini-2.5-flash', name: 'Gemini 3.5 Flash Lite', contextWindow: 1_024_000 }],
+  }
+  const catalogStore = {
+    load: async () => saved,
+    save: async (snapshot: CatalogSnapshot) => { saved = structuredClone(snapshot) },
+    clear: async () => { saved = undefined },
+  }
+  const adapter = new AntigravityAdapter({
+    tokens, models: [], discovery: true, streamIdleTimeoutMs: 1000, runtime, catalogStore,
+    fetchFn: async () => {
+      fetches++
+      return Response.json({ models: {
+        'gemini-2.5-flash': { displayName: 'Gemini 3.5 Flash Lite' },
+        'gemini-2.5-flash-lite': { displayName: 'Gemini 3.5 Flash Lite' },
+      } })
+    },
+  })
+  const listed = await adapter.listOwnModels('antigravity', 'alice')
+  assert.equal(fetches, 1, 'a stale scheme must be re-discovered rather than served')
+  assert.deepEqual(listed.map(model => model.name), ['Gemini 2.5 Flash', 'Gemini 2.5 Flash Lite'])
+  assert.equal(saved?.version, ANTIGRAVITY_CATALOG_VERSION, 'the rewrite records the current scheme')
+})
+
+test('Antigravity picker enumeration hides tab and chat lanes but the catalog keeps them', async () => {
+  const { tokens } = accountTokens()
+  const adapter = new AntigravityAdapter({
+    tokens, models: [], discovery: true, streamIdleTimeoutMs: 1000, runtime,
+    fetchFn: async () => Response.json({ models: {
+      'gemini-3-flash': { displayName: 'Gemini 3 Flash', maxOutputTokens: 65536 },
+      'tab_flash_lite_preview': { maxOutputTokens: 4096 },
+      'chat_20706': { isInternal: true },
+    } }),
+  })
+  const listed = await adapter.listOwnModels('antigravity', 'alice')
+  assert.deepEqual(listed.map(model => model.id), ['gemini-3-flash'])
+  // Hiding a lane must not break resolution for an id the host may still hold.
+  assert.equal((await adapter.resolveOwnModel('antigravity', 'tab_flash_lite_preview', 'alice')).defaultMaxTokens, 4096)
+})
+
+test('Antigravity sorts the catalog by label and keeps every row distinguishable across accounts', async () => {
+  const { tokens } = accountTokens()
+  // Each account labels a different id with the same name; the union must not
+  // leave two identical picker rows.
+  const fetchFn: FetchFn = async (_input, init) => {
+    const auth = new Headers(init?.headers).get('authorization')
+    return Response.json({ models: auth === 'Bearer alice'
+      ? { 'gemini-3.5-flash-lite': { displayName: 'Same Label' }, 'gemini-3-flash': { displayName: 'Gemini 3 Flash' } }
+      : { 'gemini-2.5-flash': { displayName: 'Same Label' } } })
+  }
+  const adapter = new AntigravityAdapter({ tokens, models: [], discovery: true, streamIdleTimeoutMs: 1000, runtime, fetchFn })
+  const listed = await adapter.listModels('antigravity')
+  // Label order first, wire id as the tie-breaker for the two "Same Label" rows.
+  assert.deepEqual(listed.map(model => model.id), ['gemini-3-flash', 'gemini-2.5-flash', 'gemini-3.5-flash-lite'],
+    'labels sort alphabetically, stable across the union')
+  const names = listed.map(model => model.name)
+  assert.deepEqual(names, ['Gemini 3 Flash', 'Same Label', 'Same Label · gemini-3.5-flash-lite'])
+  assert.equal(new Set(names).size, names.length, 'no two rows read alike')
+})
+
+test('Antigravity label order is numeric-aware, so 3 sorts before 3.1', async () => {
+  const modelsURL = `${runtime.baseURL}/v1internal:fetchAvailableModels`
+  const models = await fetchAntigravityModels(session, runtime, routed({
+    [modelsURL]: { models: {
+      'gemini-3.5-flash-lite': { displayName: 'Gemini 3.5 Flash Lite' },
+      'gemini-3.1-flash-lite': { displayName: 'Gemini 3.1 Flash Lite' },
+      'gemini-3-flash': { displayName: 'Gemini 3 Flash' },
+      'claude-opus-5-5-high': { displayName: 'Claude Opus 5.5 (High)' },
+    } },
+  }))
+  assert.deepEqual(models.map(model => model.name),
+    ['Claude Opus 5.5 (High)', 'Gemini 3 Flash', 'Gemini 3.1 Flash Lite', 'Gemini 3.5 Flash Lite'])
 })

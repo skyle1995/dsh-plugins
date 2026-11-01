@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Context } from '@deepseek-ai/cordis'
 import { LlmRuntime } from '@deepseek-ai/dsh-llm'
-import { AntigravityAdapter } from '../src/providers/antigravity.js'
+import { ANTIGRAVITY_CATALOG_VERSION, AntigravityAdapter } from '../src/providers/antigravity.js'
 import { AccountTokenManager } from '../src/providers/accounts.js'
 import { AccountPreferencesAdapter } from '../src/providers/account-preferences.js'
 import { ProviderSettingsStore } from '../src/provider-settings.js'
@@ -18,7 +18,12 @@ import type { AntigravitySession } from '../src/auth/store.js'
 import type { CatalogSnapshot, FetchFn } from '../src/providers/common.js'
 
 function memoryStore(at = 1) {
-  let value: CatalogSnapshot | undefined = { at, models: [{ id: 'gemini-cached', name: 'Cached', contextWindow: 1000 }] }
+  let value: CatalogSnapshot | undefined = {
+    at,
+    models: [{ id: 'gemini-cached', name: 'Cached', contextWindow: 1000 }],
+    // The adapter only serves snapshots written under its current labeling scheme.
+    version: ANTIGRAVITY_CATALOG_VERSION,
+  }
   return { load: async () => value, save: async (v: CatalogSnapshot) => { value = v }, clear: async () => { value = undefined } }
 }
 function accounts() {
@@ -142,8 +147,10 @@ test('the installed plugin route resolves pooled models without waiting for anot
     await saveAccountSession('codex', 'c', { accessToken: 'c', refreshToken: 'c', expiresAt: Date.now() + 3600_000, accountId: 'c' })
     for (const key of ['a', 'b']) await saveAccountSession('antigravity', key, { accessToken: key, refreshToken: key, expiresAt: Date.now() + 3600_000, account: key, projectId: key })
     await catalogStore('codex').save({ at: 1, models: [{ id: 'c', name: 'C' }] })
-    await catalogStore('antigravity').save({ at: 1, models: [{ id: 'm', name: 'M', contextWindow: 1000 }] })
-    await accountCatalogStore('antigravity', 'b').save({ at: 1, models: [{ id: 'm', name: 'M', contextWindow: 900 }] })
+    await catalogStore('antigravity').save({ at: 1, models: [{ id: 'm', name: 'M', contextWindow: 1000 }],
+      version: ANTIGRAVITY_CATALOG_VERSION })
+    await accountCatalogStore('antigravity', 'b').save({ at: 1, models: [{ id: 'm', name: 'M', contextWindow: 900 }],
+      version: ANTIGRAVITY_CATALOG_VERSION })
     for (let i = 0; i < 100 && !connection.registered(); i++) await pause(5)
     assert.ok(connection.registered())
     const start = performance.now()

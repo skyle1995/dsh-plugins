@@ -143,7 +143,11 @@ export function sanitizeSnapshot(value) {
         seen.add(model.id);
         models.push(model);
     }
-    return { at: raw.at, models };
+    return {
+        at: raw.at,
+        models,
+        ...typeof raw.version === 'number' && Number.isFinite(raw.version) ? { version: raw.version } : {},
+    };
 }
 /** Read the whole file; missing or unparsable reads as an empty cache. */
 async function readCatalogFile(path) {

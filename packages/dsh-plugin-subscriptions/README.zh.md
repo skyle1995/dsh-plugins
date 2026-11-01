@@ -58,6 +58,10 @@
 
 被取消选择的模型不会把额度窗口留在用量列表里——**服务商级**的「编辑模型列表」勾选（`visibleModels`）与**账号级**的账号卡片「模型」勾选（`poolModels`）各自生效，两者取交集；设置页「订阅」分区与状态栏用量胶囊同步。整账户的额度（5 小时／每周等不归属单个模型的窗口）不受影响；两处都没保存过选择（自动）时照常全部显示。
 
+Antigravity 的模型名以目录里的 `displayName` 为准；当上游把多个 id 别名到同一版本（例如 `gemini-2.5-flash`、`-flash-lite`、`-flash-thinking`、`gemini-3.5-flash-lite` 都叫「Gemini 3.5 Flash Lite」）时，改用 id 拼出的名字区分（`Gemini 2.5 Flash` / `Gemini 2.5 Flash Lite` / `Gemini 2.5 Flash Thinking` / `Gemini 3.5 Flash Lite`）。`tab_*`、`chat_*` 这类标签页/内部聊天通道不再出现在模型选择器里（仍可按 id 解析）。
+
+Antigravity 的模型列表按**名字**排序（忽略大小写、数字按数值比较，所以 `Gemini 3` → `Gemini 3.1` → `Gemini 3.5` 依次排列，合并账号/池条目后仍保持该顺序），并保证**每一行的名字唯一**：不同 id 撞名时在该行追加 ` · <模型 ID>`，选中的到底是哪个 id 一眼可辨。
+
 若日志出现 `User location is not supported`、`unsupported_country_region_territory` 或 `REGION_BLOCKED`：这是出口 IP 地区被服务商拒绝，与账号、Key、额度和重试都无关——插件不会为它重试或轮换账号，并在该账号上短暂冷却（60 秒）以避免每轮重复撞同一出口。修复方式是在 **设置 → 订阅 → 代理** 里配置一个**目标地区**的出口（代理对该主机同样生效，注意别把它加进 bypass），再点一次重试即可。
 
 ![订阅用量胶囊展开后显示所有服务商与账号](docs/images/usage-badge.png)

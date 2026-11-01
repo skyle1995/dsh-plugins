@@ -128,7 +128,7 @@ function sanitizeModel(value: unknown): DiscoveredModel | undefined {
  */
 export function sanitizeSnapshot(value: unknown): CatalogSnapshot | undefined {
   if (typeof value !== 'object' || value === null) return undefined
-  const raw = value as { at?: unknown; models?: unknown }
+  const raw = value as { at?: unknown; models?: unknown; version?: unknown }
   if (typeof raw.at !== 'number' || !Number.isFinite(raw.at)) return undefined
   if (!Array.isArray(raw.models) || raw.models.length === 0) return undefined
   const seen = new Set<string>()
@@ -139,7 +139,11 @@ export function sanitizeSnapshot(value: unknown): CatalogSnapshot | undefined {
     seen.add(model.id)
     models.push(model)
   }
-  return { at: raw.at, models }
+  return {
+    at: raw.at,
+    models,
+    ...typeof raw.version === 'number' && Number.isFinite(raw.version) ? { version: raw.version } : {},
+  }
 }
 
 /** Read the whole file; missing or unparsable reads as an empty cache. */

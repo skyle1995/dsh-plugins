@@ -21,6 +21,13 @@ export const ANTIGRAVITY_DEFAULT_USER_AGENT = 'antigravity/1.104.0 dsh-plugin-su
 export const ANTIGRAVITY_PREEMPT_MS = 5 * 60_000;
 const ANTIGRAVITY_CALLBACK_PATH = '/oauth-callback';
 const ANTIGRAVITY_CONTEXT_WINDOW = 1_024_000;
+/**
+ * Label/schema version of the persisted Antigravity catalog. Bump whenever the
+ * derived presentation changes (duplicate `displayName`s now fall back to the
+ * id, editor lanes are filtered): a snapshot written under the old scheme is
+ * discarded on load instead of feeding stale labels to the picker.
+ */
+export const ANTIGRAVITY_CATALOG_VERSION = 2;
 // Fallback only when discovery is unavailable or the model omits its output cap.
 const ANTIGRAVITY_DEFAULT_MAX_TOKENS = 32_768;
 /** Antigravity, not Gemini CLI, OAuth scopes from the local reference clients. */
@@ -256,18 +263,80 @@ export async function fetchAntigravityModels(session, runtime = {}, fetchFn = pr
     if (typeof payload.models !== 'object' || payload.models === null) {
         throw new Error('Antigravity models endpoint returned no models object');
     }
-    const models = Object.entries(payload.models).map(([id, model]) => ({
-        id,
-        name: model.displayName ?? id.split('-').map(word => word.length === 0 ? word : word[0].toUpperCase() + word.slice(1)).join(' '),
-        ...model.description === undefined ? {} : { description: model.description },
-        contextWindow: model.inputTokenLimit ?? model.maxInputTokens ?? ANTIGRAVITY_CONTEXT_WINDOW,
-        ...typeof model.maxOutputTokens === 'number' && Number.isSafeInteger(model.maxOutputTokens) && model.maxOutputTokens > 0
-            ? { maxOutputTokens: model.maxOutputTokens } : {},
-        inputModalities: ['text', 'image'],
-    }));
+    // Every entry stays in the catalog — an id must remain resolvable even when the
+    // picker hides it — and only the picker enumeration drops the editor lanes.
+    const kept = Object.entries(payload.models);
+    // The catalog aliases several ids onto one release, so `displayName` repeats:
+    // gemini-2.5-flash, -flash-lite, -flash-thinking and gemini-3.5-flash-lite all
+    // arrive as "Gemini 3.5 Flash Lite". Counting first lets a unique label win and
+    // an aliased one fall back to the label its own id spells out.
+    const labelCounts = new Map();
+    for (const [, model] of kept) {
+        const label = model.displayName?.trim();
+        if (label !== undefined && label.length > 0)
+            labelCounts.set(label, (labelCounts.get(label) ?? 0) + 1);
+    }
+    const taken = new Set();
+    const models = kept.map(([id, model]) => {
+        const raw = model.displayName?.trim();
+        const unique = raw !== undefined && raw.length > 0 && labelCounts.get(raw) === 1 ? raw : undefined;
+        const base = unique ?? modelNameFromId(id);
+        // Two ids can still share a spelled-out name (a dated alias of one model).
+        const name = taken.has(base) ? `${base} · ${id}` : base;
+        taken.add(name);
+        return {
+            id,
+            name,
+            ...model.description === undefined ? {} : { description: model.description },
+            contextWindow: model.inputTokenLimit ?? model.maxInputTokens ?? ANTIGRAVITY_CONTEXT_WINDOW,
+            ...typeof model.maxOutputTokens === 'number' && Number.isSafeInteger(model.maxOutputTokens) && model.maxOutputTokens > 0
+                ? { maxOutputTokens: model.maxOutputTokens } : {},
+            inputModalities: ['text', 'image'],
+        };
+    });
     if (models.length === 0)
         throw new Error('Antigravity models endpoint returned an empty catalog');
-    return models;
+    // The endpoint lists models in an arbitrary, per-account order; the picker
+    // reads better alphabetically and keeps that order across accounts and refreshes.
+    return models.sort(compareModelNames);
+}
+/** Collator for label order: case-insensitive and numeric-aware, so `Gemini 3 Flash`
+ * sorts before `Gemini 3.1 …` and `Claude Opus 5.5 (High)` stays ahead of `(Low)`. */
+const MODEL_NAME_COLLATOR = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+/**
+ * Alphabetical order of two model labels, with the wire id as a deterministic
+ * tie-breaker (labels are unique, but a catalog could still hand out equals).
+ * @param a - first entry.
+ * @param b - second entry.
+ * @returns the collator's ordering.
+ */
+export function compareModelNames(a, b) {
+    return MODEL_NAME_COLLATOR.compare(a.name, b.name) || MODEL_NAME_COLLATOR.compare(a.id, b.id);
+}
+/**
+ * Whether a discovered id belongs in the chat picker. The editor's own lanes —
+ * tab completion (`tab_*`) and internal chat helpers (`chat_*`) — arrive with no
+ * display name and cannot serve a chat request, so they stay discoverable (an id
+ * must still resolve) but are not offered as models.
+ * @param id - the wire model id.
+ * @returns true for a chat model.
+ */
+export function isPickerModel(id) {
+    return !/^(?:tab|chat)_/.test(id);
+}
+/**
+ * Spell a model id as a display label: `gemini-3.1-flash-lite` → "Gemini 3.1
+ * Flash Lite". Used when the catalog has no display name, or when it reuses one
+ * label across several ids (aliases), where the id is the only honest name.
+ * @param id - the wire model id.
+ * @returns the label.
+ */
+export function modelNameFromId(id) {
+    return id
+        .split(/[-_]+/)
+        .filter(word => word.length > 0)
+        .map(word => /^[a-z]/.test(word) ? word[0].toUpperCase() + word.slice(1) : word)
+        .join(' ');
 }
 function resetTime(value) {
     if (typeof value !== 'string')
@@ -340,7 +409,7 @@ export class AntigravityAdapter extends LlmAdapter {
     constructor(options) {
         super();
         this.options = options;
-        this.catalog = new ModelCatalogCache(options.catalogStore, undefined, options.onCatalogChanged);
+        this.catalog = new ModelCatalogCache(options.catalogStore, undefined, options.onCatalogChanged, ANTIGRAVITY_CATALOG_VERSION);
     }
     providerInfo(provider) {
         return { id: provider, name: 'Google Antigravity' };
@@ -380,7 +449,7 @@ export class AntigravityAdapter extends LlmAdapter {
         }
         let cache = this.accountCatalogs.get(key);
         if (cache === undefined) {
-            cache = new ModelCatalogCache(this.options.accountCatalogStore?.(key), undefined, this.options.onCatalogChanged);
+            cache = new ModelCatalogCache(this.options.accountCatalogStore?.(key), undefined, this.options.onCatalogChanged, ANTIGRAVITY_CATALOG_VERSION);
             const invalidated = this.invalidatedAccounts.delete(key);
             if (this.accountCatalogsInvalidated || invalidated)
                 cache.invalidate();
@@ -405,12 +474,23 @@ export class AntigravityAdapter extends LlmAdapter {
     async listModels(provider) {
         const own = await this.listOwnModels(provider, undefined, undefined, true);
         const pool = this.options.pool?.();
-        if (pool === undefined)
-            return own;
-        const extra = await pool.modelsForProvider(provider);
+        const extra = pool === undefined ? [] : await pool.modelsForProvider(provider);
         const seen = new Set(own.map(model => model.id));
         // Account pools reuse the catalog row; only configured tiers are extra.
-        return [...own, ...extra.filter(model => !seen.has(model.id))];
+        // Re-sort after merging so a tier or configured entry lands alphabetically
+        // instead of at the bottom of the picker.
+        const merged = [...own, ...extra.filter(model => !seen.has(model.id))]
+            .map(model => ({ id: model.id, name: model.name ?? model.id, model }))
+            .sort(compareModelNames);
+        // Two accounts (or a configured tier) can still label different ids alike;
+        // the picker shows only the name, so make every row distinguishable by
+        // appending the wire id to whatever collided.
+        const claimed = new Set();
+        return merged.map((entry) => {
+            const name = claimed.has(entry.name) ? `${entry.name} · ${entry.id}` : entry.name;
+            claimed.add(name);
+            return name === entry.model.name ? entry.model : { ...entry.model, name };
+        });
     }
     /** The provider's own catalog: union of every account, or one account when named. */
     async listOwnModels(provider, account, signal, preferCached = false) {
@@ -427,7 +507,10 @@ export class AntigravityAdapter extends LlmAdapter {
         const catalog = await this.catalogFor(account);
         try {
             const models = await catalog.get(() => discoverOrRetryAuth(force => this.options.tokens.session(account, force), catalog, () => this.fetchCatalog(account, signal)), preferCached);
-            return models.map(model => ({
+            return models
+                .filter(model => isPickerModel(model.id))
+                .sort(compareModelNames)
+                .map(model => ({
                 provider,
                 id: model.id,
                 name: model.name,

@@ -696,6 +696,12 @@ export interface CatalogSnapshot {
   /** Epoch milliseconds of the successful fetch that produced it. */
   at: number
   models: DiscoveredModel[]
+  /**
+   * Presentation scheme the stored models were labeled with. A cache written by
+   * an older scheme (renamed/duplicate labels, filtered lanes) is ignored so the
+   * picker never shows labels the current code would no longer produce.
+   */
+  version?: number
 }
 
 /** The durable half of a {@link ModelCatalogCache} (the models.json store). */
@@ -734,6 +740,8 @@ export class ModelCatalogCache {
     private readonly persistence?: CatalogPersistence,
     private readonly ttlMs = DISCOVERY_TTL_MS,
     private readonly onChanged?: () => void,
+    /** Current labeling scheme; a snapshot stored under another one is ignored. */
+    private readonly version?: number,
   ) {}
 
   /**
@@ -759,9 +767,11 @@ export class ModelCatalogCache {
     if (this.persistence === undefined) return Promise.resolve()
     this.seeded ??= this.persistence.load().then(
       (snapshot) => {
-        if (snapshot !== undefined && this.entry === undefined && !this.seedDisabled) {
-          this.entry = snapshot
-        }
+        if (snapshot === undefined || this.entry !== undefined || this.seedDisabled) return
+        // A schema bump (renamed labels, hidden lanes) must not be served from
+        // disk: the stored models carry the previous scheme's presentation.
+        if (this.version !== undefined && snapshot.version !== this.version) return
+        this.entry = snapshot
       },
       () => undefined,
     )
@@ -776,7 +786,11 @@ export class ModelCatalogCache {
       .then((models) => {
         if (this.generation !== gen) return models
         const changed = this.entry === undefined || JSON.stringify(this.entry.models) !== JSON.stringify(models)
-        const snapshot: CatalogSnapshot = { at: Date.now(), models }
+        const snapshot: CatalogSnapshot = {
+          at: Date.now(),
+          models,
+          ...this.version === undefined ? {} : { version: this.version },
+        }
         this.entry = snapshot
         // Write-through is fire-and-forget: a failed save only costs durability.
         void this.persistence?.save(snapshot).catch(() => undefined)

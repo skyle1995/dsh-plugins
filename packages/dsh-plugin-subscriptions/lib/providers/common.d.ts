@@ -318,6 +318,12 @@ export interface CatalogSnapshot {
     /** Epoch milliseconds of the successful fetch that produced it. */
     at: number;
     models: DiscoveredModel[];
+    /**
+     * Presentation scheme the stored models were labeled with. A cache written by
+     * an older scheme (renamed/duplicate labels, filtered lanes) is ignored so the
+     * picker never shows labels the current code would no longer produce.
+     */
+    version?: number;
 }
 /** The durable half of a {@link ModelCatalogCache} (the models.json store). */
 export interface CatalogPersistence {
@@ -344,6 +350,8 @@ export declare class ModelCatalogCache {
     private readonly persistence?;
     private readonly ttlMs;
     private readonly onChanged?;
+    /** Current labeling scheme; a snapshot stored under another one is ignored. */
+    private readonly version?;
     private entry;
     private inflight;
     /** Settles once the persisted snapshot (when any) has been considered. */
@@ -352,7 +360,9 @@ export declare class ModelCatalogCache {
     private seedDisabled;
     /** Bumped by {@link invalidate} so a loser in-flight fetch cannot write back. */
     private generation;
-    constructor(persistence?: CatalogPersistence | undefined, ttlMs?: number, onChanged?: (() => void) | undefined);
+    constructor(persistence?: CatalogPersistence | undefined, ttlMs?: number, onChanged?: (() => void) | undefined, 
+    /** Current labeling scheme; a snapshot stored under another one is ignored. */
+    version?: number | undefined);
     /**
      * The cached catalog when fresh, without fetching.
      * @returns the cached models, or `undefined` when absent or stale.

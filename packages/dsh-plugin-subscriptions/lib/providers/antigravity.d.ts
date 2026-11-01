@@ -20,6 +20,13 @@ export declare const ANTIGRAVITY_DEFAULT_BASE_URL = "https://daily-cloudcode-pa.
 export declare const ANTIGRAVITY_PROD_BASE_URL = "https://cloudcode-pa.googleapis.com";
 export declare const ANTIGRAVITY_DEFAULT_USER_AGENT = "antigravity/1.104.0 dsh-plugin-subscriptions";
 export declare const ANTIGRAVITY_PREEMPT_MS: number;
+/**
+ * Label/schema version of the persisted Antigravity catalog. Bump whenever the
+ * derived presentation changes (duplicate `displayName`s now fall back to the
+ * id, editor lanes are filtered): a snapshot written under the old scheme is
+ * discarded on load instead of feeding stale labels to the picker.
+ */
+export declare const ANTIGRAVITY_CATALOG_VERSION = 2;
 /** Antigravity, not Gemini CLI, OAuth scopes from the local reference clients. */
 export declare const ANTIGRAVITY_SCOPES: readonly ["openid", "https://www.googleapis.com/auth/cloud-platform", "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile", "https://www.googleapis.com/auth/cclog", "https://www.googleapis.com/auth/experimentsandconfigs"];
 /** OAuth client configuration; explicit clients override the bundled desktop identity. */
@@ -58,6 +65,37 @@ export declare function refreshAntigravity(session: AntigravitySession, oauth: A
 export declare function isAntigravityPermanentRefreshError(error: unknown): boolean;
 /** Fetch the authenticated account's live Antigravity model catalog. */
 export declare function fetchAntigravityModels(session: AntigravitySession, runtime?: AntigravityRuntimeConfig, fetchFn?: FetchFn, signal?: AbortSignal): Promise<DiscoveredModel[]>;
+/**
+ * Alphabetical order of two model labels, with the wire id as a deterministic
+ * tie-breaker (labels are unique, but a catalog could still hand out equals).
+ * @param a - first entry.
+ * @param b - second entry.
+ * @returns the collator's ordering.
+ */
+export declare function compareModelNames(a: {
+    id: string;
+    name: string;
+}, b: {
+    id: string;
+    name: string;
+}): number;
+/**
+ * Whether a discovered id belongs in the chat picker. The editor's own lanes —
+ * tab completion (`tab_*`) and internal chat helpers (`chat_*`) — arrive with no
+ * display name and cannot serve a chat request, so they stay discoverable (an id
+ * must still resolve) but are not offered as models.
+ * @param id - the wire model id.
+ * @returns true for a chat model.
+ */
+export declare function isPickerModel(id: string): boolean;
+/**
+ * Spell a model id as a display label: `gemini-3.1-flash-lite` → "Gemini 3.1
+ * Flash Lite". Used when the catalog has no display name, or when it reuses one
+ * label across several ids (aliases), where the id is the only honest name.
+ * @param id - the wire model id.
+ * @returns the label.
+ */
+export declare function modelNameFromId(id: string): string;
 /** Fetch plan and per-model quota windows when the upstream exposes them. */
 export declare function fetchAntigravityUsage(session: AntigravitySession, runtime?: AntigravityRuntimeConfig, fetchFn?: FetchFn, signal?: AbortSignal): Promise<ProviderUsage>;
 /** URL for either v1internal generation transport. */
