@@ -217,6 +217,26 @@ test('a 429 classifies as RATE_LIMIT even when the wording reads as terminal quo
   assert.ok(error.failure.providerRetryAfterMs > 8_990_000)
 })
 
+test('an unsupported egress region classifies as REGION_BLOCKED, never AUTH or HTTP_400', async () => {
+  const blocked = JSON.stringify({ error: {
+    code: 400,
+    message: 'User location is not supported for the API use.',
+    status: 'FAILED_PRECONDITION',
+  } })
+  const antigravity = await httpLlmError(failure(400, {}, blocked), 'Antigravity API')
+  assert.equal(antigravity.code, 'REGION_BLOCKED')
+  assert.match(antigravity.message, /Settings → Subscriptions → Proxy/)
+  assert.equal(antigravity.failure.providerRetryAfterMs, undefined)
+
+  // OpenAI answers 403; a status-only mapping would park the account for a day.
+  const codex = await httpLlmError(failure(403, {}, '{"error":{"code":"unsupported_country_region_territory"}}'), 'codex API')
+  assert.equal(codex.code, 'REGION_BLOCKED')
+
+  // Any other 403 is still about the credential.
+  const auth = await httpLlmError(failure(403, {}, '{"error":"invalid token"}'), 'codex API')
+  assert.equal(auth.code, 'AUTH')
+})
+
 test('quota wording still classifies as QUOTA on any other status', async () => {
   const error = await httpLlmError(failure(402, {}, 'Weekly usage limit exceeded'), 'codex API')
   assert.equal(error.code, 'QUOTA')

@@ -31,6 +31,7 @@ import { callSubscriptionsAuth, usageBarColor } from './SubscriptionsSection.js'
 import { en } from './locales.js';
 import { hostIcon } from './host-icons.js';
 import { useUsageBadgeMode } from './usage-badge-preferences.js';
+import { visibleUsageWindows } from './usage-window-filter.js';
 import { DISPLAY_NAME_CHANGED } from './display-name-events.js';
 /** DSH renamed the data icon in 0.1.7; retain older supported hosts too. */
 export function usageBadgeIcon(icons) {
@@ -176,6 +177,51 @@ function usageWindowLabel(t, window) {
     return window.scope !== undefined && window.scope !== '' ? `${base} · ${window.scope}` : base;
 }
 /**
+ * Assemble the dialog's per-provider rows from one settled poll.
+ *
+ * Kept pure so the visibility rule is testable without a hosted React tree:
+ * windows of models disabled in "Edit model list" (`visibleModels`) never reach
+ * the list, and an account left without a single visible window disappears
+ * instead of rendering an empty row.
+ *
+ * @param input - The poll's roster plus the readers for its settled state.
+ * @param input.roster - Logged-in accounts, provider order and default first.
+ * @param input.windowsOf - Last-known windows of one account.
+ * @param input.planOf - Plan label of one account.
+ * @param input.visibleModelsOf - Saved picker selection; `undefined` = automatic.
+ * @param input.nameOf - Provider header label (saved display name, else brand).
+ * @returns Provider rows in roster order; providers with no visible account are
+ * omitted.
+ */
+export function buildUsageDisplays(input) {
+    const byProvider = new Map();
+    for (const { provider, account } of input.roster) {
+        const reported = input.windowsOf(provider, account);
+        if (reported === undefined)
+            continue;
+        // Disabled models drop out entirely: an account whose every window belongs
+        // to a disabled model reads as "no usage" rather than as a row full of
+        // quotas the user cannot use.
+        const windows = visibleUsageWindows(provider, reported, input.visibleModelsOf(provider));
+        if (windows.length === 0)
+            continue;
+        const plan = input.planOf(provider, account);
+        const row = {
+            key: account.key,
+            isDefault: account.isDefault,
+            ...account.account === undefined ? {} : { account: account.account },
+            ...plan === undefined ? {} : { plan },
+            windows,
+        };
+        const display = byProvider.get(provider);
+        if (display === undefined)
+            byProvider.set(provider, { provider, name: input.nameOf(provider), accounts: [row] });
+        else
+            display.accounts.push(row);
+    }
+    return [...byProvider.values()];
+}
+/**
  * The composer subscription-usage badge: a pill reading e.g.
  * `Codex 6d 1h 25%` for the current model's provider, opening a dialog with
  * every provider's accounts and their windows. Returns null when no data is
@@ -223,7 +269,11 @@ export function SubscriptionUsageBadge({ rpc, currentModel, t }) {
             // `status` provider order, default account first) so rows don't jump
             // around as polls settle at different times.
             const roster = [];
+            // Saved picker visibility per provider: a model the user disabled in
+            // "Edit model list" must not surface its quota windows here either.
+            const visibility = new Map();
             for (const provider of Object.keys(statusResp.providers)) {
+                visibility.set(provider, statusResp.providers[provider]?.visibleModels);
                 for (const account of accountsOf(statusResp.providers[provider]))
                     roster.push({ provider, account });
             }
@@ -260,28 +310,15 @@ export function SubscriptionUsageBadge({ rpc, currentModel, t }) {
                 }
                 lastKnown.set(key, usage.windows);
             }
-            const byProvider = new Map();
-            for (const { provider, account } of roster) {
-                const key = keyOf(provider, account);
-                const windows = lastKnown.get(key);
-                if (windows === undefined)
-                    continue;
-                const plan = plans.get(key) ?? account.plan;
-                const row = {
-                    key: account.key,
-                    isDefault: account.isDefault,
-                    ...account.account === undefined ? {} : { account: account.account },
-                    ...plan === undefined ? {} : { plan },
-                    windows,
-                };
-                const display = byProvider.get(provider);
-                if (display === undefined)
-                    byProvider.set(provider, { provider, name: statusResp.providers[provider]?.displayName || PROVIDER_NAMES[provider], accounts: [row] });
-                else
-                    display.accounts.push(row);
-            }
+            const fresh = buildUsageDisplays({
+                roster,
+                windowsOf: (provider, account) => lastKnown.get(keyOf(provider, account)),
+                planOf: (provider, account) => plans.get(keyOf(provider, account)) ?? account.plan,
+                visibleModelsOf: provider => visibility.get(provider),
+                nameOf: provider => statusResp.providers[provider]?.displayName || PROVIDER_NAMES[provider],
+            });
             // A save during a slow quota poll wins over that poll's old status snapshot.
-            setDisplays([...byProvider.values()].map(row => {
+            setDisplays(fresh.map(row => {
                 const saved = recentNames.current.get(row.provider);
                 return saved && saved.revision > revision ? { ...row, name: saved.name } : row;
             }));

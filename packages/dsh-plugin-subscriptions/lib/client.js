@@ -427,12 +427,53 @@ function resetActionBlock(usage, now = Date.now()) {
 
 //#endregion
 //#region src/client/usage-window-filter.ts
-/** Presentation only: never trim the raw snapshots used by quota/routing logic. */
-function visibleUsageWindows(provider, windows, visibleModels) {
+/** Case-insensitive exact match, or the family form a scope like `Opus` implies. */
+function scopeMatchesModel(scope, model) {
+	if (model.id === scope) return true;
+	const name = (model.name ?? model.id).toLowerCase();
+	const wanted = scope.toLowerCase();
+	return name === wanted || name.startsWith(`${wanted} `);
+}
+/**
+* Presentation only: never trim the raw snapshots used by quota/routing logic.
+*
+* Drops the quota windows of models the user disabled in **Edit model list**
+* (`visibleModels`), so a disabled model stops showing up in the usage list and
+* in the composer badge. Rules:
+*
+* - `visibleModels === undefined` means "follow discovery" — nothing is
+*   disabled yet, so every window stays.
+* - Windows without a `scope` are account-wide quotas; no single model owns
+*   them and no selection can disable them.
+* - A scope that resolves to an enabled model stays. Resolution uses the saved
+*   ids first, then — when the caller supplies the catalog — the display names
+*   a provider may use instead (`Opus` → every `Opus …` model).
+* - An unresolved scope is dropped for `antigravity`, whose scopes are always
+*   model ids (so an unknown id is simply not selected), and kept for providers
+*   that scope quotas by family: hiding what cannot be attributed would lose
+*   real quota information.
+*
+* @param provider - The subscription provider the windows belong to.
+* @param windows - Raw usage windows as reported by the `usage` endpoint.
+* @param visibleModels - Saved picker selection; `undefined` means automatic.
+* @param models - Optional catalog for name-style scopes (never fetched here).
+* @returns A new array when filtering applies; the input array otherwise.
+*/
+function visibleUsageWindows(provider, windows, visibleModels, models) {
 	const all = windows ?? [];
-	if (provider !== "antigravity" || visibleModels === void 0) return all;
-	const selected = new Set(visibleModels);
-	return all.filter((window$1) => !window$1.scope || selected.has(window$1.scope));
+	if (visibleModels === void 0) return all;
+	const enabled = new Set(visibleModels);
+	const kept = all.filter((window$1) => {
+		const scope = window$1.scope;
+		if (scope === void 0 || scope === "") return true;
+		if (enabled.has(scope)) return true;
+		if (models !== void 0) {
+			const candidates = models.filter((model) => scopeMatchesModel(scope, model));
+			if (candidates.length > 0) return candidates.some((model) => enabled.has(model.id));
+		}
+		return provider !== "antigravity";
+	});
+	return kept.length === all.length ? all : kept;
 }
 
 //#endregion
@@ -4255,6 +4296,48 @@ function usageWindowLabel(t, window$1) {
 	return window$1.scope !== void 0 && window$1.scope !== "" ? `${base} · ${window$1.scope}` : base;
 }
 /**
+* Assemble the dialog's per-provider rows from one settled poll.
+*
+* Kept pure so the visibility rule is testable without a hosted React tree:
+* windows of models disabled in "Edit model list" (`visibleModels`) never reach
+* the list, and an account left without a single visible window disappears
+* instead of rendering an empty row.
+*
+* @param input - The poll's roster plus the readers for its settled state.
+* @param input.roster - Logged-in accounts, provider order and default first.
+* @param input.windowsOf - Last-known windows of one account.
+* @param input.planOf - Plan label of one account.
+* @param input.visibleModelsOf - Saved picker selection; `undefined` = automatic.
+* @param input.nameOf - Provider header label (saved display name, else brand).
+* @returns Provider rows in roster order; providers with no visible account are
+* omitted.
+*/
+function buildUsageDisplays(input) {
+	const byProvider = /* @__PURE__ */ new Map();
+	for (const { provider, account } of input.roster) {
+		const reported = input.windowsOf(provider, account);
+		if (reported === void 0) continue;
+		const windows = visibleUsageWindows(provider, reported, input.visibleModelsOf(provider));
+		if (windows.length === 0) continue;
+		const plan = input.planOf(provider, account);
+		const row = {
+			key: account.key,
+			isDefault: account.isDefault,
+			...account.account === void 0 ? {} : { account: account.account },
+			...plan === void 0 ? {} : { plan },
+			windows
+		};
+		const display = byProvider.get(provider);
+		if (display === void 0) byProvider.set(provider, {
+			provider,
+			name: input.nameOf(provider),
+			accounts: [row]
+		});
+		else display.accounts.push(row);
+	}
+	return [...byProvider.values()];
+}
+/**
 * The composer subscription-usage badge: a pill reading e.g.
 * `Codex 6d 1h 25%` for the current model's provider, opening a dialog with
 * every provider's accounts and their windows. Returns null when no data is
@@ -4288,10 +4371,14 @@ function SubscriptionUsageBadge({ rpc, currentModel, t }) {
 			const statusResp = await callSubscriptionsAuth(rpc, "status", {});
 			if (!mountedRef.current) return;
 			const roster = [];
-			for (const provider of Object.keys(statusResp.providers)) for (const account of accountsOf(statusResp.providers[provider])) roster.push({
-				provider,
-				account
-			});
+			const visibility = /* @__PURE__ */ new Map();
+			for (const provider of Object.keys(statusResp.providers)) {
+				visibility.set(provider, statusResp.providers[provider]?.visibleModels);
+				for (const account of accountsOf(statusResp.providers[provider])) roster.push({
+					provider,
+					account
+				});
+			}
 			const keyOf = (provider, account) => `${provider}:${account.key}`;
 			const lastKnown = lastKnownRef.current;
 			const live = new Set(roster.map(({ provider, account }) => keyOf(provider, account)));
@@ -4323,28 +4410,13 @@ function SubscriptionUsageBadge({ rpc, currentModel, t }) {
 				}
 				lastKnown.set(key, usage.windows);
 			}
-			const byProvider = /* @__PURE__ */ new Map();
-			for (const { provider, account } of roster) {
-				const key = keyOf(provider, account);
-				const windows = lastKnown.get(key);
-				if (windows === void 0) continue;
-				const plan = plans.get(key) ?? account.plan;
-				const row = {
-					key: account.key,
-					isDefault: account.isDefault,
-					...account.account === void 0 ? {} : { account: account.account },
-					...plan === void 0 ? {} : { plan },
-					windows
-				};
-				const display = byProvider.get(provider);
-				if (display === void 0) byProvider.set(provider, {
-					provider,
-					name: statusResp.providers[provider]?.displayName || PROVIDER_NAMES[provider],
-					accounts: [row]
-				});
-				else display.accounts.push(row);
-			}
-			setDisplays([...byProvider.values()].map((row) => {
+			setDisplays(buildUsageDisplays({
+				roster,
+				windowsOf: (provider, account) => lastKnown.get(keyOf(provider, account)),
+				planOf: (provider, account) => plans.get(keyOf(provider, account)) ?? account.plan,
+				visibleModelsOf: (provider) => visibility.get(provider),
+				nameOf: (provider) => statusResp.providers[provider]?.displayName || PROVIDER_NAMES[provider]
+			}).map((row) => {
 				const saved = recentNames.current.get(row.provider);
 				return saved && saved.revision > revision ? {
 					...row,

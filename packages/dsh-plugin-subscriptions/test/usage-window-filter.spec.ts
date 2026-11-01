@@ -44,3 +44,49 @@ test('filtered-empty usage has distinct bilingual copy from missing upstream quo
     assert.notEqual(locale.usageNoVisibleModels, locale.usageEmpty)
   }
 })
+
+test('catalog names resolve family scopes: a disabled family loses its windows, an enabled one keeps them', () => {
+  const family: UsageWindow[] = [
+    { kind: 'weekly', scope: 'Opus', usedPercent: 55 },
+    { kind: 'weekly', scope: 'Sonnet 4.6', usedPercent: 12 },
+  ]
+  const models = [
+    { id: 'claude-opus-4-6', name: 'Opus 4.6' },
+    { id: 'claude-opus-4-5', name: 'Opus 4.5' },
+    { id: 'claude-sonnet-4-6', name: 'Sonnet 4.6' },
+  ]
+  assert.deepEqual(
+    visibleUsageWindows('claude', family, ['claude-sonnet-4-6'], models),
+    [family[1]],
+    'every Opus model disabled -> the Opus family window leaves the list',
+  )
+  assert.deepEqual(
+    visibleUsageWindows('claude', family, ['claude-opus-4-5', 'claude-sonnet-4-6'], models),
+    family,
+    'one enabled Opus member keeps the shared family window',
+  )
+  assert.deepEqual(
+    visibleUsageWindows('claude', family, ['claude-opus-4-6'], models),
+    [family[0]],
+    'an exact display-name scope follows its own model',
+  )
+})
+
+test('other providers drop id-scoped windows of disabled models once the catalog names them', () => {
+  const scoped: UsageWindow[] = [
+    { kind: 'other', scope: 'gemini-3-flash', usedPercent: 30 },
+    { kind: 'session', usedPercent: 5 },
+  ]
+  const catalog = [{ id: 'gemini-3-flash', name: 'Gemini 3 Flash' }]
+  // Without a catalog a non-Antigravity scope cannot be attributed: keep it.
+  assert.deepEqual(visibleUsageWindows('antigravity', scoped, ['gemini-3-pro']), [scoped[1]])
+  assert.deepEqual(
+    visibleUsageWindows('antigravity', scoped, ['gemini-3-pro'], catalog),
+    [scoped[1]],
+    'catalog resolution must not resurrect a disabled model',
+  )
+  assert.deepEqual(
+    visibleUsageWindows('antigravity', scoped, ['gemini-3-flash', 'gemini-3-pro'], catalog),
+    scoped,
+  )
+})

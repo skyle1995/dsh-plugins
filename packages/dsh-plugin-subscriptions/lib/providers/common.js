@@ -51,9 +51,47 @@ export function validateModels(models, label) {
     });
 }
 /**
+ * Stable code for "this egress region is not allowed to call the provider".
+ *
+ * Every subscription provider rejects an unsupported origin at the IP level, so
+ * the request is fine and another account of the same subscription fails the
+ * same way: the fix is a different egress (the plugin proxy), never a retry,
+ * a fresh token, or another account.
+ */
+export const REGION_BLOCKED_CODE = 'REGION_BLOCKED';
+/**
+ * Wording each provider uses when the caller's region is unsupported. A 403 is
+ * otherwise `AUTH`, so the body is consulted before the status-only mapping:
+ * telling the user to log in again when the real cause is geography sends them
+ * down a path that cannot work.
+ */
+const REGION_BLOCK_WORDING = [
+    // Google (Antigravity): FAILED_PRECONDITION on a 400.
+    /user location is not supported/i,
+    /location is not supported for the api use/i,
+    // OpenAI / Codex: `unsupported_country_region_territory` on a 403.
+    /unsupported_country_region_territory/i,
+    /country,?\s*region,?\s*or territory not supported/i,
+    // Anthropic / Claude: "Request not allowed" with the region spelled out.
+    /request not allowed from your (?:country|region|location)/i,
+];
+/** Whether one failed response is an unsupported-region rejection. */
+export function isRegionBlockedError(body, status) {
+    if (status !== 400 && status !== 403)
+        return false;
+    return REGION_BLOCK_WORDING.some(pattern => pattern.test(body));
+}
+/** Actionable suffix appended to a region rejection (the UI has a proxy page). */
+const REGION_BLOCKED_HINT = ' — this network egress region is not supported by the provider;'
+    + ' configure a proxy for the right region in Settings → Subscriptions → Proxy and retry';
+/**
  * Build an LlmError from a non-2xx provider response, mapping the status to a
  * stable code and, for a rate-limited request, the disclosed reset instant to
  * the `providerRetryAfterMs` the retry plugin waits out.
+ *
+ * A region rejection (`REGION_BLOCKED`) is recognised before the status-only
+ * mapping — Google answers 400, OpenAI 403 — because it is neither an auth
+ * problem nor worth retrying: the egress is wrong, not the credential.
  *
  * A 429 classifies as `RATE_LIMIT` on the strength of the status alone, ahead
  * of the quota-wording check. On these routes there is no terminal quota to
@@ -75,11 +113,15 @@ export async function httpLlmError(response, label, options = {}) {
     }
     // Truncated for display only; the readers below need the whole body to parse it.
     const shown = body.slice(0, 500);
-    const message = shown.length > 0
+    const regionBlocked = isRegionBlockedError(shown, response.status);
+    const detail = shown.length > 0
         ? `${label} error (HTTP ${String(response.status)}): ${shown}`
         : `${label} error (HTTP ${String(response.status)})`;
+    const message = regionBlocked ? `${detail}${REGION_BLOCKED_HINT}` : detail;
     let code;
-    if (response.status === 401 || response.status === 403)
+    if (regionBlocked)
+        code = REGION_BLOCKED_CODE;
+    else if (response.status === 401 || response.status === 403)
         code = 'AUTH';
     else if (response.status === 429)
         code = 'RATE_LIMIT';

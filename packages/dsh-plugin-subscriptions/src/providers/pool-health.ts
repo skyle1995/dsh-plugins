@@ -12,6 +12,7 @@
 
 import { CONTEXT_WINDOW_EXCEEDED_CODE, LlmError, QUOTA_EXCEEDED_CODE } from '@deepseek-ai/dsh-llm'
 import type { ProviderId } from '../auth/store.js'
+import { REGION_BLOCKED_CODE } from './common.js'
 
 /** Registry key for one pool member. */
 export function memberKey(provider: ProviderId, account: string, model: string): string {
@@ -29,6 +30,13 @@ export const DEFAULT_QUOTA_COOLDOWN_MS = 5 * 60_000
 export const AUTH_COOLDOWN_MS = 24 * 60 * 60_000
 /** Transient server-side failures cool down briefly. */
 export const TRANSIENT_COOLDOWN_MS = 60_000
+/**
+ * An unsupported egress region parks the account (every model fails from the
+ * same IP) but only briefly: the user's usual fix is switching the plugin proxy,
+ * and a long record would keep a corrected egress out of the pool for minutes.
+ * Long enough that one turn does not re-hit a doomed endpoint per member.
+ */
+export const REGION_BLOCKED_COOLDOWN_MS = 60_000
 
 /** Whether a failure parks one member or the account's whole quota. */
 export type PoolFailureScope = 'member' | 'account'
@@ -61,7 +69,9 @@ function retryAfterMs(error: LlmError): number | undefined {
  * any fixed guess) — account-wide for account-metered providers, per-member
  * for model-scoped ones; auth failures park the account until re-login
  * (credentials are account-level); server/timeout failures get a short
- * per-member cooldown; transport failures switch without a record;
+ * per-member cooldown; transport failures switch without a record; an
+ * unsupported egress region (`REGION_BLOCKED`, shared by the whole account)
+ * parks the account for a minute so a doomed IP is not re-probed per member;
  * everything else — most importantly CONTEXT_WINDOW_EXCEEDED and ABORTED —
  * is the request's own fault and is rethrown untouched.
  * @param error - the failure thrown by a member adapter's stream.
@@ -79,6 +89,12 @@ export function classifyPoolFailure(error: unknown, provider: ProviderId): PoolF
         reason: error.code,
         scope: MODEL_SCOPED_QUOTA_PROVIDERS.has(provider) ? 'member' : 'account',
       }
+    case REGION_BLOCKED_CODE:
+      // Egress-scoped: every account and model behind this IP fails alike, so a
+      // per-account park with a short TTL stops the per-member hammering while a
+      // proxy change still recovers within a minute. Never the day-long auth
+      // cooldown: the credential is fine.
+      return { action: 'switch', cooldownMs: REGION_BLOCKED_COOLDOWN_MS, reason: error.code, scope: 'account' }
     case 'AUTH':
     case 'INVALID_CREDENTIAL':
     case 'MISSING_CREDENTIAL':

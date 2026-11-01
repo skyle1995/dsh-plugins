@@ -79,6 +79,43 @@ export function validateModels(models: readonly ModelEntry[], label: string): Mo
   })
 }
 
+/**
+ * Stable code for "this egress region is not allowed to call the provider".
+ *
+ * Every subscription provider rejects an unsupported origin at the IP level, so
+ * the request is fine and another account of the same subscription fails the
+ * same way: the fix is a different egress (the plugin proxy), never a retry,
+ * a fresh token, or another account.
+ */
+export const REGION_BLOCKED_CODE = 'REGION_BLOCKED'
+
+/**
+ * Wording each provider uses when the caller's region is unsupported. A 403 is
+ * otherwise `AUTH`, so the body is consulted before the status-only mapping:
+ * telling the user to log in again when the real cause is geography sends them
+ * down a path that cannot work.
+ */
+const REGION_BLOCK_WORDING: readonly RegExp[] = [
+  // Google (Antigravity): FAILED_PRECONDITION on a 400.
+  /user location is not supported/i,
+  /location is not supported for the api use/i,
+  // OpenAI / Codex: `unsupported_country_region_territory` on a 403.
+  /unsupported_country_region_territory/i,
+  /country,?\s*region,?\s*or territory not supported/i,
+  // Anthropic / Claude: "Request not allowed" with the region spelled out.
+  /request not allowed from your (?:country|region|location)/i,
+]
+
+/** Whether one failed response is an unsupported-region rejection. */
+export function isRegionBlockedError(body: string, status: number): boolean {
+  if (status !== 400 && status !== 403) return false
+  return REGION_BLOCK_WORDING.some(pattern => pattern.test(body))
+}
+
+/** Actionable suffix appended to a region rejection (the UI has a proxy page). */
+const REGION_BLOCKED_HINT = ' — this network egress region is not supported by the provider;'
+  + ' configure a proxy for the right region in Settings → Subscriptions → Proxy and retry'
+
 /** Optional per-call hooks {@link httpLlmError} uses to read a rate-limit window. */
 export interface HttpLlmErrorOptions {
   /**
@@ -96,6 +133,10 @@ export interface HttpLlmErrorOptions {
  * Build an LlmError from a non-2xx provider response, mapping the status to a
  * stable code and, for a rate-limited request, the disclosed reset instant to
  * the `providerRetryAfterMs` the retry plugin waits out.
+ *
+ * A region rejection (`REGION_BLOCKED`) is recognised before the status-only
+ * mapping — Google answers 400, OpenAI 403 — because it is neither an auth
+ * problem nor worth retrying: the egress is wrong, not the credential.
  *
  * A 429 classifies as `RATE_LIMIT` on the strength of the status alone, ahead
  * of the quota-wording check. On these routes there is no terminal quota to
@@ -120,11 +161,14 @@ export async function httpLlmError(
   }
   // Truncated for display only; the readers below need the whole body to parse it.
   const shown = body.slice(0, 500)
-  const message = shown.length > 0
+  const regionBlocked = isRegionBlockedError(shown, response.status)
+  const detail = shown.length > 0
     ? `${label} error (HTTP ${String(response.status)}): ${shown}`
     : `${label} error (HTTP ${String(response.status)})`
+  const message = regionBlocked ? `${detail}${REGION_BLOCKED_HINT}` : detail
   let code: string
-  if (response.status === 401 || response.status === 403) code = 'AUTH'
+  if (regionBlocked) code = REGION_BLOCKED_CODE
+  else if (response.status === 401 || response.status === 403) code = 'AUTH'
   else if (response.status === 429) code = 'RATE_LIMIT'
   else if (isQuotaExceededError(shown)) code = QUOTA_EXCEEDED_CODE
   else if (response.status === 400 && isContextWindowExceededError(shown)) code = CONTEXT_WINDOW_EXCEEDED_CODE

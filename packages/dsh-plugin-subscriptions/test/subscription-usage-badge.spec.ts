@@ -11,7 +11,7 @@ const css = registerHooks({ load(url, context, nextLoad) {
     ? { format: 'module', source: 'export default {}', shortCircuit: true }
     : nextLoad(url, context)
 } })
-const { AccountWindows, compactSegment, createCurrentModelReader, previewWindows,
+const { AccountWindows, buildUsageDisplays, compactSegment, createCurrentModelReader, previewWindows,
   collapsedDisplays, expandedDisplays, retainSubscriptionSelection, usageBadgeIcon } = await import('../src/client/SubscriptionUsageBadge.js')
 const { ImageGenerateToolview } = await import('../src/client/ImageGenerateToolview.js')
 const { VideoGenerateToolview } = await import('../src/client/VideoGenerateToolview.js')
@@ -157,4 +157,44 @@ test('model reader observes switches within the same provider and handles missin
   assert.deepEqual(await read(), { provider: 'antigravity', model: 'two' })
   assert.equal(await createCurrentModelReader(() => undefined, 'session')(), undefined)
   assert.equal(await createCurrentModelReader(() => ({ directoryFor: () => ({ load: async () => ({ current: null }) }) }), 'session')(), undefined)
+})
+
+test('usage displays drop the windows of disabled models and with them empty accounts', () => {
+  const quotas: UsageWindow[] = [
+    { kind: 'other', scope: 'gemini-3-flash', usedPercent: 20 },
+    { kind: 'weekly', scope: 'gemini-3-pro', usedPercent: 60 },
+    { kind: 'session', usedPercent: 5 },
+  ]
+  const roster = [
+    { provider: 'antigravity' as const, account: { key: 'default', isDefault: true } },
+    { provider: 'codex' as const, account: { key: 'default', isDefault: true } },
+  ]
+  const windowsOf = (provider: 'antigravity' | 'codex' | 'claude' | 'grok' | 'copilot') => (
+    provider === 'antigravity' ? quotas : [{ kind: 'session' as const, usedPercent: 11 }]
+  )
+  const build = (visible: readonly string[] | undefined) => buildUsageDisplays({
+    roster,
+    windowsOf,
+    planOf: () => undefined,
+    visibleModelsOf: provider => (provider === 'antigravity' ? visible : undefined),
+    nameOf: provider => provider,
+  })
+
+  // Nothing disabled yet: every window shows, as before.
+  assert.deepEqual(build(undefined)[0]?.accounts[0]?.windows, quotas)
+  // The disabled model leaves the list; account-wide windows stay.
+  assert.deepEqual(build(['gemini-3-flash'])[0]?.accounts[0]?.windows, [quotas[0], quotas[2]])
+  // Every model-scoped window disabled: the row disappears, unscoped quota stays.
+  assert.deepEqual(build(['unrelated-model'])[0]?.accounts[0]?.windows, [quotas[2]])
+  // A provider without scoped windows is untouched by another provider's selection.
+  assert.equal(build([]).length, 2)
+  // An account whose windows all belong to disabled models is omitted entirely.
+  const scopedOnly = buildUsageDisplays({
+    roster: [{ provider: 'antigravity', account: { key: 'default', isDefault: true } }],
+    windowsOf: () => [{ kind: 'other', scope: 'gemini-3-flash', usedPercent: 20 }],
+    planOf: () => undefined,
+    visibleModelsOf: () => ['gemini-3-pro'],
+    nameOf: provider => provider,
+  })
+  assert.deepEqual(scopedOnly, [])
 })

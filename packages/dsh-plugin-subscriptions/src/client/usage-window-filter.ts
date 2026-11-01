@@ -1,14 +1,69 @@
 import type { SubscriptionProvider, UsageWindow } from './SubscriptionsSection.js'
 
-/** Presentation only: never trim the raw snapshots used by quota/routing logic. */
+/**
+ * The slice of a model catalog entry this presentation filter needs: the wire
+ * id the saved selection stores, plus the display name some providers put in
+ * a window's `scope` (Claude's usage endpoint names a family like `Opus`).
+ */
+export interface UsageWindowModelRef {
+  id: string
+  name?: string
+}
+
+/** Case-insensitive exact match, or the family form a scope like `Opus` implies. */
+function scopeMatchesModel(scope: string, model: UsageWindowModelRef): boolean {
+  if (model.id === scope) return true
+  const name = (model.name ?? model.id).toLowerCase()
+  const wanted = scope.toLowerCase()
+  return name === wanted || name.startsWith(`${wanted} `)
+}
+
+/**
+ * Presentation only: never trim the raw snapshots used by quota/routing logic.
+ *
+ * Drops the quota windows of models the user disabled in **Edit model list**
+ * (`visibleModels`), so a disabled model stops showing up in the usage list and
+ * in the composer badge. Rules:
+ *
+ * - `visibleModels === undefined` means "follow discovery" — nothing is
+ *   disabled yet, so every window stays.
+ * - Windows without a `scope` are account-wide quotas; no single model owns
+ *   them and no selection can disable them.
+ * - A scope that resolves to an enabled model stays. Resolution uses the saved
+ *   ids first, then — when the caller supplies the catalog — the display names
+ *   a provider may use instead (`Opus` → every `Opus …` model).
+ * - An unresolved scope is dropped for `antigravity`, whose scopes are always
+ *   model ids (so an unknown id is simply not selected), and kept for providers
+ *   that scope quotas by family: hiding what cannot be attributed would lose
+ *   real quota information.
+ *
+ * @param provider - The subscription provider the windows belong to.
+ * @param windows - Raw usage windows as reported by the `usage` endpoint.
+ * @param visibleModels - Saved picker selection; `undefined` means automatic.
+ * @param models - Optional catalog for name-style scopes (never fetched here).
+ * @returns A new array when filtering applies; the input array otherwise.
+ */
 export function visibleUsageWindows(
   provider: SubscriptionProvider,
   windows: UsageWindow[] | undefined,
   visibleModels: readonly string[] | undefined,
+  models?: readonly UsageWindowModelRef[],
 ): UsageWindow[] {
   const all = windows ?? []
-  // Other providers may scope quotas by family rather than exact model ID.
-  if (provider !== 'antigravity' || visibleModels === undefined) return all
-  const selected = new Set(visibleModels)
-  return all.filter(window => !window.scope || selected.has(window.scope))
+  if (visibleModels === undefined) return all
+  const enabled = new Set(visibleModels)
+  const kept = all.filter(window => {
+    const scope = window.scope
+    if (scope === undefined || scope === '') return true
+    if (enabled.has(scope)) return true
+    if (models !== undefined) {
+      const candidates = models.filter(model => scopeMatchesModel(scope, model))
+      if (candidates.length > 0) return candidates.some(model => enabled.has(model.id))
+    }
+    return provider !== 'antigravity'
+  })
+  // Keep the caller's array identity when nothing was hidden: callers compare
+  // the filtered list with the reported one to tell "no selection" from
+  // "selection hides everything".
+  return kept.length === all.length ? all : kept
 }

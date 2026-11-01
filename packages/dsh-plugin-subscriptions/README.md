@@ -57,6 +57,10 @@ The composer's stats row gains a **subscription usage** pill showing the used pe
 
 **Settings → Subscriptions → Status-bar quota display** selects **Current / most recent subscription only** (default) or **Hidden**. The display preference is saved in the current browser, applies immediately, survives reloads, and synchronizes between tabs of the same origin. It does not hide usage details in Settings, change model selection, or change account routing.
 
+Models disabled in **Edit model list** no longer surface their quota windows in any usage list — neither Settings → Subscriptions nor the composer usage pill; account-wide windows (the 5-hour/weekly quotas no single model owns) are unaffected.
+
+If a log line shows `User location is not supported`, `unsupported_country_region_territory`, or `REGION_BLOCKED`, the provider rejected this network's egress region — not the account, key, quota, or a transient failure. The plugin neither retries it nor rotates accounts, and parks that account briefly (60 s) so a turn stops re-hitting the same egress. Fix it in **Settings → Subscriptions → Proxy** with an exit in a supported region (it applies to this host too — keep it out of the bypass list), then retry.
+
 ![Subscription usage pill expanded to show every provider and account](docs/images/usage-badge.png)
 
 The `image_generate` tool renders its result inline in the conversation:

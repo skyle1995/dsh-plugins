@@ -16,6 +16,7 @@ import {
   DEFAULT_QUOTA_COOLDOWN_MS,
   memberKey,
   PoolHealthRegistry,
+  REGION_BLOCKED_COOLDOWN_MS,
   TRANSIENT_COOLDOWN_MS,
 } from '../src/providers/pool-health.js'
 
@@ -32,6 +33,16 @@ test('classifyPoolFailure: quota and rate-limit cool the whole account (account-
     reason: 'RATE_LIMIT',
     scope: 'account',
   })
+})
+
+test('classifyPoolFailure: a blocked region parks the account briefly, not for a day', () => {
+  assert.deepEqual(classifyPoolFailure(new LlmError('region', 'REGION_BLOCKED'), 'antigravity'), {
+    action: 'switch',
+    cooldownMs: REGION_BLOCKED_COOLDOWN_MS,
+    reason: 'REGION_BLOCKED',
+    scope: 'account',
+  })
+  assert.ok(REGION_BLOCKED_COOLDOWN_MS < AUTH_COOLDOWN_MS, 'a proxy fix must recover far sooner than a re-login')
 })
 
 test('classifyPoolFailure: claude quota failures stay member-scoped (per-model lanes)', () => {

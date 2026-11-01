@@ -1,7 +1,7 @@
 import type { ComponentType } from 'react';
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
 import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client';
-import type { SubscriptionProvider, UsageWindow } from './SubscriptionsSection.js';
+import type { AccountStatus, SubscriptionProvider, UsageWindow } from './SubscriptionsSection.js';
 import type { ModelDirectoriesLike } from './SpeedSelect.js';
 import type { SubscriptionsKey } from './locales.js';
 /** DSH renamed the data icon in 0.1.7; retain older supported hosts too. */
@@ -76,6 +76,33 @@ export declare function collapsedDisplays(displays: readonly ProviderUsageDispla
 /** Order for the expanded dialog: the current provider first, the rest in poll order. */
 export declare function expandedDisplays(displays: readonly ProviderUsageDisplay[], current: string | undefined): readonly ProviderUsageDisplay[];
 type Translate = (key: SubscriptionsKey, params?: Record<string, unknown>) => string;
+/**
+ * Assemble the dialog's per-provider rows from one settled poll.
+ *
+ * Kept pure so the visibility rule is testable without a hosted React tree:
+ * windows of models disabled in "Edit model list" (`visibleModels`) never reach
+ * the list, and an account left without a single visible window disappears
+ * instead of rendering an empty row.
+ *
+ * @param input - The poll's roster plus the readers for its settled state.
+ * @param input.roster - Logged-in accounts, provider order and default first.
+ * @param input.windowsOf - Last-known windows of one account.
+ * @param input.planOf - Plan label of one account.
+ * @param input.visibleModelsOf - Saved picker selection; `undefined` = automatic.
+ * @param input.nameOf - Provider header label (saved display name, else brand).
+ * @returns Provider rows in roster order; providers with no visible account are
+ * omitted.
+ */
+export declare function buildUsageDisplays(input: {
+    roster: readonly {
+        provider: SubscriptionProvider;
+        account: AccountStatus;
+    }[];
+    windowsOf: (provider: SubscriptionProvider, account: AccountStatus) => UsageWindow[] | undefined;
+    planOf: (provider: SubscriptionProvider, account: AccountStatus) => string | undefined;
+    visibleModelsOf: (provider: SubscriptionProvider) => readonly string[] | undefined;
+    nameOf: (provider: SubscriptionProvider) => string;
+}): ProviderUsageDisplay[];
 /**
  * The composer subscription-usage badge: a pill reading e.g.
  * `Codex 6d 1h 25%` for the current model's provider, opening a dialog with

@@ -33,6 +33,17 @@ export interface ModelEntry {
  * @returns the validated entries.
  */
 export declare function validateModels(models: readonly ModelEntry[], label: string): ModelEntry[];
+/**
+ * Stable code for "this egress region is not allowed to call the provider".
+ *
+ * Every subscription provider rejects an unsupported origin at the IP level, so
+ * the request is fine and another account of the same subscription fails the
+ * same way: the fix is a different egress (the plugin proxy), never a retry,
+ * a fresh token, or another account.
+ */
+export declare const REGION_BLOCKED_CODE = "REGION_BLOCKED";
+/** Whether one failed response is an unsupported-region rejection. */
+export declare function isRegionBlockedError(body: string, status: number): boolean;
 /** Optional per-call hooks {@link httpLlmError} uses to read a rate-limit window. */
 export interface HttpLlmErrorOptions {
     /**
@@ -49,6 +60,10 @@ export interface HttpLlmErrorOptions {
  * Build an LlmError from a non-2xx provider response, mapping the status to a
  * stable code and, for a rate-limited request, the disclosed reset instant to
  * the `providerRetryAfterMs` the retry plugin waits out.
+ *
+ * A region rejection (`REGION_BLOCKED`) is recognised before the status-only
+ * mapping — Google answers 400, OpenAI 403 — because it is neither an auth
+ * problem nor worth retrying: the egress is wrong, not the credential.
  *
  * A 429 classifies as `RATE_LIMIT` on the strength of the status alone, ahead
  * of the quota-wording check. On these routes there is no terminal quota to
