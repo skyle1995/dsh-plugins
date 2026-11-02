@@ -95,6 +95,8 @@ export const en = {
     usageUsedPercent: '{percent}% used',
     // Detailed rows name both directions; the bar alone leaves it ambiguous.
     usageUsedRemaining: '{used}% used · {remaining}% left',
+    // The composer pill reads the tightest window in the direction users budget in.
+    usageRemainingPercent: '{percent}% left',
     usageResets: 'resets {date}',
     usagePlan: 'Plan: {plan}',
     resetCreditsTitle: 'Usage limit resets',
@@ -286,6 +288,7 @@ export const zh = {
     usageWindow: '窗口',
     usageUsedPercent: '已用 {percent}%',
     usageUsedRemaining: '已用 {used}% · 剩余 {remaining}%',
+    usageRemainingPercent: '剩余 {percent}%',
     usageResets: '{date} 重置',
     usagePlan: '计划：{plan}',
     resetCreditsTitle: '用量限制重置',

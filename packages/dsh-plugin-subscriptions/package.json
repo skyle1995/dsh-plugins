@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-subscriptions",
-  "version": "0.9.13",
+  "version": "0.9.14",
   "description": "Use ChatGPT (Codex), Claude, Grok (X Premium), GitHub Copilot, and Google Antigravity subscriptions as DeepSeek Harness LLM providers, with OAuth login from the web Settings page",
   "license": "MIT",
   "repository": {
@@ -57,7 +57,7 @@
   },
   "scripts": {
     "build": "tsc && tsdown",
-    "test": "tsc -p tsconfig.test.json && node --test \"lib-test/test/**/*.spec.js\"",
+    "test": "tsc -p tsconfig.test.json && node scripts/run-tests.mjs",
     "prepublishOnly": "pnpm build && pnpm test"
   },
   "peerDependencies": {

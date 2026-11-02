@@ -44,7 +44,7 @@ function display(provider: ProviderUsageDisplay['provider'] = 'antigravity', val
 
 test('Antigravity compact readout selects exact current model, not the entire catalog', () => {
   const d = display('antigravity', [...windows, { kind: 'weekly', scope: 'gemini-model-59', usedPercent: 81 }])
-  assert.equal(compactSegment(d, 'gemini-model-59'), 'Antigravity Window 59% used · Weekly 81% used')
+  assert.equal(compactSegment(d, 'gemini-model-59'), 'Antigravity Window 41% left', 'the pill reads REMAINING of the tightest window')
   assert.equal(compactSegment(d), 'Antigravity 60 model quotas')
   assert.equal(compactSegment(d, 'missing'), 'Antigravity Current model quota unavailable')
   assert.ok(compactSegment(d, 'gemini-model-1').length < 60)
@@ -229,9 +229,22 @@ test('an account-wide Antigravity window serves every model rather than reading 
   // One shared pool (the shape Antigravity reports for its Gemini families).
   const shared: UsageWindow[] = [{ kind: 'other', usedPercent: 8 }, { kind: 'weekly', usedPercent: 40 }]
   const d = display('antigravity', shared)
-  assert.equal(compactSegment(d, 'gemini-3-flash'), 'Antigravity Window 8% used · Weekly 40% used')
-  assert.equal(compactSegment(d, 'gemini-2.5-pro'), 'Antigravity Window 8% used · Weekly 40% used')
+  assert.equal(compactSegment(d, 'gemini-3-flash'), 'Antigravity Window 92% left')
+  assert.equal(compactSegment(d, 'gemini-2.5-pro'), 'Antigravity Window 92% left')
   const { shown, hidden } = previewWindows(shared, 'gemini-3-flash', 'antigravity')
   assert.deepEqual(shown, shared)
   assert.deepEqual(hidden, [])
+})
+
+test('the pill follows the window with the shortest reset and names it', () => {
+  const now = Date.now()
+  const windows: UsageWindow[] = [
+    { kind: 'weekly', usedPercent: 56.6, resetsAt: now + 6 * 24 * 60 * 60_000 },
+    { kind: 'session', usedPercent: 0, resetsAt: now + 3 * 60 * 60_000 },
+  ]
+  const d = display('antigravity', windows)
+  assert.equal(compactSegment(d, 'gemini-3-flash'), 'Antigravity 5-hour window 100% left')
+  // Only a weekly window left: it becomes the readout, with its own label.
+  const weeklyOnly = display('antigravity', [windows[0]])
+  assert.equal(compactSegment(weeklyOnly, 'gemini-3-flash'), 'Antigravity Weekly 43.4% left')
 })

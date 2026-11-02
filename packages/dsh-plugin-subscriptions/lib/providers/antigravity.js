@@ -344,13 +344,38 @@ function resetTime(value) {
     const parsed = Date.parse(value);
     return Number.isFinite(parsed) ? parsed : undefined;
 }
-function usageWindow(kind, scope, quota) {
+/**
+ * Anything resetting further out than this is the weekly window. A 5-hour window
+ * can never sit more than five hours ahead, so a day is a safe divider and keeps
+ * the label stable for a session that has been idle for a while.
+ */
+const WEEKLY_HORIZON_MS = 24 * 60 * 60_000;
+/**
+ * One model's quota row.
+ *
+ * The wire puts both windows in `quotaInfo` for most models: the 5-hour session
+ * and a weekly one that resets days out (Claude/GPT-OSS ship only the weekly).
+ * The window's own horizon names it, so the UI can say "5 小时窗口" / "每周"
+ * instead of calling both of them "窗口".
+ * @param kind - the caller's fallback kind ('weekly' from a weekly field).
+ * @param scope - the model id the measurement belongs to.
+ * @param quota - the wire quota object.
+ * @param now - the current epoch milliseconds.
+ * @returns the window, or undefined when the quota carries no usable share.
+ */
+function usageWindow(kind, scope, quota, now) {
     const remaining = quota?.remainingFraction;
     if (typeof remaining !== 'number' || !Number.isFinite(remaining))
         return undefined;
     const resetsAt = resetTime(quota?.resetTime);
+    const horizon = resetsAt === undefined ? undefined : resetsAt - now;
+    const resolved = kind === 'weekly'
+        ? 'weekly'
+        : horizon === undefined || horizon <= 0
+            ? kind
+            : horizon > WEEKLY_HORIZON_MS ? 'weekly' : 'session';
     return {
-        kind,
+        kind: resolved,
         scope,
         usedPercent: Math.max(0, Math.min(100, (1 - remaining) * 100)),
         ...resetsAt === undefined ? {} : { resetsAt },
@@ -398,13 +423,14 @@ export async function fetchAntigravityUsage(session, runtime = {}, fetchFn = pro
         callInternal('loadCodeAssist', { metadata }, session.accessToken, runtime, fetchFn, signal),
     ]);
     const measured = [];
+    const now = Date.now();
     for (const [modelId, model] of Object.entries(models.models ?? {})) {
         // Editor lanes (tab completion, internal chat helpers) carry their own
         // untouched counters; they are not chat quotas and must not pad the list.
         if (!isPickerModel(modelId))
             continue;
-        const ordinary = usageWindow('other', modelId, model.quotaInfo);
-        const weekly = usageWindow('weekly', modelId, model.weeklyQuotaInfo ?? model.weeklyQuota);
+        const ordinary = usageWindow('other', modelId, model.quotaInfo, now);
+        const weekly = usageWindow('weekly', modelId, model.weeklyQuotaInfo ?? model.weeklyQuota, now);
         if (ordinary !== undefined)
             measured.push(ordinary);
         if (weekly !== undefined)

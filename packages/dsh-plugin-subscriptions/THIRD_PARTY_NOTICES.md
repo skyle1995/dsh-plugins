@@ -51,8 +51,8 @@
 
 ## 五、本仓库补丁记录（0.9.13）
 
-本包版本号在移植时为 `0.9.12`（与上游一致），此后累积了下列本地修复，因此升到
-**`0.9.13`**（补丁号 +1）。每个补丁都只改本仓库的 `src/`、`test/`、`lib/` 与文档，
+本包版本号在移植时为 `0.9.12`（与上游一致），此后累积了下列本地修复，因此按补丁号递增：
+**`0.9.13`**、**`0.9.14`**。每个补丁都只改本仓库的 `src/`、`test/`、`lib/` 与文档，
 上游源码语义未被改写；同步上游新版本时按此表逐条重放即可。
 
 | 版本 | 提交 | 修复 |
@@ -61,8 +61,9 @@
 | 0.9.13 | `d7451b6` | 同一过滤接入**账号级**模型选择（`poolModels`）：`status` 端点回传每个账号的模型列表，设置页与用量胶囊同时生效 |
 | 0.9.13 | `791acc0` | Antigravity 目录：`displayName` 撞名时按 id 命名、`tab_*`/`chat_*` 通道不进选择器、按名字排序、合并后仍保证唯一；`CatalogSnapshot.version` 使旧缓存自动失效 |
 | 0.9.13 | `619fab6` | Antigravity 额度：多个模型上报相同数值+重置时刻时合并为一行账户级窗口；`已用 x% · 剩余 y%` 标注方向并保留一位小数；账户级窗口对所有模型生效 |
+| 0.9.14 | 本次 | 窗口按**重置时间跨度**标注「5 小时窗口」/「每周」（此前两条都叫「窗口」）；会话胶囊只显示**重置最近**的窗口并改读**剩余**（`剩余 100%`）；`pnpm test` 改为在临时 DSH home 下运行，避免本机 `proxy.json` 让 `globalThis.fetch` 的桩失效 |
 
-补丁涉及的源码文件（相对上游）：`src/providers/antigravity.ts`、
+补丁涉及的源码文件（相对上游）：`src/providers/antigravity.ts`、`scripts/run-tests.mjs`、
 `src/providers/common.ts`、`src/providers/pool-health.ts`、`src/providers/catalog-store.ts`、
 `src/auth/rpc.ts`、`src/index.ts`、`src/client/{usage-window-filter.ts,SubscriptionsSection.tsx,SubscriptionUsageBadge.tsx,locales.ts}`。
 对应单测在 `test/` 内同文件旁，`pnpm test` 覆盖。

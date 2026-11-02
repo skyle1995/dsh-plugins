@@ -132,8 +132,14 @@ export function compactSegment(d, model, t = fallbackTranslate) {
                 count: new Set(windows.map(w => w.scope).filter(Boolean)).size,
             })}`;
         }
-        const parts = matching.slice(0, 2).map(w => `${w.kind === 'weekly' ? t('usageWeekly') : t('usageWindow')} ${t('usageUsedPercent', { percent: formatUsagePercent(w.usedPercent) })}`);
-        return `${d.name} ${parts.join(' · ')}`;
+        // Antigravity meters a 5-hour window and a weekly one: the tightest window
+        // is the one a turn can actually hit, so the pill shows only that, and reads
+        // REMAINING — the direction a quota budget is reasoned about.
+        const soonest = [...matching].sort((a, b) => (a.resetsAt ?? Number.POSITIVE_INFINITY) - (b.resetsAt ?? Number.POSITIVE_INFINITY))[0];
+        const label = soonest.kind === 'weekly'
+            ? t('usageWeekly')
+            : soonest.kind === 'session' ? t('usageSession') : t('usageWindow');
+        return `${d.name} ${label} ${t('usageRemainingPercent', { percent: formatUsagePercent(100 - soonest.usedPercent) })}`;
     }
     const parts = windows.slice(0, 2).map(w => `${windowLabel(w)} ${t('usageUsedPercent', { percent: formatUsagePercent(w.usedPercent) })}`);
     if (windows.length > 2)

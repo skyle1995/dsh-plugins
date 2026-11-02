@@ -951,17 +951,21 @@ test('Antigravity picker enumeration hides tab and chat lanes but the catalog ke
   assert.equal((await adapter.resolveOwnModel('antigravity', 'tab_flash_lite_preview', 'alice')).defaultMaxTokens, 4096)
 })
 
-test('Antigravity collapses one shared quota pool into a single window and drops editor lanes', async () => {
+test('Antigravity collapses one shared quota pool and labels 5-hour vs weekly windows', async () => {
   const modelsURL = `${runtime.baseURL}/v1internal:fetchAvailableModels`
   const loadURL = `${runtime.baseURL}/v1internal:loadCodeAssist`
-  const reset = '2026-08-24T00:00:00Z'
+  // The 5-hour window resets inside the hour; the weekly one days out.
+  const nearReset = new Date(Date.now() + 2 * 60 * 60_000).toISOString()
+  const farReset = new Date(Date.now() + 6 * 24 * 60 * 60_000).toISOString()
   const usage = await fetchAntigravityUsage(session, runtime, routed({
     [modelsURL]: { models: {
       // Two Gemini ids reporting the identical measurement: ONE account pool.
-      'gemini-3-flash': { quotaInfo: { remainingFraction: 0.9, resetTime: reset } },
-      'gemini-2.5-pro': { quotaInfo: { remainingFraction: 0.9, resetTime: reset } },
+      'gemini-3-flash': { quotaInfo: { remainingFraction: 0.9, resetTime: nearReset } },
+      'gemini-2.5-pro': { quotaInfo: { remainingFraction: 0.9, resetTime: nearReset } },
       // A different measurement stays its own, model-scoped window.
-      'gemini-2.5-flash-lite': { quotaInfo: { remainingFraction: 0.5, resetTime: reset } },
+      'gemini-2.5-flash-lite': { quotaInfo: { remainingFraction: 0.5, resetTime: nearReset } },
+      // A far-out reset is the weekly window, not another 5-hour one.
+      'claude-opus-5-5-low': { quotaInfo: { remainingFraction: 0.4, resetTime: farReset } },
       // Editor lanes carry untouched counters and are not chat quotas.
       'tab_flash_lite_preview': { quotaInfo: { remainingFraction: 1 } },
       'chat_20706': { quotaInfo: { remainingFraction: 1 } },
@@ -976,8 +980,10 @@ test('Antigravity collapses one shared quota pool into a single window and drops
     resetsAt: window.resetsAt,
   })), [
     // The shared pool is reported once, and unscoped: no single model owns it.
-    { kind: 'other', scope: undefined, used: 10, resetsAt: Date.parse(reset) },
-    { kind: 'other', scope: 'gemini-2.5-flash-lite', used: 50, resetsAt: Date.parse(reset) },
+    { kind: 'session', scope: undefined, used: 10, resetsAt: Date.parse(nearReset) },
+    { kind: 'session', scope: 'gemini-2.5-flash-lite', used: 50, resetsAt: Date.parse(nearReset) },
+    // A weekly measurement keeps its own row and its own label.
+    { kind: 'weekly', scope: 'claude-opus-5-5-low', used: 60, resetsAt: Date.parse(farReset) },
   ])
 })
 
