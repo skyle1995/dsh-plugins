@@ -127,7 +127,6 @@ const en = {
 	usageWindow: "Window",
 	usageUsedPercent: "{percent}% used",
 	usageUsedRemaining: "{used}% used · {remaining}% left",
-	usageRemainingPercent: "{percent}% left",
 	usageResets: "resets {date}",
 	usagePlan: "Plan: {plan}",
 	resetCreditsTitle: "Usage limit resets",
@@ -319,7 +318,6 @@ const zh = {
 	usageWindow: "窗口",
 	usageUsedPercent: "已用 {percent}%",
 	usageUsedRemaining: "已用 {used}% · 剩余 {remaining}%",
-	usageRemainingPercent: "剩余 {percent}%",
 	usageResets: "{date} 重置",
 	usagePlan: "计划：{plan}",
 	resetCreditsTitle: "用量限制重置",
@@ -4282,7 +4280,7 @@ function compactSegment(d, model, t = fallbackTranslate) {
 		if (matching.length === 0) return `${d.name} ${t(model === void 0 ? "usageBadgeModelCount" : "usageBadgeModelUnavailable", { count: new Set(windows.map((w) => w.scope).filter(Boolean)).size })}`;
 		const soonest = [...matching].sort((a, b) => (a.resetsAt ?? Number.POSITIVE_INFINITY) - (b.resetsAt ?? Number.POSITIVE_INFINITY))[0];
 		const label = soonest.kind === "weekly" ? t("usageWeekly") : soonest.kind === "session" ? t("usageSession") : t("usageWindow");
-		return `${d.name} ${label} ${t("usageRemainingPercent", { percent: formatUsagePercent(100 - soonest.usedPercent) })}`;
+		return `${d.name} ${label} ${t("usageUsedPercent", { percent: formatUsagePercent(soonest.usedPercent) })}`;
 	}
 	const parts = windows.slice(0, 2).map((w) => `${windowLabel(w)} ${t("usageUsedPercent", { percent: formatUsagePercent(w.usedPercent) })}`);
 	if (windows.length > 2) parts.push(`+${windows.length - 2}`);

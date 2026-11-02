@@ -92,7 +92,6 @@ export declare const en: {
     usageWindow: string;
     usageUsedPercent: string;
     usageUsedRemaining: string;
-    usageRemainingPercent: string;
     usageResets: string;
     usagePlan: string;
     resetCreditsTitle: string;
@@ -284,7 +283,6 @@ export declare const zh: {
     usageWindow: string;
     usageUsedPercent: string;
     usageUsedRemaining: string;
-    usageRemainingPercent: string;
     usageResets: string;
     usagePlan: string;
     resetCreditsTitle: string;

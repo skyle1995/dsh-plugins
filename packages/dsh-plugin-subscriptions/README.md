@@ -64,7 +64,7 @@ A model that was deselected no longer keeps its quota windows in any usage list 
 
 Antigravity usage rows follow the measurement: when several models report the identical share and reset instant they share one account pool, so the list shows a single account-wide window instead of a copy per model, and the number states its direction — `8% used · 92% left`. Editor-lane counters (`tab_*`, `chat_*`) never enter the usage list.
 
-Quota rows are also named by their reset horizon: one rolling inside five hours reads **5-hour window**, one days out reads **Weekly**. The composer pill shows only the window that resets soonest and reports **remaining** (`Antigravity 5-hour window 100% left`), while Settings keeps both rows with their own used/remaining split and reset instant.
+Quota rows are also named by their reset horizon: one rolling inside five hours reads **5-hour window**, one days out reads **Weekly**. The composer pill shows only the window that resets soonest, reading **used** like every other provider (`Antigravity 5-hour window 0% used`), while Settings keeps both rows with their own used/remaining split and reset instant.
 
 Antigravity model labels follow the catalog's `displayName`. When upstream aliases several ids onto one release (`gemini-2.5-flash`, `-flash-lite`, `-flash-thinking`, and `gemini-3.5-flash-lite` all arrive as "Gemini 3.5 Flash Lite"), the plugin labels each row from its own id instead (`Gemini 2.5 Flash`, `Gemini 2.5 Flash Lite`, `Gemini 2.5 Flash Thinking`, `Gemini 3.5 Flash Lite`). Editor-only lanes (`tab_*`, `chat_*`) no longer appear in the picker; they remain resolvable by id.
 

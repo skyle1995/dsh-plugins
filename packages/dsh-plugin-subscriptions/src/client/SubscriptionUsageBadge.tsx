@@ -186,13 +186,13 @@ export function compactSegment(d: ProviderUsageDisplay, model?: string, t: Trans
       })}`
     }
     // Antigravity meters a 5-hour window and a weekly one: the tightest window
-    // is the one a turn can actually hit, so the pill shows only that, and reads
-    // REMAINING — the direction a quota budget is reasoned about.
+    // is the one a turn can actually hit, so the pill shows only that, reading
+    // the USED share — the same direction every other provider's pill reports.
     const soonest = [...matching].sort((a, b) => (a.resetsAt ?? Number.POSITIVE_INFINITY) - (b.resetsAt ?? Number.POSITIVE_INFINITY))[0]
     const label = soonest.kind === 'weekly'
       ? t('usageWeekly')
       : soonest.kind === 'session' ? t('usageSession') : t('usageWindow')
-    return `${d.name} ${label} ${t('usageRemainingPercent', { percent: formatUsagePercent(100 - soonest.usedPercent) })}`
+    return `${d.name} ${label} ${t('usageUsedPercent', { percent: formatUsagePercent(soonest.usedPercent) })}`
   }
   const parts = windows.slice(0, 2).map(w => `${windowLabel(w)} ${t('usageUsedPercent', { percent: formatUsagePercent(w.usedPercent) })}`)
   if (windows.length > 2) parts.push(`+${windows.length - 2}`)

@@ -61,7 +61,8 @@
 | 0.9.13 | `d7451b6` | 同一过滤接入**账号级**模型选择（`poolModels`）：`status` 端点回传每个账号的模型列表，设置页与用量胶囊同时生效 |
 | 0.9.13 | `791acc0` | Antigravity 目录：`displayName` 撞名时按 id 命名、`tab_*`/`chat_*` 通道不进选择器、按名字排序、合并后仍保证唯一；`CatalogSnapshot.version` 使旧缓存自动失效 |
 | 0.9.13 | `619fab6` | Antigravity 额度：多个模型上报相同数值+重置时刻时合并为一行账户级窗口；`已用 x% · 剩余 y%` 标注方向并保留一位小数；账户级窗口对所有模型生效 |
-| 0.9.14 | 本次 | 窗口按**重置时间跨度**标注「5 小时窗口」/「每周」（此前两条都叫「窗口」）；会话胶囊只显示**重置最近**的窗口并改读**剩余**（`剩余 100%`）；`pnpm test` 改为在临时 DSH home 下运行，避免本机 `proxy.json` 让 `globalThis.fetch` 的桩失效 |
+| 0.9.14 | `4bf968a` | 窗口按**重置时间跨度**标注「5 小时窗口」/「每周」（此前两条都叫「窗口」）；`pnpm test` 改为在临时 DSH home 下运行，避免本机 `proxy.json` 让 `globalThis.fetch` 的桩失效 |
+| 0.9.15 | 本次 | 会话胶囊只显示**重置最近**的窗口，且方向与其它服务商一致读**已用**（`Antigravity 5 小时窗口 已用 0%`）；设置页仍保留 `已用/剩余` 双向标注 |
 
 补丁涉及的源码文件（相对上游）：`src/providers/antigravity.ts`、`scripts/run-tests.mjs`、
 `src/providers/common.ts`、`src/providers/pool-health.ts`、`src/providers/catalog-store.ts`、
