@@ -3796,7 +3796,7 @@ function resolveFileName(block) {
 	const match = /^Saved video to (.+\.mp4)/m.exec(resultText(block));
 	if (match === null) return void 0;
 	const path = match[1];
-	return path.slice(path.lastIndexOf("/") + 1);
+	return path.slice(Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1);
 }
 /** Decode a base64 payload into bytes (browser-side; no Buffer). */
 function base64Bytes(dataBase64) {
