@@ -23,7 +23,7 @@
 import { Service } from "@deepseek-ai/cordis";
 import Schema from "@deepseek-ai/schemastery";
 import { cp, lstat, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { format as prettierFormat } from "prettier";
 import { createZipBuffer } from "./zip.js";
 
@@ -92,6 +92,15 @@ export function parserForPath(path) {
 	if (lower.endsWith(".yml") || lower.endsWith(".yaml")) return "yaml";
 	if (lower.endsWith(".graphql") || lower.endsWith(".gql")) return "graphql";
 	return null;
+}
+
+/**
+ * 判断 child 是否等于 parent，或位于 parent 目录之内。
+ * 用 node:path 的 relative 兼容 POSIX 与 Windows 两种路径分隔符。
+ */
+function isSameOrDescendant(parent, child) {
+	const rel = relative(parent, child);
+	return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
 }
 
 /** 在目标目录里给压缩包名加 "(2)" 等后缀，避免覆盖既有文件。 */
@@ -252,7 +261,7 @@ export class FileActionsService extends Service {
 		const hostDest = await this.confineDirectory(root, destination);
 		for (const host of hosts) {
 			const target = join(hostDest, basename(host));
-			if (target === host || (host + "/").startsWith(target + "/")) {
+			if (isSameOrDescendant(host, target)) {
 				throw new FileActionsError("file-actions/into-itself", `不能把 "${basename(host)}" 复制进其自身`);
 			}
 			if (await exists(target)) {
@@ -272,7 +281,7 @@ export class FileActionsService extends Service {
 		const hostDest = await this.confineDirectory(root, destination);
 		for (const host of hosts) {
 			const target = join(hostDest, basename(host));
-			if (target === host || (host + "/").startsWith(target + "/")) {
+			if (isSameOrDescendant(host, target)) {
 				throw new FileActionsError("file-actions/into-itself", `不能把 "${basename(host)}" 移动进其自身`);
 			}
 			if (await exists(target)) {

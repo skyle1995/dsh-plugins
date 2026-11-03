@@ -275,12 +275,16 @@ function syncCutMarks() {
 }
 function dirnameOf(path) {
   const normalized = String(path).replace(/[/\\]+$/, "");
-  const index = normalized.lastIndexOf("/");
-  if (index <= 0) return normalized.startsWith("/") ? "/" : normalized;
+  const index = Math.max(normalized.lastIndexOf("/"), normalized.lastIndexOf("\\"));
+  if (index < 0) return normalized;
+  if (index === 0) return normalized.slice(0, 1);
+  if (index === 2 && /^[A-Za-z]:$/.test(normalized.slice(0, 2))) return normalized.slice(0, 3);
   return normalized.slice(0, index);
 }
 function basenameOf(path) {
-  return String(path).replace(/[/\\]+$/, "").split("/").pop() ?? String(path);
+  const normalized = String(path).replace(/[/\\]+$/, "");
+  const index = Math.max(normalized.lastIndexOf("/"), normalized.lastIndexOf("\\"));
+  return index < 0 ? normalized : normalized.slice(index + 1);
 }
 async function api(operation, body) {
   const response = await fetch(`${API}/${operation}`, {
