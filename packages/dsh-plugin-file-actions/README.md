@@ -22,10 +22,26 @@
   （或沙箱根兜底），并用官方 `fs` 服务的 `contains` 逐条校验，越界一律拒绝；
 - 工作区根目录本身禁止删除/移动/重命名；复制/移动禁止进入自身；
 - 重命名只接受单段名字：路径分隔符、空名、`.`/`..`、含 NUL 一律在宿主端拒绝；
-  大小写不敏感卷上「仅改大小写」按同一 inode 放行，避免误判同名冲突；
-- 复制/移动目标必须是工作区内已存在的目录，同名冲突整体报错（不做部分写入）；
-- 跨设备移动（`EXDEV`）自动退化为复制 + 删除；
-- 文本编辑的读取/保存受 `maxEditBytes` 上限约束，拒绝含 NUL 的非文本文件；
+  Windows 额外拒绝保留名、控制字符、非法字符和末尾点/空格，不把这些限制强加给
+  macOS/Linux；大小写不敏感卷上「仅改大小写」按同一 inode 放行；
+- 复制/移动目标必须是工作区内已存在的目录，按目标卷实际大小写和 Unicode
+  等价规则预检同名冲突；重复路径及同时选中的父子项合并处理；
+- 同一工作区的插件写请求串行执行；复制显式禁止覆盖。预检冲突不写入业务文件，
+  但执行期间的权限/磁盘等失败仍可能部分完成，错误的 `details` 返回已完成源、
+  当前失败源及目标，不承诺整个批次具有事务性。外部程序不受插件锁约束；
+- 仅跨设备移动（`EXDEV`）退化为复制 + 删除，权限及文件占用错误不触发删除；
+- 文本读取、保存和格式化受 `maxEditBytes` 上限约束，拒绝含 NUL 或非法 UTF-8
+  的编辑输入，格式化保留输入换行风格；
+- 编辑器保存携带读取时的 SHA-256 版本，检测到外部修改返回 `409`；
+  保存使用同目录临时文件写入、同步后替换，保留 Unix 模式权限，不采用先删原文件的回退。
+  旧宿主服务调用不传 `version` 时保持兼容，建议始终传递；外部程序在最后校验与替换间
+  的极短竞争窗口无法通过标准文件系统 API 完全消除；
+- ZIP 逐文件流式压缩写出，限制总输入、条目数与经典 ZIP 字段范围；
+  排除当前压缩临时目录，失败自动清理。保留 UTF-8 文件名和 Unix 执行位，
+  已完成压缩包优先排他硬链接发布，exFAT 等不支持硬链接的卷回退排他复制；
+- 编辑器忽略过期读取/格式化结果，保存期间的新输入不会被标记为已保存；
+  页面关闭或刷新有未保存保护，关闭插件标签页仍是关闭后的提醒；
+- HTTP 请求体读取时限制大小（`6 * maxEditBytes + 65536` 字节），超限返回 `413`；
   压缩包名与保存内容在宿主端再次净化/校验（防路径穿越）。
 
 ## 配置
@@ -34,6 +50,9 @@
 |---|---:|---|
 | `maxZipFileBytes` | `268435456`（256MB） | 压缩时单文件大小上限，超限跳过并计入 skipped |
 | `maxEditBytes` | `1048576`（1MB） | 文本编辑（读取/保存）的文件大小上限 |
+| `maxZipTotalBytes` | `1073741824`（1GB） | 压缩总输入大小上限，超限终止并清理 |
+| `maxZipEntries` | `10000` | 压缩条目上限（含目录，最多 65535） |
+| `maxBatchPaths` | `1000` | 单次批量操作提交路径数量上限 |
 
 在 profile 的 `cordis.patch.yml` 里覆盖：
 
@@ -66,6 +85,14 @@ dsh plugin --profile <profile> add /path/to/dsh-plugins/packages/dsh-plugin-file
   `lib/client.js`，React 与 `@deepseek-ai/*` 保持外部化）；
 - 冒烟测试（脱离 profile，真实 cordis + 桩服务 + 临时目录 + ZIP 自解析）：
   `pnpm smoke`。
+- 跨平台回归测试：`pnpm test`，新增测试和临时工作区均在仓库根 `demo-test/`，
+  覆盖 Windows 名称、macOS/POSIX 路径、目标卷大小写与 Unicode、保存冲突、
+  流式 ZIP、HTTP 限制以及编辑器异步交互。该命令可在 Windows/macOS/Linux 运行；
+  当前只在 Windows 本机执行，macOS/Linux 真机仍需运行验证。
+- 浏览器交互测试页：仓库根运行 `node demo-test/file-actions-browser.mjs`，按打印的
+  本地地址打开。使用真实 React 编辑器与平台/API 桩，点击「格式化」、继续输入，
+  再点「完成格式化」检查新内容未被覆盖；保存并重新加载确认内容。结束按 `Ctrl+C`
+  释放测试服务端口，不替代真实 DSH profile 的集成测试。
 
 ## 服务使用
 
@@ -78,7 +105,7 @@ const { name } = await ctx.fileActions.compressEntries({
 });
 
 // 文本编辑三件套：
-const { content } = await ctx.fileActions.readTextEntry({ workspaceRoot, path });
+const { content, version } = await ctx.fileActions.readTextEntry({ workspaceRoot, path });
 const { content: formatted } = await ctx.fileActions.formatTextEntry({ workspaceRoot, path, content });
-await ctx.fileActions.saveTextEntry({ workspaceRoot, path, content: formatted });
+await ctx.fileActions.saveTextEntry({ workspaceRoot, path, content: formatted, version });
 ```

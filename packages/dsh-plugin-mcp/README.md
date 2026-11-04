@@ -63,6 +63,12 @@ dsh plugin --profile <profile> add \
 
 - 状态文件：`<profileDir>/mcp-servers.json`（与 `cordis.patch.yml` 同级；
   可用插件配置 `stateFile` 覆盖为绝对路径）。文件权限 0600。
+- `0.7.3` 起状态和预设缓存使用独立临时目录写入、同步后替换，失败自动清理；
+  状态落盘成功后才提交内存状态。投影期间的新变更会补做，并发远程刷新合并，
+  卸载时取消远程请求；缓存回退仍保留网络失败原因。
+- 管理 JSON 请求上限 1MB，超限返回 `413`，拒绝非对象载荷。
+- 文件引用只展开 `~`、`~/`、`~\`，使用系统用户目录并读取首行，
+  不把 `~user` 当作当前用户目录。
 - **重启安全**：profile 启动时 cordis.yml 会被重置为空根，本插件激活后
   按状态文件重建全部受管条目；运行时任何树写回 / 补丁热重载后也会自动
   重新投影（幂等）。
@@ -92,3 +98,6 @@ pnpm --filter dsh-plugin-mcp run build:client   # 构建浏览器半区 lib/clie
 
 浏览器半区是提交进仓库的构建产物（`lib/client.js`），宿主半区零构建
 （纯 ESM JS + `.d.ts`），与仓库「发布即源码」约定一致。
+
+新增离线回归在仓库根运行 `node --test demo-test/other-plugins.test.mjs`。
+本轮在 Windows 执行，macOS/Linux 真机仍需运行验证。

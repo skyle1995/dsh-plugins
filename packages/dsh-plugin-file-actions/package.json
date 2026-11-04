@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-file-actions",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "DSH 文件列表增强插件：文件右键菜单（编辑/重命名/剪切/复制/粘贴/删除/压缩/复制路径）、Ctrl/Cmd 多选 + Shift 范围选择与批量操作栏",
   "type": "module",
   "main": "lib/index.js",
@@ -28,7 +28,8 @@
   ],
   "scripts": {
     "build:client": "node scripts/build-client.mjs",
-    "smoke": "node test/smoke.mjs"
+    "smoke": "node test/smoke.mjs",
+    "test": "node --test ../../demo-test/file-actions.test.mjs ../../demo-test/file-actions-client.test.mjs"
   },
   "dsh": {
     "bundle": {

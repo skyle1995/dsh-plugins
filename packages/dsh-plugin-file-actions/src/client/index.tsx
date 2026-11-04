@@ -89,6 +89,7 @@ const zh = {
 	"edit.confirm": "确认",
 	"edit.saved": "已保存 {name}",
 	"edit.formatted": "已格式化",
+        "edit.formatStale": "格式化期间内容已修改，未覆盖当前编辑",
 	"edit.closedUnsaved": "已关闭未保存的编辑：{name}",
 	"edit.unavailable": "无法解析该编辑地址",
 	"edit.unknownFormat": "该文件类型暂不支持一键格式化",
@@ -165,6 +166,7 @@ const en = {
 	"edit.confirm": "Confirm",
 	"edit.saved": "Saved {name}",
 	"edit.formatted": "Formatted",
+        "edit.formatStale": "Content changed during formatting; current edits were kept",
 	"edit.closedUnsaved": "Closed with unsaved changes: {name}",
 	"edit.unavailable": "Cannot parse this editor address",
 	"edit.unknownFormat": "One-click formatting is not supported for this file type",
@@ -300,35 +302,52 @@ function syncCutMarks() {
 	}
 }
 
-/** 浏览器路径的 dirname（兼容 "/" 与 Windows "\\" 两种分隔符）。 */
-function dirnameOf(path) {
-	const normalized = String(path).replace(/[/\\]+$/, "");
-	const index = Math.max(normalized.lastIndexOf("/"), normalized.lastIndexOf("\\"));
-	if (index < 0) return normalized;
-	if (index === 0) return normalized.slice(0, 1);
-	// Windows 盘符根（如 "C:\foo" → "C:\"）：分隔符紧跟盘符时保留。
-	if (index === 2 && /^[A-Za-z]:$/.test(normalized.slice(0, 2))) return normalized.slice(0, 3);
-	return normalized.slice(0, index);
+/** 解析浏览器宿主路径；参数为路径，返回父目录与短名，保留盘符、UNC 和 POSIX 根。 */
+function pathParts(path) {
+        const value = String(path);
+        const separator = value.startsWith("/") || !value.includes("\\") ? "/" : "\\";
+        let rootLength = value.startsWith(separator) ? 1 : 0;
+        if (value[1] === ":" && value[2] === separator) rootLength = 3;
+        if (value.startsWith(separator + separator)) {
+                const serverEnd = value.indexOf(separator, 2);
+                const shareEnd = serverEnd < 0 ? -1 : value.indexOf(separator, serverEnd + 1);
+                rootLength = shareEnd < 0 ? value.length : shareEnd + 1;
+        }
+        let end = value.length;
+        while (end > rootLength && value[end - 1] === separator) end -= 1;
+        const normalized = value.slice(0, end);
+        if (end <= rootLength) return { dirname: normalized, basename: "" };
+        const index = normalized.lastIndexOf(separator);
+        return {
+                dirname: index < 0 ? "." : normalized.slice(0, Math.max(rootLength, index)),
+                basename: normalized.slice(index + 1),
+        };
 }
 
-/** 路径短名（显示用），兼容 "/" 与 Windows "\\" 分隔符。 */
+/** 获取父目录；参数为宿主路径，返回兼容 Windows/macOS/Linux 的目录字符串。 */
+function dirnameOf(path) {
+        return pathParts(path).dirname;
+}
+
+/** 获取短名；参数为宿主路径，返回文件名，不把 POSIX 名称中的反斜杠当分隔符。 */
 function basenameOf(path) {
-	const normalized = String(path).replace(/[/\\]+$/, "");
-	const index = Math.max(normalized.lastIndexOf("/"), normalized.lastIndexOf("\\"));
-	return index < 0 ? normalized : normalized.slice(index + 1);
+        return pathParts(path).basename;
 }
 
 // ─── 宿主请求 ─────────────────────────────────────────────────────────────
-async function api(operation, body) {
+/** 请求宿主接口；参数为操作、请求体与可选取消信号，返回成功响应或抛错误。 */
+async function api(operation, body, signal = undefined) {
 	const response = await fetch(`${API}/${operation}`, {
 		method: "POST",
 		headers: { "content-type": "application/json", accept: "application/json" },
 		body: JSON.stringify(body),
+                signal,
 	});
 	const payload = await response.json().catch(() => ({}));
 	if (!response.ok || payload.ok !== true) {
 		const error = new Error(payload.message ?? `HTTP ${response.status}`);
 		error.code = payload.code;
+                error.details = payload.details;
 		throw error;
 	}
 	return payload;
@@ -1182,7 +1201,7 @@ function EditorTab(props) {
 	const { useTabInfo } = props;
 	const { tab } = useTabInfo();
 	const parsed = parseEditAddress(tab.contentId);
-	const [content, setContent] = useState("");
+        const [content, setContentState] = useState("");
 	const [original, setOriginal] = useState("");
 	const [loaded, setLoaded] = useState(false);
 	const [error, setError] = useState(null);
@@ -1198,6 +1217,22 @@ function EditorTab(props) {
 	const [menuAt, setMenuAt] = useState(null); // 编辑框右键菜单坐标
 	const inputRef = useRef(null);
 	const dirtyRef = useRef(false);
+        const contentRef = useRef("");
+        const revisionRef = useRef(0);
+        const requestRef = useRef(0);
+        const readControllerRef = useRef(null);
+        const versionRef = useRef(undefined);
+        const savingRef = useRef(false);
+        const formatRef = useRef(0);
+        const addressRef = useRef(tab.contentId);
+        addressRef.current = tab.contentId;
+        /** 同步跟踪每次内容修改；参数为文本或更新函数，无返回值。 */
+        const setContent = (next) => {
+                const value = typeof next === "function" ? next(contentRef.current) : next;
+                contentRef.current = value;
+                revisionRef.current += 1;
+                setContentState(value);
+        };
 	const dirty = content !== original;
 	dirtyRef.current = dirty;
 	const name = parsed === null ? "" : basenameOf(parsed.path);
@@ -1258,50 +1293,99 @@ function EditorTab(props) {
 		selectRange(pos, pos);
 	};
 
-	const load = () => {
-		if (parsed === null) return;
+        /** 加载当前文件；取消旧读取并忽略过期结果，无参数及返回值。 */
+        const load = () => {
+                if (parsed === null || savingRef.current) return;
+                readControllerRef.current?.abort();
+                const controller = new AbortController();
+                readControllerRef.current = controller;
+                const request = ++requestRef.current;
+                const address = tab.contentId;
+                formatRef.current += 1;
+                versionRef.current = undefined;
 		setLoaded(false);
 		setError(null);
 		setConfirmingReload(false);
-		api("read", { workspaceRoot: parsed.workspaceRoot, path: parsed.path }).then((payload) => {
+                api("read", { workspaceRoot: parsed.workspaceRoot, path: parsed.path }, controller.signal).then((payload) => {
+                        if (request !== requestRef.current || address !== addressRef.current) return;
 			setContent(payload.content);
 			setOriginal(payload.content);
+                        versionRef.current = payload.version;
 			setLoaded(true);
 		}).catch((readError) => {
+                        if (controller.signal.aborted || request !== requestRef.current || address !== addressRef.current) return;
 			setError(readError.message);
 		});
 	};
 	useEffect(() => {
+                savingRef.current = false;
+                setSaving(false);
 		load();
+                return () => {
+                        readControllerRef.current?.abort();
+                        requestRef.current += 1;
+                        formatRef.current += 1;
+                };
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [parsed?.workspaceRoot, parsed?.path]);
 	useEffect(() => {
 		tab.actions.bindCommands({ refresh: load });
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [tab.actions]);
+        }, [tab.actions, parsed?.workspaceRoot, parsed?.path]);
+        useEffect(() => {
+                /** 页面关闭时保护未保存内容；参数为浏览器事件，无返回值。 */
+                const beforeUnload = (event) => {
+                        if (!dirtyRef.current) return;
+                        event.preventDefault();
+                        event.returnValue = "";
+                };
+                window.addEventListener("beforeunload", beforeUnload);
+                return () => window.removeEventListener("beforeunload", beforeUnload);
+        }, []);
 	// 关闭 tab 时若还有未保存修改，提示用户。
 	useEffect(() => () => {
 		if (dirtyRef.current && name !== "") pushToast(translate("edit.closedUnsaved", { name }));
 	}, []);
 
-	const save = () => {
-		if (parsed === null || !loaded || saving) return;
+        /** 保存请求快照并更新版本；忽略已关闭或已切换文件的响应，无参数及返回值。 */
+        const save = () => {
+                if (parsed === null || !loaded || savingRef.current) return;
+                savingRef.current = true;
 		setSaving(true);
-		api("save", { workspaceRoot: parsed.workspaceRoot, path: parsed.path, content }).then(() => {
+                const snapshot = contentRef.current;
+                const request = requestRef.current;
+                const address = tab.contentId;
+                api("save", { workspaceRoot: parsed.workspaceRoot, path: parsed.path, content: snapshot, version: versionRef.current }).then((payload) => {
+                        if (request !== requestRef.current || address !== addressRef.current) return;
+                        savingRef.current = false;
 			setSaving(false);
-			setOriginal(content);
+                        versionRef.current = payload.version;
+                        setOriginal(snapshot);
 			pushToast(translate("edit.saved", { name }));
 		}).catch((saveError) => {
+                        if (request !== requestRef.current || address !== addressRef.current) return;
+                        savingRef.current = false;
 			setSaving(false);
 			pushToast(saveError.message, "error");
 		});
 	};
-	const format = () => {
+        /** 格式化内容快照；仅在文件和编辑版本未变化时应用，无参数及返回值。 */
+        const format = () => {
 		if (parsed === null || !loaded) return;
-		api("format", { workspaceRoot: parsed.workspaceRoot, path: parsed.path, content }).then((payload) => {
+                const revision = revisionRef.current;
+                const request = requestRef.current;
+                const sequence = ++formatRef.current;
+                const address = tab.contentId;
+                api("format", { workspaceRoot: parsed.workspaceRoot, path: parsed.path, content: contentRef.current }).then((payload) => {
+                        if (sequence !== formatRef.current || request !== requestRef.current || address !== addressRef.current) return;
+                        if (revision !== revisionRef.current) {
+                                pushToast(translate("edit.formatStale"));
+                                return;
+                        }
 			setContent(payload.content);
 			pushToast(translate("edit.formatted"));
 		}).catch((formatError) => {
+                        if (sequence !== formatRef.current || request !== requestRef.current || address !== addressRef.current) return;
 			pushToast(formatError.message, "error");
 		});
 	};
@@ -1317,10 +1401,14 @@ function EditorTab(props) {
 	const pasteFromClipboard = () => {
 		const el = inputRef.current;
 		if (el === null) return;
+                const request = requestRef.current;
+                const address = tab.contentId;
 		void navigator.clipboard.readText().then((text) => {
+                        if (request !== requestRef.current || address !== addressRef.current) return;
 			const start = el.selectionStart ?? el.value.length;
 			const end = el.selectionEnd ?? start;
-			setContent(content.slice(0, start) + text + content.slice(end));
+                        const current = contentRef.current;
+                        setContent(current.slice(0, start) + text + current.slice(end));
 			setSelectionAfterCommit(el, start + text.length, start + text.length);
 		}).catch(() => {
 			pushToast(translate("edit.pasteFailed"), "error");
@@ -1352,7 +1440,7 @@ function EditorTab(props) {
 				editorButton(translate("edit.reload"), () => {
 					if (dirty) setConfirmingReload(true);
 					else load();
-				}, h(IconRefreshOutlineRegular, { size: 14 })),
+                                }, h(IconRefreshOutlineRegular, { size: 14 }), saving),
 				editorButton(translate("edit.format"), format, h(IconEditOutlineRegular, { size: 14 }), !loaded),
 				editorButton(translate("edit.revert"), () => setContent(original), h(IconCloseOutlineRegular, { size: 14 }), !loaded || !dirty),
 				editorButton(translate("edit.save"), save, h(IconCheckOutlineRegular, { size: 14 }), !loaded || !dirty || saving, true),
@@ -2240,4 +2328,3 @@ export function apply(ctx) {
 
 /** 浏览器依赖注入面（服务名；包级依赖见 package.json 的 dsh.client.inject）。 */
 export const inject = ["slots", "locale", "sidebarRightTabs", "sidebarRight"];
-

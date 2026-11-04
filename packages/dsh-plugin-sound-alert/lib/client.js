@@ -150,6 +150,9 @@ function updatePrefs(patch) {
 }
 var custom = { attention: null, done: null };
 var customListeners = /* @__PURE__ */ new Set();
+var customRevision = { attention: 0, done: 0 };
+var customWrites = /* @__PURE__ */ new Map();
+var lifecycle = 0;
 function getCustom() {
   return custom;
 }
@@ -173,36 +176,55 @@ function openDb() {
     request.onupgradeneeded = () => {
       if (!request.result.objectStoreNames.contains(DB_STORE)) request.result.createObjectStore(DB_STORE);
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => db.close();
+      resolve(db);
+    };
     request.onerror = () => reject(request.error ?? new Error("indexedDB open failed"));
   });
 }
 async function idbGet(kind) {
   const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(DB_STORE, "readonly");
-    const request = tx.objectStore(DB_STORE).get(kind);
-    request.onsuccess = () => resolve(request.result ?? null);
-    request.onerror = () => reject(request.error ?? new Error("indexedDB read failed"));
-  });
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_STORE, "readonly");
+      const request = tx.objectStore(DB_STORE).get(kind);
+      request.onsuccess = () => resolve(request.result ?? null);
+      request.onerror = () => reject(request.error ?? new Error("indexedDB read failed"));
+      tx.onabort = () => reject(tx.error ?? new Error("indexedDB read aborted"));
+    });
+  } finally {
+    db.close?.();
+  }
 }
 async function idbPut(kind, record) {
   const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(DB_STORE, "readwrite");
-    tx.objectStore(DB_STORE).put(record, kind);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error ?? new Error("indexedDB write failed"));
-  });
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_STORE, "readwrite");
+      tx.objectStore(DB_STORE).put(record, kind);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error("indexedDB write failed"));
+      tx.onabort = () => reject(tx.error ?? new Error("indexedDB write aborted"));
+    });
+  } finally {
+    db.close?.();
+  }
 }
 async function idbDelete(kind) {
   const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(DB_STORE, "readwrite");
-    tx.objectStore(DB_STORE).delete(kind);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error ?? new Error("indexedDB delete failed"));
-  });
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_STORE, "readwrite");
+      tx.objectStore(DB_STORE).delete(kind);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error("indexedDB delete failed"));
+      tx.onabort = () => reject(tx.error ?? new Error("indexedDB delete aborted"));
+    });
+  } finally {
+    db.close?.();
+  }
 }
 function applyCustom(kind, blob, name) {
   const previous = custom[kind];
@@ -218,17 +240,33 @@ function applyCustom(kind, blob, name) {
   } catch {
     url = null;
   }
-  custom[kind] = url === null ? null : { url, name: String(name ?? "custom") };
+  custom = { ...custom, [kind]: url === null ? null : { url, name: String(name ?? "custom") } };
   notifyCustom();
 }
 async function restoreCustomSounds() {
+  const generation = lifecycle;
+  const revisions = { ...customRevision };
   for (const kind of KINDS) {
+    const revision = revisions[kind];
     try {
       const record = await idbGet(kind);
       const isBlob = typeof Blob !== "undefined" && record?.blob instanceof Blob;
-      if (isBlob) applyCustom(kind, record.blob, record.name);
+      if (isBlob && generation === lifecycle && revision === customRevision[kind]) applyCustom(kind, record.blob, record.name);
     } catch {
     }
+  }
+}
+async function writeCustom(kind, action) {
+  const revision = ++customRevision[kind];
+  const generation = lifecycle;
+  const previous = customWrites.get(kind) ?? Promise.resolve();
+  const next = previous.catch(() => {
+  }).then(() => action(() => revision === customRevision[kind] && generation === lifecycle));
+  customWrites.set(kind, next);
+  try {
+    return await next;
+  } finally {
+    if (customWrites.get(kind) === next) customWrites.delete(kind);
   }
 }
 async function setCustomSound(kind, file) {
@@ -237,29 +275,35 @@ async function setCustomSound(kind, file) {
   const named = /\.(wav|mp3|m4a|ogg|oga|aac|flac|opus)$/i.test(String(file.name ?? ""));
   if (!type.startsWith("audio/") && !named) return { ok: false, code: "unsupported" };
   if (Number(file.size) > MAX_CUSTOM_BYTES) return { ok: false, code: "too-large" };
-  try {
-    await idbPut(kind, { blob: file, name: file.name, size: file.size, type });
-  } catch (error) {
-    return { ok: false, code: "store-failed", message: error?.message ?? String(error) };
-  }
-  applyCustom(kind, file, file.name);
-  return { ok: true };
+  return writeCustom(kind, async (current) => {
+    try {
+      await idbPut(kind, { blob: file, name: file.name, size: file.size, type });
+    } catch (error) {
+      return { ok: false, code: "store-failed", message: error?.message ?? String(error) };
+    }
+    if (current()) applyCustom(kind, file, file.name);
+    return { ok: true };
+  });
 }
 async function resetCustomSound(kind) {
   if (!KINDS.includes(kind)) return;
-  const previous = custom[kind];
-  if (previous !== null) {
+  return writeCustom(kind, async (current) => {
+    if (current()) {
+      const previous = custom[kind];
+      if (previous !== null) {
+        try {
+          globalThis.URL?.revokeObjectURL(previous.url);
+        } catch {
+        }
+      }
+      custom = { ...custom, [kind]: null };
+      notifyCustom();
+    }
     try {
-      globalThis.URL?.revokeObjectURL(previous.url);
+      await idbDelete(kind);
     } catch {
     }
-  }
-  custom[kind] = null;
-  notifyCustom();
-  try {
-    await idbDelete(kind);
-  } catch {
-  }
+  });
 }
 var diagnostics = {
   version: 2,
@@ -290,6 +334,7 @@ function setBlocked(next) {
   for (const listener of [...engineListeners]) listener();
 }
 var gestureArmed = false;
+var gestureCleanup = null;
 function armGestureUnlock() {
   if (gestureArmed || typeof globalThis.addEventListener !== "function") return;
   gestureArmed = true;
@@ -298,11 +343,24 @@ function armGestureUnlock() {
     setBlocked(false);
     globalThis.removeEventListener("pointerdown", unlock, true);
     globalThis.removeEventListener("keydown", unlock, true);
+    gestureCleanup = null;
   };
+  gestureCleanup = unlock;
   globalThis.addEventListener("pointerdown", unlock, true);
   globalThis.addEventListener("keydown", unlock, true);
 }
 var lastPlayed = /* @__PURE__ */ new Map();
+var activeAudio = /* @__PURE__ */ new Map();
+function releaseAudio(audio, stop = false) {
+  const ended = activeAudio.get(audio);
+  if (ended === void 0) return;
+  activeAudio.delete(audio);
+  audio.removeEventListener?.("ended", ended);
+  audio.removeEventListener?.("error", ended);
+  if (stop) audio.pause?.();
+  audio.removeAttribute?.("src");
+  audio.load?.();
+}
 function sourceFor(kind) {
   return custom[kind]?.url ?? BUILTIN[kind] ?? "";
 }
@@ -320,15 +378,23 @@ function playSound(kind, options = {}) {
   }
   const AudioCtor = globalThis.Audio ?? globalThis.HTMLAudioElement;
   if (typeof AudioCtor !== "function") return false;
+  let audio;
+  const generation = lifecycle;
   try {
     diagnostics.plays += 1;
     diagnostics.lastKind = kind;
-    const audio = new AudioCtor(source);
+    audio = new AudioCtor(source);
+    const ended = () => releaseAudio(audio);
+    activeAudio.set(audio, ended);
+    audio.addEventListener?.("ended", ended, { once: true });
+    audio.addEventListener?.("error", ended, { once: true });
     audio.preload = "auto";
     audio.volume = clamp01(prefs.volume);
     const started = audio.play();
     if (started !== void 0 && typeof started.catch === "function") {
       started.catch((error) => {
+        releaseAudio(audio);
+        if (generation !== lifecycle) return;
         if (error?.name === "NotAllowedError") {
           setBlocked(true);
           armGestureUnlock();
@@ -337,6 +403,7 @@ function playSound(kind, options = {}) {
     }
     return true;
   } catch {
+    if (audio !== void 0) releaseAudio(audio);
     return false;
   }
 }
@@ -429,9 +496,20 @@ var css = `
 `;
 function useNotifyState() {
   const [notice, setState] = (0, import_react.useState)(null);
+  const timer = (0, import_react.useRef)(null);
+  const mounted = (0, import_react.useRef)(true);
+  (0, import_react.useEffect)(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      globalThis.clearTimeout(timer.current);
+    };
+  }, []);
   const setNotice = (value) => {
+    if (!mounted.current) return;
+    globalThis.clearTimeout(timer.current);
     setState(value);
-    globalThis.setTimeout(() => setState((current) => current === value ? null : current), 6e3);
+    timer.current = globalThis.setTimeout(() => setState((current) => current === value ? null : current), 6e3);
   };
   return [notice, setNotice];
 }
@@ -445,6 +523,7 @@ function pickAudioFile(kind, t, onNotice) {
   input.type = "file";
   input.accept = "audio/*,.wav,.mp3,.m4a,.ogg,.flac";
   input.style.display = "none";
+  input.oncancel = () => input?.remove();
   input.onchange = async () => {
     const file = input?.files?.[0];
     input?.remove();
@@ -513,6 +592,8 @@ function SoundAlertPanel(props) {
   const state = (0, import_react.useSyncExternalStore)(subscribeEngine, getEngineState);
   const [notice, setNotice] = useNotifyState();
   const percent = Math.round(current.volume * 100);
+  const previewTimer = (0, import_react.useRef)(null);
+  (0, import_react.useEffect)(() => () => globalThis.clearTimeout(previewTimer.current), []);
   return (0, import_react.createElement)(
     import_react.Fragment,
     null,
@@ -605,7 +686,8 @@ function SoundAlertPanel(props) {
               className: "dsa-btn dsa-btn-primary",
               onClick: () => {
                 previewSound("attention");
-                globalThis.setTimeout(() => previewSound("done"), 1300);
+                globalThis.clearTimeout(previewTimer.current);
+                previewTimer.current = globalThis.setTimeout(() => previewSound("done"), 1300);
               }
             },
             t("previewAll")
@@ -618,6 +700,19 @@ function SoundAlertPanel(props) {
 }
 function apply(ctx) {
   globalThis.__DSH_SOUND_ALERT__ = diagnostics;
+  ctx.effect(() => () => {
+    lifecycle += 1;
+    gestureCleanup?.();
+    for (const audio of [...activeAudio.keys()]) releaseAudio(audio, true);
+    for (const kind of KINDS) {
+      const entry = custom[kind];
+      if (entry !== null) globalThis.URL?.revokeObjectURL(entry.url);
+    }
+    custom = { attention: null, done: null };
+    lastPlayed.clear();
+    notifyCustom();
+    if (globalThis.__DSH_SOUND_ALERT__ === diagnostics) delete globalThis.__DSH_SOUND_ALERT__;
+  }, "sound-alert: resources");
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), "sound-alert: dictionaries");
   const t = ctx.locale.bind(NS);
   ctx.slots.inject(

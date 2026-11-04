@@ -9,11 +9,11 @@ import { createRequire } from "node:module";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const require = createRequire(import.meta.url);
 const pkgDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const { default: McpManagerService, McpError, entryIdOf, normalizeServer, saveStateFile, loadStateFile, MCP_MODULE, MANAGED_ID_PREFIX, PRESETS, PLACEHOLDER_VALUES, PRESET_CATEGORIES, categoryOf, validatePresetCatalog, fetchPresetCatalog, placeholderValuesOf, resolveConfigValue } = await import(join(pkgDir, "lib/index.js"));
+const { default: McpManagerService, McpError, entryIdOf, normalizeServer, saveStateFile, loadStateFile, MCP_MODULE, MANAGED_ID_PREFIX, PRESETS, PLACEHOLDER_VALUES, PRESET_CATEGORIES, categoryOf, validatePresetCatalog, fetchPresetCatalog, placeholderValuesOf, resolveConfigValue } = await import(pathToFileURL(join(pkgDir, "lib/index.js")).href);
 
 /** 记录条目并为服务提供 EntryTree 最小 API 的内存桩 loader。 */
 class StubEntry {

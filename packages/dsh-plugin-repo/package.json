@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-repo",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "DSH 基础插件：设置面板的插件仓库（在线目录/安装/更新/卸载）、技能能力（skills 管理与导入）、规则（提示词）三个分区，以及会话右键菜单的删除会话",
   "type": "module",
   "main": "lib/index.js",
@@ -20,6 +20,7 @@
     "lib/index.js",
     "lib/skills.js",
     "lib/session-archive.js",
+    "lib/request.js",
     "lib/client.js",
     "lib/types/index.d.ts",
     "lib/types/skills.d.ts",

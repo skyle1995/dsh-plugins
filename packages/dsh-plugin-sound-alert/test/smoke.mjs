@@ -145,6 +145,8 @@ function loadPlugin(options = {}) {
 		Fragment: "Fragment",
 		createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }),
 		useState: (initial) => [typeof initial === "function" ? initial() : initial, () => {}],
+                useRef: (initial) => ({ current: initial }),
+                useEffect: () => {},
 		useSyncExternalStore: (subscribe, getSnapshot) => getSnapshot(),
 	};
 	function require(id) {

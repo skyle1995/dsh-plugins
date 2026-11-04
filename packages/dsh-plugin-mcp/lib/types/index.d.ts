@@ -6,6 +6,10 @@ import type { Context, Service } from "@deepseek-ai/cordis";
 export interface McpManagerConfig {
 	/** 状态文件绝对路径；留空自动使用 <profileDir>/mcp-servers.json */
 	stateFile: string;
+        /** 远程目录地址，off 禁用，缺省使用内置默认地址。 */
+        presetUrl?: string;
+        /** 拉取目录超时（毫秒），范围 1 至 120000，默认 10000。 */
+        presetFetchTimeoutMs?: number;
 }
 
 /** 状态文件里一台受管服务器的完整形态（mcp-client 规范化配置 + 管理字段）。 */

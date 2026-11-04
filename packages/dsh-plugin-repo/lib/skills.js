@@ -27,10 +27,11 @@ import { Service } from "@deepseek-ai/cordis";
 import Schema from "@deepseek-ai/schemastery";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { cp, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, mkdtemp, open, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { basename, extname, join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import { promisify } from "node:util";
+import { readJsonBody } from "./request.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -59,12 +60,21 @@ export function resolveSkillsDir(config) {
 	return join(resolveDshHome(), "skills");
 }
 
-/** 技能名净化：剔除文件名非法字符与控制字符，空白折叠为 `-`，首尾去除；保留中文等 Unicode 字母。 */
-export function sanitizeSkillName(name) {
-	return String(name ?? "")
+/** 净化技能名；参数为名称与宿主平台，返回保留 Unicode 的单段名称，非法保留名返回空串。 */
+export function sanitizeSkillName(name, platform = process.platform) {
+        const safe = String(name ?? "")
 		.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "-")
 		.replace(/\s+/g, "-")
 		.replace(/^-+|-+$/g, "");
+        if (safe === "." || safe === "..") return "";
+        if (platform === "win32") {
+                const stem = safe.split(".")[0].toUpperCase();
+                const reserved = ["CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
+                        ...Array.from({ length: 9 }, (_, i) => `COM${i + 1}`),
+                        ...Array.from({ length: 9 }, (_, i) => `LPT${i + 1}`), "COM¹", "COM²", "COM³", "LPT¹", "LPT²", "LPT³"];
+                if (reserved.includes(stem) || safe.endsWith(".")) return "";
+        }
+        return safe;
 }
 
 /** YAML 布尔：true/yes/on/1（大小写不敏感）为真。 */
@@ -118,13 +128,16 @@ export function buildFrontmatter(fields) {
 /**
  * 在 frontmatter 中设置/清除一个单行字段，保留其余行与正文。
  * value 为 undefined 时删除该字段。
+ * @param content 原文本；key 字段名；value 新字段值。
+ * @returns 保留原换行风格的更新文本。
  */
 export function setFrontmatterField(content, key, value) {
+        const eol = content.includes("\r\n") ? "\r\n" : "\n";
 	const match = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(content);
 	if (!match) {
 		// 无 frontmatter：补建最小块（仅该字段），正文原样保留。
 		const lines = value === undefined ? ["---"] : ["---", `${key}: ${String(value)}`];
-		return `${lines.join("\n")}\n---\n\n${content}`;
+                return `${lines.join(eol)}${eol}---${eol}${eol}${content}`;
 	}
 	const kept = [];
 	for (const line of match[1].split(/\r?\n/)) {
@@ -134,7 +147,7 @@ export function setFrontmatterField(content, key, value) {
 	}
 	if (value !== undefined) kept.push(`${key}: ${String(value)}`);
 	const body = content.slice(match[0].length);
-	return `---\n${kept.join("\n")}\n---\n${body}`;
+        return `---${eol}${kept.join(eol)}${eol}---${eol}${body}`;
 }
 
 /**
@@ -160,6 +173,8 @@ export async function listSkills(dir) {
 			continue;
 		}
 		try {
+                        const info = await lstat(join(dir, file));
+                        if (!info.isFile() || info.isSymbolicLink()) continue;
 			const content = await readFile(join(dir, file), "utf8");
 			const { fields, body, hasFrontmatter } = parseFrontmatter(content);
 			skills.push({
@@ -197,29 +212,88 @@ export async function saveSkill(dir, input) {
 	const safe = sanitizeSkillName(input.name);
 	if (safe === "") throw new SkillError("skills/invalid-name", "技能名不能为空");
 	await mkdir(dir, { recursive: true });
-	const content = `${buildFrontmatter({ name: safe, description: input.description ?? "" })}\n\n${String(input.body ?? "").trim()}\n`;
+        const skills = await listSkills(dir);
+        const previous = input.previous === undefined ? undefined : skills.find((skill) => skill.file === input.previous?.file);
+        if (input.previous !== undefined && previous === undefined) throw new SkillError("skills/not-found", "原技能不存在或路径不合法，请刷新后重试");
+        if (skills.some((skill) => skill.file !== previous?.file && skill.name === safe)) {
+                throw new SkillError("skills/exists", `技能 "${safe}" 已存在，请使用编辑或导入覆盖`);
+        }
+        let content = `${buildFrontmatter({ name: safe, description: input.description ?? "" })}\n\n${String(input.body ?? "").trim()}\n`;
 	if (input.previous !== undefined) {
-		const previous = input.previous;
 		const isBundle = previous.file.includes("/");
 		const bundleName = isBundle ? previous.file.slice(0, previous.file.indexOf("/")) : null;
 		const oldFile = isBundle ? join(dir, bundleName, "SKILL.md") : join(dir, previous.file);
 		if (!existsSync(oldFile)) throw new SkillError("skills/not-found", `技能 ${JSON.stringify(previous.name)} 已不存在`);
+                const existing = await readFile(oldFile, "utf8");
+                const updated = setFrontmatterField(setFrontmatterField(existing, "name", yamlScalar(safe)), "description", yamlScalar(input.description ?? ""));
+                const { body } = parseFrontmatter(updated);
+                const header = updated.slice(0, updated.length - body.length);
+                const eol = existing.includes("\r\n") ? "\r\n" : "\n";
+                const newBody = String(input.body ?? "").trim().split("\r\n").join("\n").split("\n").join(eol);
+                content = `${header}${eol}${newBody}${eol}`;
 		if (previous.name !== safe) {
 			if (isBundle) {
+                                await assertSkillTarget(join(dir, safe), join(dir, bundleName));
 				await rename(join(dir, bundleName), join(dir, safe));
-				await writeFile(join(dir, safe, "SKILL.md"), content, "utf8");
+                                await writeSkillAtomic(join(dir, safe, "SKILL.md"), content);
 				return { name: safe, layout: "bundle", file: `${safe}/SKILL.md` };
 			}
+                        await assertSkillTarget(join(dir, `${safe}.md`), oldFile);
 			await rename(oldFile, join(dir, `${safe}.md`));
-			await writeFile(join(dir, `${safe}.md`), content, "utf8");
+                        await writeSkillAtomic(join(dir, `${safe}.md`), content);
 			return { name: safe, layout: "flat", file: `${safe}.md` };
 		}
-		await writeFile(oldFile, content, "utf8");
+                await writeSkillAtomic(oldFile, content);
 		return { name: safe, layout: previous.layout, file: previous.file };
 	}
 	const file = `${safe}.md`;
-	await writeFile(join(dir, file), content, "utf8");
+        // wx 同时拒绝现有文件、符号链接与并发新建，不覆盖已有技能。
+        await writeFile(join(dir, file), content, { encoding: "utf8", flag: "wx" });
 	return { name: safe, layout: "flat", file };
+}
+
+/** 检查改名目标；参数为目标和源，返回空 Promise，允许同一文件的大小写别名。 */
+async function assertSkillTarget(target, source) {
+        if (target === source) return;
+        let destination;
+        try {
+                destination = await lstat(target);
+        } catch (error) {
+                if (error.code === "ENOENT") return;
+                throw error;
+        }
+        const origin = await lstat(source);
+        const actualNames = await readdir(dirname(target));
+        if (destination.dev === origin.dev && destination.ino === origin.ino && !actualNames.includes(basename(target))) return;
+        throw new SkillError("skills/exists", `目标 "${basename(target)}" 已存在`);
+}
+
+/** 原子替换技能或规则文件；参数为目标与文本，返回空 Promise，保留模式权限并清理临时目录。 */
+async function writeSkillAtomic(file, content) {
+        await mkdir(dirname(file), { recursive: true });
+        let mode = 0o600;
+        try {
+                const info = await lstat(file);
+                if (!info.isFile() || info.isSymbolicLink()) throw new SkillError("skills/invalid-file", "目标不是普通文件，拒绝跟随符号链接");
+                mode = info.mode & 0o777;
+        } catch (error) {
+                if (error.code !== "ENOENT") throw error;
+        }
+        const temporary = await mkdtemp(join(dirname(file), ".dsh-skill-"));
+        try {
+                const next = join(temporary, "content");
+                const handle = await open(next, "wx", mode);
+                try {
+                        await handle.writeFile(content, "utf8");
+                        await handle.chmod(mode);
+                        await handle.sync();
+                } finally {
+                        await handle.close();
+                }
+                await rename(next, file);
+        } finally {
+                await rm(temporary, { recursive: true, force: true });
+        }
 }
 
 /**
@@ -245,7 +319,7 @@ export async function setSkillModelEnabled(dir, nameOrFile, modelEnabled) {
 	const file = join(dir, skill.file);
 	const content = await readFile(file, "utf8");
 	const updated = setFrontmatterField(content, "disable-model-invocation", modelEnabled ? undefined : "true");
-	await writeFile(file, updated, "utf8");
+        await writeSkillAtomic(file, updated);
 	return { ...skill, modelDisabled: !modelEnabled };
 }
 
@@ -289,8 +363,8 @@ async function importTree(skillsDir, root, imported, skipped, depth = 0) {
 					continue;
 				}
 				const name = sanitizeSkillName(fields.name);
-				await rm(join(skillsDir, `${name}.md`), { force: true });
-				await writeFile(join(skillsDir, `${name}.md`), content, "utf8");
+                                if (name === "") throw new SkillError("skills/invalid-name", "技能名不合法");
+                                await writeSkillAtomic(join(skillsDir, `${name}.md`), content);
 				imported.push({ name, layout: "flat" });
 			} catch (error) {
 				skipped.push(`${entry.name}（${error.message}）`);
@@ -315,8 +389,7 @@ export async function importSkills(dir, input) {
 			const content = input.data.toString("utf8");
 			const { fields } = parseFrontmatter(content);
 			const name = sanitizeSkillName(fields.name ?? basename(filename, extname(filename))) || "imported-skill";
-			await rm(join(dir, `${name}.md`), { force: true });
-			await writeFile(join(dir, `${name}.md`), content, "utf8");
+                        await writeSkillAtomic(join(dir, `${name}.md`), content);
 			return { imported: [{ name, layout: "flat" }], skipped: [] };
 		}
 		const archive = join(work, "archive.bin");
@@ -491,7 +564,7 @@ export class SkillManagerService extends Service {
 	async savePrompt(persona) {
 		const file = promptPatchPath();
 		const existing = existsSync(file) ? await readFile(file, "utf8") : "";
-		await writeFile(file, setPromptInPatch(existing, persona), "utf8");
+                await writeSkillAtomic(file, setPromptInPatch(existing, persona));
 		return file;
 	}
 
@@ -537,8 +610,9 @@ export class SkillManagerService extends Service {
 				}
 				let promptBody;
 				try {
-					promptBody = JSON.parse((await SkillManagerService.readBody(req)).toString("utf8") || "{}");
-				} catch {
+                                        promptBody = await readJsonBody(req, SkillError, "skills");
+                                } catch (error) {
+                                        if (error instanceof SkillError) throw error;
 					json(400, { ok: false, code: "skills/invalid-json", message: "请求体不是合法 JSON" });
 					return;
 				}
@@ -553,8 +627,9 @@ export class SkillManagerService extends Service {
 			}
 			let body;
 			try {
-				body = JSON.parse((await SkillManagerService.readBody(req)).toString("utf8") || "{}");
-			} catch {
+                                body = await readJsonBody(req, SkillError, "skills");
+                        } catch (error) {
+                                if (error instanceof SkillError) throw error;
 				json(400, { ok: false, code: "skills/invalid-json", message: "请求体不是合法 JSON" });
 				return;
 			}
@@ -580,7 +655,7 @@ export class SkillManagerService extends Service {
 			}
 			json(404, { ok: false, code: "skills/unknown", message: "unknown operation" });
 		} catch (error) {
-			json(400, { ok: false, code: error.code ?? "skills/failure", message: error.message });
+                        json(error.code === "skills/body-too-large" ? 413 : 400, { ok: false, code: error.code ?? "skills/failure", message: error.message });
 		}
 	}
 }

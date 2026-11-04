@@ -14,7 +14,7 @@
  * 每个场景可单独启用 / 关闭、可替换成本地音频文件（存 IndexedDB，按浏览器保存）、
  * 可恢复内置提示音、可随时试听。音频以内联 data URI 下发，不依赖宿主路由。
  */
-import { createElement as h, Fragment, useState, useSyncExternalStore } from "react";
+import { createElement as h, Fragment, useEffect, useRef, useState, useSyncExternalStore } from "react";
 // 构建期虚拟模块：见 scripts/build-client.mjs（把 assets/*.wav 转成 data URI）。
 import { attentionSound, doneSound } from "virtual:sound-alert-assets";
 
@@ -161,8 +161,11 @@ function updatePrefs(patch) {
 // ---------------------------------------------------------------------------
 
 /** 场景 → { url, name } | null，url 为 object URL。 */
-const custom = { attention: null, done: null };
+let custom = { attention: null, done: null };
 const customListeners = new Set();
+const customRevision = { attention: 0, done: 0 };
+const customWrites = new Map();
+let lifecycle = 0;
 
 /** 自定义音频快照（引用稳定）。 */
 function getCustom() {
@@ -193,45 +196,64 @@ function openDb() {
 		request.onupgradeneeded = () => {
 			if (!request.result.objectStoreNames.contains(DB_STORE)) request.result.createObjectStore(DB_STORE);
 		};
-		request.onsuccess = () => resolve(request.result);
+                request.onsuccess = () => {
+                        const db = request.result;
+                        db.onversionchange = () => db.close();
+                        resolve(db);
+                };
 		request.onerror = () => reject(request.error ?? new Error("indexedDB open failed"));
 	});
 }
 
-/** 读取一条自定义音频记录。 */
+/** 读取音频记录；参数为场景，返回记录或 null，完成或失败后关闭数据库连接。 */
 async function idbGet(kind) {
 	const db = await openDb();
-	return new Promise((resolve, reject) => {
+        try {
+        return await new Promise((resolve, reject) => {
 		const tx = db.transaction(DB_STORE, "readonly");
 		const request = tx.objectStore(DB_STORE).get(kind);
 		request.onsuccess = () => resolve(request.result ?? null);
 		request.onerror = () => reject(request.error ?? new Error("indexedDB read failed"));
+                tx.onabort = () => reject(tx.error ?? new Error("indexedDB read aborted"));
 	});
+        } finally {
+                db.close?.();
+        }
 }
 
-/** 写入一条自定义音频记录。 */
+/** 写入音频记录；参数为场景与记录，返回完成 Promise，交易中止时拒绝并关闭连接。 */
 async function idbPut(kind, record) {
 	const db = await openDb();
-	return new Promise((resolve, reject) => {
+        try {
+        return await new Promise((resolve, reject) => {
 		const tx = db.transaction(DB_STORE, "readwrite");
 		tx.objectStore(DB_STORE).put(record, kind);
 		tx.oncomplete = () => resolve();
 		tx.onerror = () => reject(tx.error ?? new Error("indexedDB write failed"));
+                tx.onabort = () => reject(tx.error ?? new Error("indexedDB write aborted"));
 	});
+        } finally {
+                db.close?.();
+        }
 }
 
-/** 删除一条自定义音频记录。 */
+/** 删除音频记录；参数为场景，返回完成 Promise，交易中止时拒绝并关闭连接。 */
 async function idbDelete(kind) {
 	const db = await openDb();
-	return new Promise((resolve, reject) => {
+        try {
+        return await new Promise((resolve, reject) => {
 		const tx = db.transaction(DB_STORE, "readwrite");
 		tx.objectStore(DB_STORE).delete(kind);
 		tx.oncomplete = () => resolve();
 		tx.onerror = () => reject(tx.error ?? new Error("indexedDB delete failed"));
+                tx.onabort = () => reject(tx.error ?? new Error("indexedDB delete aborted"));
 	});
+        } finally {
+                db.close?.();
+        }
 }
 
-/** 把 Blob 挂到场景上（替换前释放旧的 object URL）。 */
+/** 应用 Blob；参数为场景、Blob 和名称，无返回值，更新快照引用并释放旧 URL。 */
 function applyCustom(kind, blob, name) {
 	const previous = custom[kind];
 	if (previous !== null) {
@@ -247,21 +269,38 @@ function applyCustom(kind, blob, name) {
 	} catch {
 		url = null;
 	}
-	custom[kind] = url === null ? null : { url, name: String(name ?? "custom") };
+        custom = { ...custom, [kind]: url === null ? null : { url, name: String(name ?? "custom") } };
 	notifyCustom();
 }
 
 /** 启动时把已保存的自定义音频读回内存。 */
 async function restoreCustomSounds() {
+        const generation = lifecycle;
+        const revisions = { ...customRevision };
 	for (const kind of KINDS) {
+                const revision = revisions[kind];
 		try {
 			const record = await idbGet(kind);
 			const isBlob = typeof Blob !== "undefined" && record?.blob instanceof Blob;
-			if (isBlob) applyCustom(kind, record.blob, record.name);
+                        if (isBlob && generation === lifecycle && revision === customRevision[kind]) applyCustom(kind, record.blob, record.name);
 		} catch {
 			// IndexedDB 不可用：保持内置提示音。
 		}
 	}
+}
+
+/** 串行写入单个场景；参数为场景与操作，返回操作结果，失败不阻塞后续写入。 */
+async function writeCustom(kind, action) {
+        const revision = ++customRevision[kind];
+        const generation = lifecycle;
+        const previous = customWrites.get(kind) ?? Promise.resolve();
+        const next = previous.catch(() => {}).then(() => action(() => revision === customRevision[kind] && generation === lifecycle));
+        customWrites.set(kind, next);
+        try {
+                return await next;
+        } finally {
+                if (customWrites.get(kind) === next) customWrites.delete(kind);
+        }
 }
 
 /**
@@ -276,13 +315,15 @@ export async function setCustomSound(kind, file) {
 	const named = /\.(wav|mp3|m4a|ogg|oga|aac|flac|opus)$/i.test(String(file.name ?? ""));
 	if (!type.startsWith("audio/") && !named) return { ok: false, code: "unsupported" };
 	if (Number(file.size) > MAX_CUSTOM_BYTES) return { ok: false, code: "too-large" };
-	try {
+        return writeCustom(kind, async (current) => {
+        try {
 		await idbPut(kind, { blob: file, name: file.name, size: file.size, type });
 	} catch (error) {
 		return { ok: false, code: "store-failed", message: error?.message ?? String(error) };
 	}
-	applyCustom(kind, file, file.name);
+        if (current()) applyCustom(kind, file, file.name);
 	return { ok: true };
+        });
 }
 
 /**
@@ -292,6 +333,8 @@ export async function setCustomSound(kind, file) {
  */
 export async function resetCustomSound(kind) {
 	if (!KINDS.includes(kind)) return;
+        return writeCustom(kind, async (current) => {
+        if (current()) {
 	const previous = custom[kind];
 	if (previous !== null) {
 		try {
@@ -300,13 +343,15 @@ export async function resetCustomSound(kind) {
 			// 忽略。
 		}
 	}
-	custom[kind] = null;
+        custom = { ...custom, [kind]: null };
 	notifyCustom();
+        }
 	try {
 		await idbDelete(kind);
 	} catch {
 		// 删除失败不影响本次会话恢复默认。
 	}
+        });
 }
 
 // ---------------------------------------------------------------------------
@@ -353,6 +398,7 @@ function setBlocked(next) {
 
 /** 手势解锁只挂一次。 */
 let gestureArmed = false;
+let gestureCleanup = null;
 
 /** 挂一次性用户手势监听：浏览器在首次手势后放行后续播放。 */
 function armGestureUnlock() {
@@ -363,13 +409,28 @@ function armGestureUnlock() {
 		setBlocked(false);
 		globalThis.removeEventListener("pointerdown", unlock, true);
 		globalThis.removeEventListener("keydown", unlock, true);
+                gestureCleanup = null;
 	};
+        gestureCleanup = unlock;
 	globalThis.addEventListener("pointerdown", unlock, true);
 	globalThis.addEventListener("keydown", unlock, true);
 }
 
 /** 上一次播放时间戳（按场景），用于合并连发。 */
 const lastPlayed = new Map();
+const activeAudio = new Map();
+
+/** 释放音频对象；参数为播放器及是否停止播放，无返回值，移除事件与媒体来源。 */
+function releaseAudio(audio, stop = false) {
+        const ended = activeAudio.get(audio);
+        if (ended === undefined) return;
+        activeAudio.delete(audio);
+        audio.removeEventListener?.("ended", ended);
+        audio.removeEventListener?.("error", ended);
+        if (stop) audio.pause?.();
+        audio.removeAttribute?.("src");
+        audio.load?.();
+}
 
 /** 场景当前的音频来源：自定义优先，否则内置。 */
 function sourceFor(kind) {
@@ -396,16 +457,24 @@ function playSound(kind, options = {}) {
 	}
 	const AudioCtor = globalThis.Audio ?? globalThis.HTMLAudioElement;
 	if (typeof AudioCtor !== "function") return false;
+        let audio;
+        const generation = lifecycle;
 	try {
 		// 每次新建 audio 元素：允许同一提示音重叠触发，也避免复用导致的截断。
 		diagnostics.plays += 1;
 		diagnostics.lastKind = kind;
-		const audio = new AudioCtor(source);
+                audio = new AudioCtor(source);
+                const ended = () => releaseAudio(audio);
+                activeAudio.set(audio, ended);
+                audio.addEventListener?.("ended", ended, { once: true });
+                audio.addEventListener?.("error", ended, { once: true });
 		audio.preload = "auto";
 		audio.volume = clamp01(prefs.volume);
 		const started = audio.play();
 		if (started !== undefined && typeof started.catch === "function") {
 			started.catch((error) => {
+                                releaseAudio(audio);
+                                if (generation !== lifecycle) return;
 				if (error?.name === "NotAllowedError") {
 					setBlocked(true);
 					armGestureUnlock();
@@ -415,6 +484,7 @@ function playSound(kind, options = {}) {
 		}
 		return true;
 	} catch {
+                if (audio !== undefined) releaseAudio(audio);
 		return false;
 	}
 }
@@ -544,9 +614,21 @@ const css = `
  */
 function useNotifyState() {
 	const [notice, setState] = useState(null);
+        const timer = useRef(null);
+        const mounted = useRef(true);
+        useEffect(() => {
+                mounted.current = true;
+                return () => {
+                        mounted.current = false;
+                        globalThis.clearTimeout(timer.current);
+                };
+        }, []);
+        /** 设置当前通知；参数为通知对象，返回空值，卸载后不再设置计时器。 */
 	const setNotice = (value) => {
+                if (!mounted.current) return;
+                globalThis.clearTimeout(timer.current);
 		setState(value);
-		globalThis.setTimeout(() => setState((current) => (current === value ? null : current)), 6000);
+                timer.current = globalThis.setTimeout(() => setState((current) => (current === value ? null : current)), 6000);
 	};
 	return [notice, setNotice];
 }
@@ -562,6 +644,7 @@ function pickAudioFile(kind, t, onNotice) {
 	input.type = "file";
 	input.accept = "audio/*,.wav,.mp3,.m4a,.ogg,.flac";
 	input.style.display = "none";
+        input.oncancel = () => input?.remove();
 	input.onchange = async () => {
 		const file = input?.files?.[0];
 		input?.remove();
@@ -643,6 +726,8 @@ function SoundAlertPanel(props) {
 	const state = useSyncExternalStore(subscribeEngine, getEngineState);
 	const [notice, setNotice] = useNotifyState();
 	const percent = Math.round(current.volume * 100);
+        const previewTimer = useRef(null);
+        useEffect(() => () => globalThis.clearTimeout(previewTimer.current), []);
 
 	return h(
 		Fragment,
@@ -738,7 +823,8 @@ function SoundAlertPanel(props) {
 							className: "dsa-btn dsa-btn-primary",
 							onClick: () => {
 								previewSound("attention");
-								globalThis.setTimeout(() => previewSound("done"), 1300);
+                                                                globalThis.clearTimeout(previewTimer.current);
+                                                                previewTimer.current = globalThis.setTimeout(() => previewSound("done"), 1300);
 							},
 						},
 						t("previewAll"),
@@ -760,6 +846,19 @@ function SoundAlertPanel(props) {
  */
 export function apply(ctx) {
 	globalThis.__DSH_SOUND_ALERT__ = diagnostics;
+        ctx.effect(() => () => {
+                lifecycle += 1;
+                gestureCleanup?.();
+                for (const audio of [...activeAudio.keys()]) releaseAudio(audio, true);
+                for (const kind of KINDS) {
+                        const entry = custom[kind];
+                        if (entry !== null) globalThis.URL?.revokeObjectURL(entry.url);
+                }
+                custom = { attention: null, done: null };
+                lastPlayed.clear();
+                notifyCustom();
+                if (globalThis.__DSH_SOUND_ALERT__ === diagnostics) delete globalThis.__DSH_SOUND_ALERT__;
+        }, "sound-alert: resources");
 	ctx.effect(() => ctx.locale.register(NS, { zh, en }), "sound-alert: dictionaries");
 	const t = ctx.locale.bind(NS);
 

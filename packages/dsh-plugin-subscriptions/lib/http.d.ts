@@ -85,17 +85,15 @@ export declare function proxyFilePath(): string;
  */
 export declare function describeFetchError(error: unknown): string;
 /**
- * Parse and validate a proxy URL. Only HTTP(S) proxies are supported because
- * the undici dispatcher speaks CONNECT over HTTP; socks5 is not supported.
- * @param raw - the URL the user configured.
- * @returns the parsed URL (credentials attached by the caller).
+ * 校验 HTTP(S) 代理 URL，拒绝其它协议，错误信息不回显可能含凭据的原始地址。
+ * @param raw 用户配置的地址。
+ * @returns 解析后的 URL。
  */
 export declare function parseProxyUrl(raw: string): URL;
 /**
- * Whether a request hostname bypasses the proxy.
- * @param hostname - the request's hostname.
- * @param entries - configured bypass entries: exact host, plain suffix
- *   (`example.com` also matches `api.example.com`), or `*.example.com`.
+ * 判断主机是否绕过插件代理，支持 DNS 后缀、通配符及 IPv4/IPv6 精确地址。
+ * @param hostname 请求主机；entries 绕过规则，可包含 URL、IPv6 方括号与端口。
+ * @returns 是否匹配；IP 不参与 DNS 后缀匹配。
  */
 export declare function matchesBypass(hostname: string, entries: readonly string[]): boolean;
 /**
@@ -105,10 +103,9 @@ export declare function matchesBypass(hostname: string, entries: readonly string
  */
 export declare function proxyGetConfig(): Promise<ProxyConfigView>;
 /**
- * Validate, persist, and apply one proxy config. A `password` of `undefined`
- * keeps the stored value; `null` or `''` clears it.
- * @param input - the client's payload.
- * @returns the resulting view (secrets omitted).
+ * 串行校验、保存并应用代理配置，未提供密码时继承现值，null 或空串清除。
+ * @param input 客户端输入。
+ * @returns 脱敏配置视图，不返回密码或含凭据的 URL。
  */
 export declare function proxySetConfig(input: ProxyInput): Promise<ProxyConfigView>;
 /**
@@ -123,12 +120,8 @@ export declare function proxySetConfig(input: ProxyInput): Promise<ProxyConfigVi
  */
 export declare function proxiedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
 /**
- * Probe a destination through a proxy, answering with the HTTP status or a
- * flattened transport error. The probe uses `draft` when given (the dialog's
- * current inputs, without saving) and the stored config otherwise.
- * @param target - `http(s)` URL to fetch; defaults to {@link DEFAULT_PROXY_TEST_URL}.
- * @param draft - unsaved proxy inputs to test; absent means the stored config.
- * @returns the result; any HTTP status counts as a successful connection,
- *   only a transport failure is an error.
+ * 探测 HTTP(S) 目标，收到状态码后取消响应体并释放临时代理，不下载无关内容。
+ * @param target 目标地址，默认 DEFAULT_PROXY_TEST_URL；draft 可选未保存代理输入。
+ * @returns 状态、延迟和路由信息；任何 HTTP 状态均表示连接成功，传输失败返回错误。
  */
 export declare function proxyTestConnection(target?: string, draft?: ProxyDraft): Promise<ProxyTestResult>;

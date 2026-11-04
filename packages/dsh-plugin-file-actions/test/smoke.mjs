@@ -8,7 +8,7 @@
 import { Context, Service } from "@deepseek-ai/cordis";
 import { createRequire } from "node:module";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile, lstat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,7 +16,7 @@ import { inflateRawSync } from "node:zlib";
 
 const require = createRequire(import.meta.url);
 const pkgDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const { default: FileActionsService, crc32 } = await import(resolve(pkgDir, "lib/index.js"));
+const { default: FileActionsService, crc32 } = await import(pathToFileURL(resolve(pkgDir, "lib/index.js")).href);
 
 /** 桩 fs：镜像 dsh-fs-local 的 resolve/processPath/contains 行为（不做 realpath）。 */
 class StubFs extends Service {
@@ -324,6 +324,6 @@ if (captured.status !== 200 || captured.body.ok !== true || captured.body.name !
 if (!(await exists(join(workspace, "http-ren2.txt")))) throw new Error("HTTP 重命名未生效");
 
 console.log("SMOKE OK");
-await root.dispose?.();
+await root.fiber.dispose();
 await rm(workspace, { recursive: true, force: true });
 await rm(outside, { recursive: true, force: true });

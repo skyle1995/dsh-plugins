@@ -339,6 +339,15 @@ The optional plugin override remains available for supported older DSH hosts and
 
 Changes apply immediately to subsequent requests — no restart needed. The OAuth authorization page opens in your browser and follows the browser/system proxy, not this setting. SOCKS proxies are not supported.
 
+### 0.9.17 代理优化
+
+- 绕过规则支持 IPv6 裸地址、方括号及端口，IP 只作精确匹配，DNS 保留后缀/通配符规则。
+- 配置保存串行执行，避免并发操作丢失密码和绕过规则，确保磁盘与内存一致。
+- URL 内嵌凭据拆入受保护字段，返回视图不含密码 URL，校验错误也不回显原始地址。
+- 连接探测收到状态码后取消响应体，不下载大文件或等待无限流。
+- 新增离线回归：仓库根运行 `node --test demo-test/subscriptions-proxy.test.mjs`。
+  本轮通过 Windows 运行及 TypeScript 检查，macOS/Linux 真机仍需验证。
+
 ## Related plugins
 
 This plugin only supplies model routes. Approval policy lives elsewhere:

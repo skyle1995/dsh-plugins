@@ -9,8 +9,8 @@
  *
  * @module dsh-plugin-file-actions
  */
-export { FileActionsService, FileActionsError, FILE_ACTIONS_API, DEFAULT_MAX_ZIP_FILE_BYTES, DEFAULT_MAX_EDIT_BYTES, zipNameFor, sanitizeZipName, sanitizeEntryName, parserForPath } from "./file-actions.js";
-export { crc32, buildZipBuffer, collectZipEntries, createZipBuffer } from "./zip.js";
+export { FileActionsService, FileActionsError, FILE_ACTIONS_API, DEFAULT_MAX_ZIP_FILE_BYTES, DEFAULT_MAX_EDIT_BYTES, DEFAULT_MAX_ZIP_TOTAL_BYTES, DEFAULT_MAX_ZIP_ENTRIES, DEFAULT_MAX_BATCH_PATHS, zipNameFor, sanitizeZipName, sanitizeEntryName, parserForPath } from "./file-actions.js";
+export { crc32, buildZipBuffer, collectZipEntries, createZipBuffer, writeZipFile } from "./zip.js";
 import { FileActionsService } from "./file-actions.js";
 
 export default FileActionsService;

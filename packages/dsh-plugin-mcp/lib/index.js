@@ -20,8 +20,9 @@
 import { Service } from "@deepseek-ai/cordis";
 import Schema from "@deepseek-ai/schemastery";
 import { Config as McpClientConfig } from "@deepseek-ai/dsh-mcp-client";
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { closeSync, fsyncSync, mkdirSync, mkdtempSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import presetCatalog from "../presets.json" with { type: "json" };
 
@@ -103,7 +104,7 @@ export function placeholderValuesOf(presets) {
 export const EXPR_FULL = /^\$(env|file):(.+)$/;
 export const EXPR_INLINE = /\$\{(env|file):([^}]+)\}/g;
 
-/** 单次引用的解析；失败时记录 issue（如 env:GITHUB_TOKEN）。 */
+/** 解析一条引用；参数为类型、名称及问题列表，返回环境值或文件首行，失败返回空串并记问题。 */
 function lookupRef(kind, arg, issues) {
 	if (kind === "env") {
 		const value = process.env[arg];
@@ -111,9 +112,10 @@ function lookupRef(kind, arg, issues) {
 		return value ?? "";
 	}
 	if (kind === "file") {
-		const path = arg.startsWith("~") ? join(resolveDshHomeFallback(), arg.slice(2)) : arg;
+                const path = arg === "~" ? resolveDshHomeFallback()
+                        : arg.startsWith("~/") || arg.startsWith("~\\") ? join(resolveDshHomeFallback(), arg.slice(2)) : arg;
 		try {
-			return readFileSync(path, "utf8").trim();
+                        return readFileSync(path, "utf8").split("\n", 1)[0].trim();
 		} catch {
 			issues.push(`file:${arg}`);
 			return "";
@@ -122,9 +124,9 @@ function lookupRef(kind, arg, issues) {
 	return "";
 }
 
-/** 宿主环境 HOME 兜底（file 引用 ~ 展开用）。 */
+/** 获取系统用户目录；无参数，返回原生用户目录，不依赖空 HOME 或当前目录兜底。 */
 function resolveDshHomeFallback() {
-	return process.env.HOME ?? process.env.USERPROFILE ?? ".";
+        return homedir();
 }
 
 /**
@@ -282,10 +284,30 @@ export function loadStateFile(file) {
  * @param servers - 服务器列表。
  */
 export function saveStateFile(file, servers) {
+        writeJsonAtomic(file, { version: 1, servers });
+}
+
+/**
+ * 原子写入 JSON，避免固定临时名的竞争与预置符号链接，确保 POSIX 权限为 0600。
+ * @param file 目标路径；value 可序列化数据。
+ * @returns 无返回值，失败保留原文件并清理本次临时目录。
+ */
+function writeJsonAtomic(file, value) {
 	mkdirSync(dirname(file), { recursive: true });
-	const tmp = `${file}.tmp`;
-	writeFileSync(tmp, JSON.stringify({ version: 1, servers }, null, 2) + "\n", { mode: 0o600 });
-	renameSync(tmp, file);
+        const temporary = mkdtempSync(join(dirname(file), ".dsh-mcp-"));
+        try {
+                const tmp = join(temporary, "state.json");
+                const fd = openSync(tmp, "wx", 0o600);
+                try {
+                        writeFileSync(fd, JSON.stringify(value, null, 2) + "\n");
+                        fsyncSync(fd);
+                } finally {
+                        closeSync(fd);
+                }
+                renameSync(tmp, file);
+        } finally {
+                rmSync(temporary, { recursive: true, force: true });
+        }
 }
 
 /**
@@ -359,7 +381,7 @@ export class McpManagerService extends Service {
 		/** 在线预设目录地址；留空用默认（dsh-plugins 仓库 presets.json），"off" 禁用在线目录 */
 		presetUrl: Schema.string().default(""),
 		/** 在线目录拉取超时（毫秒） */
-		presetFetchTimeoutMs: Schema.number().default(10000),
+                presetFetchTimeoutMs: Schema.number().min(1).max(120000).default(10000),
 	});
 
 	constructor(ctx, config) {
@@ -373,6 +395,14 @@ export class McpManagerService extends Service {
 		this.resolveIssues = new Map();
 		this.syncScheduled = false;
 		this.syncRunning = false;
+                this.syncPending = null;
+                this.presetPending = null;
+                this.presetController = null;
+                this.disposed = false;
+                ctx.effect(() => () => {
+                        this.disposed = true;
+                        this.presetController?.abort();
+                }, "dsh-plugin-mcp: lifecycle");
 		// 活动预设目录：初始为内置（随包 presets.json），启动后异步拉取在线目录，
 		// 失败回退缓存 / 内置。placeholderValues 与 categories 均随活动目录变化。
 		this.presets = PRESETS;
@@ -464,27 +494,53 @@ export class McpManagerService extends Service {
 	/**
 	 * 拉取在线预设目录：成功 → 生效并写缓存；失败 → 回退缓存文件，再回退内置。
 	 * 永不抛出：错误只记录进 presetError，保证激活与列表接口可用。
+         * @param reason 刷新原因。
+         * @returns 合并后的刷新 Promise，卸载后不再应用结果。
 	 */
-	async loadRemotePresets(reason) {
+        async loadRemotePresets(reason) {
+                if (this.disposed || this.presetUrl === null) return;
+                if (this.presetPending !== null) return this.presetPending;
+                this.presetController = new AbortController();
+                const signal = this.presetController.signal;
+                const pending = this.fetchRemotePresets(reason, signal);
+                this.presetPending = pending;
+                try {
+                        await pending;
+                } finally {
+                        if (this.presetPending === pending) {
+                                this.presetPending = null;
+                                this.presetController = null;
+                        }
+                }
+        }
+
+        /** 获取远程目录并回退缓存；参数为原因与卸载信号，返回空 Promise，卸载后不应用。 */
+        async fetchRemotePresets(reason, signal) {
 		try {
-			const catalog = await fetchPresetCatalog(this.presetUrl, this.config.presetFetchTimeoutMs);
+                        const catalog = await fetchPresetCatalog(this.presetUrl, this.config.presetFetchTimeoutMs, (url, init) => fetch(url, {
+                                ...init, signal: AbortSignal.any([init.signal, signal]),
+                        }));
+                        if (this.disposed) return;
 			this.applyPresetCatalog(catalog, "remote");
 			if (this.presetCacheFile !== null) {
 				try {
-					const tmp = `${this.presetCacheFile}.tmp`;
-					writeFileSync(tmp, JSON.stringify(catalog, null, "\t") + "\n");
-					renameSync(tmp, this.presetCacheFile);
+                                        writeJsonAtomic(this.presetCacheFile, catalog);
 				} catch (error) {
 					this.ctx.logger.warn(`dsh-plugin-mcp 预设缓存写入失败：${error?.message ?? error}`);
 				}
 			}
 			this.ctx.logger.info(`dsh-plugin-mcp 在线预设已生效（${reason}）：${catalog.presets.length} 个预设`);
 		} catch (error) {
+                        if (this.disposed) return;
 			this.presetError = error?.message ?? String(error);
 			if (this.presetCacheFile !== null) {
 				try {
 					const cached = validatePresetCatalog(JSON.parse(readFileSync(this.presetCacheFile, "utf8")));
-					if (this.presetSource === "bundled") this.applyPresetCatalog(cached, "cache");
+                                        if (this.presetSource === "bundled") {
+                                                const failure = this.presetError;
+                                                this.applyPresetCatalog(cached, "cache");
+                                                this.presetError = failure;
+                                        }
 					this.ctx.logger.info(`dsh-plugin-mcp 预设回退缓存（${reason}）：${cached.presets.length} 个预设`);
 					return;
 				} catch {
@@ -505,27 +561,42 @@ export class McpManagerService extends Service {
 
 	/** 去抖的重新投影（config-update 在树写回期间同步发出，微任务延后执行）。 */
 	scheduleSync(reason) {
-		if (this.syncScheduled) return;
+                if (this.disposed || this.syncScheduled) return;
 		this.syncScheduled = true;
 		queueMicrotask(() => {
 			this.syncScheduled = false;
+                        if (this.disposed) return;
 			void this.sync(reason).catch((error) => {
 				this.ctx.logger.warn(`dsh-plugin-mcp 同步失败（${reason}）：${error?.message ?? error}`);
 			});
 		});
 	}
 
-	/** 串行执行一次投影（重入直接返回）。 */
+        /** 串接投影请求，避免重入丢失状态；参数为日志原因，返回本次及此前投影完成的 Promise。 */
 	async sync(reason) {
-		if (this.syncRunning) return;
-		this.syncRunning = true;
+                if (this.disposed) return;
+                const previous = this.syncPending ?? Promise.resolve();
+                const pending = previous.catch(() => {}).then(() => {
+                        if (!this.disposed) return this.drainSync(reason);
+                });
+                this.syncPending = pending;
 		try {
-			await this.project();
+                        await pending;
+                } finally {
+                        if (this.syncPending === pending) this.syncPending = null;
+                }
+        }
+
+        /** 执行一次投影；参数为日志原因，返回空 Promise，完成或失败时复原运行标记。 */
+        async drainSync(reason) {
+                this.syncRunning = true;
+                try {
+                        await this.project();
 		} catch (error) {
 			this.ctx.logger.warn(`dsh-plugin-mcp 投影失败（${reason}）：${error?.message ?? error}`);
 			throw error;
-		} finally {
-			this.syncRunning = false;
+                } finally {
+                        this.syncRunning = false;
 		}
 	}
 
@@ -587,11 +658,12 @@ export class McpManagerService extends Service {
 		}
 	}
 
-	/** 持久化状态并投影。 */
-	async persist() {
+        /** 先落盘再提交内存状态与投影；参数为新列表，返回空 Promise，写盘失败不污染内存。 */
+        async persist(servers = this.servers) {
 		if (this.stateFile === null) throw new McpError("mcp/no-state", "MCP 服务器管理不可用：未定位状态文件");
 		if (this.stateCorrupt !== null) throw new McpError("mcp/state-corrupt", `状态文件损坏（${this.stateCorrupt}）；请人工修复后重试`);
-		saveStateFile(this.stateFile, this.servers);
+                saveStateFile(this.stateFile, servers);
+                this.servers = servers;
 		await this.sync("persist");
 	}
 
@@ -620,10 +692,11 @@ export class McpManagerService extends Service {
 			throw new McpError("mcp/name-conflict", `serverName「${config.serverName}」已被 cordis.patch.yml 中的条目 ${JSON.stringify(manual.options.id)} 占用`);
 		}
 		const server = { ...config, disabled, note };
-		const index = this.servers.findIndex((item) => item.serverName === server.serverName);
-		if (index >= 0) this.servers[index] = server;
-		else this.servers.push(server);
-		await this.persist();
+                const next = [...this.servers];
+                const index = next.findIndex((item) => item.serverName === server.serverName);
+                if (index >= 0) next[index] = server;
+                else next.push(server);
+                await this.persist(next);
 		return server;
 	}
 
@@ -631,8 +704,9 @@ export class McpManagerService extends Service {
 	async removeServer(serverName) {
 		const index = this.servers.findIndex((item) => item.serverName === serverName);
 		if (index < 0) return false;
-		this.servers.splice(index, 1);
-		await this.persist();
+                const next = [...this.servers];
+                next.splice(index, 1);
+                await this.persist(next);
 		return true;
 	}
 
@@ -641,8 +715,7 @@ export class McpManagerService extends Service {
 		const server = this.servers.find((item) => item.serverName === serverName);
 		if (server === undefined) return false;
 		if ((server.disabled === true) === !enabled) return true;
-		server.disabled = !enabled;
-		await this.persist();
+                await this.persist(this.servers.map((item) => item === server ? { ...item, disabled: !enabled } : item));
 		return true;
 	}
 
@@ -764,19 +837,27 @@ export class McpManagerService extends Service {
 			let body = {};
 			try {
 				const chunks = [];
-				for await (const chunk of req) chunks.push(chunk);
+                                let bytes = 0;
+                                for await (const chunk of req) {
+                                        bytes += Buffer.byteLength(chunk);
+                                        if (bytes > 1024 * 1024) throw new McpError("mcp/body-too-large", "请求体超过 1MB");
+                                        chunks.push(Buffer.from(chunk));
+                                }
 				body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
-			} catch {
+                                if (body === null || typeof body !== "object" || Array.isArray(body)) throw new McpError("mcp/invalid-json", "请求体必须是 JSON 对象");
+                        } catch (error) {
+                                if (error instanceof McpError) throw error;
 				payload(400, { ok: false, code: "mcp/invalid-json", message: "请求体不是合法 JSON" });
 				return;
 			}
 			const operation = String(body.operation ?? "");
-			if (operation === "save") {
+                        switch (operation) {
+                        case "save": {
 				await this.saveServer(body.server ?? {});
 				payload(200, { ok: true, ...this.snapshot() });
 				return;
 			}
-			if (operation === "remove") {
+                        case "remove": {
 				const serverName = String(body.serverName ?? "").trim();
 				if (serverName === "") {
 					payload(400, { ok: false, code: "mcp/invalid-name", message: "缺少 serverName" });
@@ -786,7 +867,7 @@ export class McpManagerService extends Service {
 				payload(200, { ok: true, ...this.snapshot() });
 				return;
 			}
-			if (operation === "enable") {
+                        case "enable": {
 				const serverName = String(body.serverName ?? "").trim();
 				if (serverName === "") {
 					payload(400, { ok: false, code: "mcp/invalid-name", message: "缺少 serverName" });
@@ -796,12 +877,12 @@ export class McpManagerService extends Service {
 				payload(200, { ok: true, ...this.snapshot() });
 				return;
 			}
-			if (operation === "refresh-presets") {
+                        case "refresh-presets": {
 				await this.refreshPresets();
 				payload(200, { ok: true, categories: this.categories.map(({ presetIds, ...category }) => category), presets: this.presetsView(), ...this.presetInfo(), ...this.snapshot() });
 				return;
 			}
-			if (operation === "detail") {
+                        case "detail": {
 				const serverName = String(body.serverName ?? "").trim();
 				const server = serverName === "" ? null : this.findServer(serverName);
 				if (server === null) {
@@ -811,10 +892,13 @@ export class McpManagerService extends Service {
 				payload(200, { ok: true, server: { ...server, id: entryIdOf(server.serverName) } });
 				return;
 			}
-			payload(400, { ok: false, code: "mcp/unknown-operation", message: `未知操作：${operation}` });
+                        default:
+                                payload(400, { ok: false, code: "mcp/unknown-operation", message: `未知操作：${operation}` });
+                        }
 		} catch (error) {
 			if (error instanceof McpError) {
-				const status = error.code.startsWith("mcp/invalid") || error.code === "mcp/name-conflict" ? 400 : error.code === "mcp/state-corrupt" ? 409 : 500;
+                                const status = error.code === "mcp/body-too-large" ? 413
+                                        : error.code.startsWith("mcp/invalid") || error.code === "mcp/name-conflict" ? 400 : error.code === "mcp/state-corrupt" ? 409 : 500;
 				payload(status, { ok: false, code: error.code, message: error.message });
 				return;
 			}

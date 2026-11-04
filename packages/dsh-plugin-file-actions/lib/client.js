@@ -76,6 +76,7 @@ var zh = {
   "edit.confirm": "\u786E\u8BA4",
   "edit.saved": "\u5DF2\u4FDD\u5B58 {name}",
   "edit.formatted": "\u5DF2\u683C\u5F0F\u5316",
+  "edit.formatStale": "\u683C\u5F0F\u5316\u671F\u95F4\u5185\u5BB9\u5DF2\u4FEE\u6539\uFF0C\u672A\u8986\u76D6\u5F53\u524D\u7F16\u8F91",
   "edit.closedUnsaved": "\u5DF2\u5173\u95ED\u672A\u4FDD\u5B58\u7684\u7F16\u8F91\uFF1A{name}",
   "edit.unavailable": "\u65E0\u6CD5\u89E3\u6790\u8BE5\u7F16\u8F91\u5730\u5740",
   "edit.unknownFormat": "\u8BE5\u6587\u4EF6\u7C7B\u578B\u6682\u4E0D\u652F\u6301\u4E00\u952E\u683C\u5F0F\u5316",
@@ -151,6 +152,7 @@ var en = {
   "edit.confirm": "Confirm",
   "edit.saved": "Saved {name}",
   "edit.formatted": "Formatted",
+  "edit.formatStale": "Content changed during formatting; current edits were kept",
   "edit.closedUnsaved": "Closed with unsaved changes: {name}",
   "edit.unavailable": "Cannot parse this editor address",
   "edit.unknownFormat": "One-click formatting is not supported for this file type",
@@ -273,29 +275,44 @@ function syncCutMarks() {
     else row.removeAttribute("data-files-cut");
   }
 }
+function pathParts(path) {
+  const value = String(path);
+  const separator = value.startsWith("/") || !value.includes("\\") ? "/" : "\\";
+  let rootLength = value.startsWith(separator) ? 1 : 0;
+  if (value[1] === ":" && value[2] === separator) rootLength = 3;
+  if (value.startsWith(separator + separator)) {
+    const serverEnd = value.indexOf(separator, 2);
+    const shareEnd = serverEnd < 0 ? -1 : value.indexOf(separator, serverEnd + 1);
+    rootLength = shareEnd < 0 ? value.length : shareEnd + 1;
+  }
+  let end = value.length;
+  while (end > rootLength && value[end - 1] === separator) end -= 1;
+  const normalized = value.slice(0, end);
+  if (end <= rootLength) return { dirname: normalized, basename: "" };
+  const index = normalized.lastIndexOf(separator);
+  return {
+    dirname: index < 0 ? "." : normalized.slice(0, Math.max(rootLength, index)),
+    basename: normalized.slice(index + 1)
+  };
+}
 function dirnameOf(path) {
-  const normalized = String(path).replace(/[/\\]+$/, "");
-  const index = Math.max(normalized.lastIndexOf("/"), normalized.lastIndexOf("\\"));
-  if (index < 0) return normalized;
-  if (index === 0) return normalized.slice(0, 1);
-  if (index === 2 && /^[A-Za-z]:$/.test(normalized.slice(0, 2))) return normalized.slice(0, 3);
-  return normalized.slice(0, index);
+  return pathParts(path).dirname;
 }
 function basenameOf(path) {
-  const normalized = String(path).replace(/[/\\]+$/, "");
-  const index = Math.max(normalized.lastIndexOf("/"), normalized.lastIndexOf("\\"));
-  return index < 0 ? normalized : normalized.slice(index + 1);
+  return pathParts(path).basename;
 }
-async function api(operation, body) {
+async function api(operation, body, signal = void 0) {
   const response = await fetch(`${API}/${operation}`, {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload.ok !== true) {
     const error = new Error(payload.message ?? `HTTP ${response.status}`);
     error.code = payload.code;
+    error.details = payload.details;
     throw error;
   }
   return payload;
@@ -1031,7 +1048,7 @@ function EditorTab(props) {
   const { useTabInfo } = props;
   const { tab } = useTabInfo();
   const parsed = parseEditAddress(tab.contentId);
-  const [content, setContent] = (0, import_react.useState)("");
+  const [content, setContentState] = (0, import_react.useState)("");
   const [original, setOriginal] = (0, import_react.useState)("");
   const [loaded, setLoaded] = (0, import_react.useState)(false);
   const [error, setError] = (0, import_react.useState)(null);
@@ -1047,6 +1064,21 @@ function EditorTab(props) {
   const [menuAt, setMenuAt] = (0, import_react.useState)(null);
   const inputRef = (0, import_react.useRef)(null);
   const dirtyRef = (0, import_react.useRef)(false);
+  const contentRef = (0, import_react.useRef)("");
+  const revisionRef = (0, import_react.useRef)(0);
+  const requestRef = (0, import_react.useRef)(0);
+  const readControllerRef = (0, import_react.useRef)(null);
+  const versionRef = (0, import_react.useRef)(void 0);
+  const savingRef = (0, import_react.useRef)(false);
+  const formatRef = (0, import_react.useRef)(0);
+  const addressRef = (0, import_react.useRef)(tab.contentId);
+  addressRef.current = tab.contentId;
+  const setContent = (next) => {
+    const value = typeof next === "function" ? next(contentRef.current) : next;
+    contentRef.current = value;
+    revisionRef.current += 1;
+    setContentState(value);
+  };
   const dirty = content !== original;
   dirtyRef.current = dirty;
   const name = parsed === null ? "" : basenameOf(parsed.path);
@@ -1106,45 +1138,90 @@ function EditorTab(props) {
     selectRange2(pos, pos);
   };
   const load = () => {
-    if (parsed === null) return;
+    if (parsed === null || savingRef.current) return;
+    readControllerRef.current?.abort();
+    const controller = new AbortController();
+    readControllerRef.current = controller;
+    const request = ++requestRef.current;
+    const address = tab.contentId;
+    formatRef.current += 1;
+    versionRef.current = void 0;
     setLoaded(false);
     setError(null);
     setConfirmingReload(false);
-    api("read", { workspaceRoot: parsed.workspaceRoot, path: parsed.path }).then((payload) => {
+    api("read", { workspaceRoot: parsed.workspaceRoot, path: parsed.path }, controller.signal).then((payload) => {
+      if (request !== requestRef.current || address !== addressRef.current) return;
       setContent(payload.content);
       setOriginal(payload.content);
+      versionRef.current = payload.version;
       setLoaded(true);
     }).catch((readError) => {
+      if (controller.signal.aborted || request !== requestRef.current || address !== addressRef.current) return;
       setError(readError.message);
     });
   };
   (0, import_react.useEffect)(() => {
+    savingRef.current = false;
+    setSaving(false);
     load();
+    return () => {
+      readControllerRef.current?.abort();
+      requestRef.current += 1;
+      formatRef.current += 1;
+    };
   }, [parsed?.workspaceRoot, parsed?.path]);
   (0, import_react.useEffect)(() => {
     tab.actions.bindCommands({ refresh: load });
-  }, [tab.actions]);
+  }, [tab.actions, parsed?.workspaceRoot, parsed?.path]);
+  (0, import_react.useEffect)(() => {
+    const beforeUnload = (event) => {
+      if (!dirtyRef.current) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => window.removeEventListener("beforeunload", beforeUnload);
+  }, []);
   (0, import_react.useEffect)(() => () => {
     if (dirtyRef.current && name !== "") pushToast(translate("edit.closedUnsaved", { name }));
   }, []);
   const save = () => {
-    if (parsed === null || !loaded || saving) return;
+    if (parsed === null || !loaded || savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
-    api("save", { workspaceRoot: parsed.workspaceRoot, path: parsed.path, content }).then(() => {
+    const snapshot = contentRef.current;
+    const request = requestRef.current;
+    const address = tab.contentId;
+    api("save", { workspaceRoot: parsed.workspaceRoot, path: parsed.path, content: snapshot, version: versionRef.current }).then((payload) => {
+      if (request !== requestRef.current || address !== addressRef.current) return;
+      savingRef.current = false;
       setSaving(false);
-      setOriginal(content);
+      versionRef.current = payload.version;
+      setOriginal(snapshot);
       pushToast(translate("edit.saved", { name }));
     }).catch((saveError) => {
+      if (request !== requestRef.current || address !== addressRef.current) return;
+      savingRef.current = false;
       setSaving(false);
       pushToast(saveError.message, "error");
     });
   };
   const format2 = () => {
     if (parsed === null || !loaded) return;
-    api("format", { workspaceRoot: parsed.workspaceRoot, path: parsed.path, content }).then((payload) => {
+    const revision = revisionRef.current;
+    const request = requestRef.current;
+    const sequence = ++formatRef.current;
+    const address = tab.contentId;
+    api("format", { workspaceRoot: parsed.workspaceRoot, path: parsed.path, content: contentRef.current }).then((payload) => {
+      if (sequence !== formatRef.current || request !== requestRef.current || address !== addressRef.current) return;
+      if (revision !== revisionRef.current) {
+        pushToast(translate("edit.formatStale"));
+        return;
+      }
       setContent(payload.content);
       pushToast(translate("edit.formatted"));
     }).catch((formatError) => {
+      if (sequence !== formatRef.current || request !== requestRef.current || address !== addressRef.current) return;
       pushToast(formatError.message, "error");
     });
   };
@@ -1158,10 +1235,14 @@ function EditorTab(props) {
   const pasteFromClipboard = () => {
     const el = inputRef.current;
     if (el === null) return;
+    const request = requestRef.current;
+    const address = tab.contentId;
     void navigator.clipboard.readText().then((text) => {
+      if (request !== requestRef.current || address !== addressRef.current) return;
       const start = el.selectionStart ?? el.value.length;
       const end = el.selectionEnd ?? start;
-      setContent(content.slice(0, start) + text + content.slice(end));
+      const current = contentRef.current;
+      setContent(current.slice(0, start) + text + current.slice(end));
       setSelectionAfterCommit(el, start + text.length, start + text.length);
     }).catch(() => {
       pushToast(translate("edit.pasteFailed"), "error");
@@ -1196,7 +1277,7 @@ function EditorTab(props) {
         editorButton(translate("edit.reload"), () => {
           if (dirty) setConfirmingReload(true);
           else load();
-        }, (0, import_react.createElement)(import_dsh_client_ui_primitives.IconRefreshOutlineRegular, { size: 14 })),
+        }, (0, import_react.createElement)(import_dsh_client_ui_primitives.IconRefreshOutlineRegular, { size: 14 }), saving),
         editorButton(translate("edit.format"), format2, (0, import_react.createElement)(import_dsh_client_ui_primitives.IconEditOutlineRegular, { size: 14 }), !loaded),
         editorButton(translate("edit.revert"), () => setContent(original), (0, import_react.createElement)(import_dsh_client_ui_primitives.IconCloseOutlineRegular, { size: 14 }), !loaded || !dirty),
         editorButton(translate("edit.save"), save, (0, import_react.createElement)(import_dsh_client_ui_primitives.IconCheckOutlineRegular, { size: 14 }), !loaded || !dirty || saving, true)

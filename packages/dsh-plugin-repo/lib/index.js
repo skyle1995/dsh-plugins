@@ -19,6 +19,7 @@ import Schema from "@deepseek-ai/schemastery";
 import { basename } from "node:path";
 import { SessionArchiveService } from "./session-archive.js";
 import { SkillManagerService } from "./skills.js";
+import { readJsonBody } from "./request.js";
 
 /** 本插件默认对接的 Gitea 主机。 */
 export const DEFAULT_GIT_HOST = "https://hub.ifunx.com";
@@ -50,6 +51,7 @@ export class RepoError extends Error {
 		super(message, options);
 		this.name = "RepoError";
 		this.code = code;
+                this.status = options?.status;
 	}
 }
 
@@ -109,7 +111,10 @@ export async function giteaRequest(config, path, { text = false } = {}) {
  */
 export async function buildCatalog(config, request = giteaRequest) {
 	const { owner, repo, branch = "main", catalogDir = DEFAULT_CATALOG_DIR } = config;
-	const listPath = `/repos/${owner}/${repo}/contents/${catalogDir}?ref=${branch}`;
+        const repository = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+        const catalogPath = catalogDir.split("/").map(encodeURIComponent).join("/");
+        const ref = encodeURIComponent(branch);
+        const listPath = `${repository}/contents/${catalogPath}?ref=${ref}`;
 	let listing;
 	try {
 		listing = await request(config, listPath);
@@ -119,17 +124,20 @@ export async function buildCatalog(config, request = giteaRequest) {
 	}
 	if (!Array.isArray(listing)) throw new RepoError("plugin-repo/catalog", `目录响应不是数组：${listPath}`);
 	const entries = [];
-	for (const item of listing.filter((entry) => entry.type === "dir")) {
+        for (const item of listing.filter((entry) => entry !== null && entry.type === "dir" && typeof entry.name === "string")) {
 		const pluginPath = `${catalogDir}/${item.name}`;
+                const apiPath = `${catalogPath}/${encodeURIComponent(item.name)}`;
 		let manifest;
 		try {
-			const raw = await request(config, `/repos/${owner}/${repo}/raw/${pluginPath}/package.json?ref=${branch}`, { text: true }).then((body) => JSON.parse(body));
+                        const raw = await request(config, `${repository}/raw/${apiPath}/package.json?ref=${ref}`, { text: true }).then((body) => JSON.parse(body));
+                        if (raw === null || typeof raw !== "object" || Array.isArray(raw)) throw new RepoError("plugin-repo/catalog", "package.json 必须是对象");
 			manifest = raw;
 		} catch (error) {
 			// 某些 Gitea 部署不开放 raw 端点：回退到 contents 的 base64。
 			try {
-				const file = await request(config, `/repos/${owner}/${repo}/contents/${pluginPath}/package.json?ref=${branch}`);
+                                const file = await request(config, `${repository}/contents/${apiPath}/package.json?ref=${ref}`);
 				manifest = JSON.parse(Buffer.from(file.content ?? "", file.encoding ?? "base64").toString("utf8"));
+                                if (manifest === null || typeof manifest !== "object" || Array.isArray(manifest)) throw new RepoError("plugin-repo/catalog", "package.json 必须是对象");
 			} catch {
 				entries.push({ name: item.name, path: pluginPath, spec: specFor(config, pluginPath), problem: "no-package-json" });
 				continue;
@@ -183,7 +191,7 @@ export function packageNameFromSpec(spec) {
 /** 通过 Gitea API 读取仓库分支当前 head commit（与推送即时同步）。 */
 export async function resolveBranchHead(config, request = giteaRequest) {
 	const { owner, repo, branch = "main" } = config;
-	const payload = await request(config, `/repos/${owner}/${repo}/branches/${branch}`);
+        const payload = await request(config, `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches/${encodeURIComponent(branch)}`);
 	const commit = payload?.commit?.id;
 	if (typeof commit !== "string" || commit === "") throw new RepoError("plugin-repo/branch-head", `无法读取分支 ${branch} 的 head commit`);
 	return commit;
@@ -320,15 +328,15 @@ export class PluginRepoService extends Service {
 			}
 			let body = {};
 			try {
-				const chunks = [];
-				for await (const chunk of req) chunks.push(chunk);
-				body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
-			} catch {
+                                body = await readJsonBody(req, RepoError, "plugin-repo");
+                        } catch (error) {
+                                if (error instanceof RepoError) throw error;
 				payload(400, { ok: false, code: "plugin-repo/invalid-json", message: "请求体不是合法 JSON" });
 				return;
 			}
 			const manager = this.ctx.pluginManager;
-			if (operation === "install") {
+                        switch (operation) {
+                        case "install": {
 				let spec = String(body.spec ?? "").trim();
 				if (spec === "") {
 					payload(400, { ok: false, code: "plugin-repo/invalid-spec", message: "缺少安装 spec" });
@@ -352,7 +360,7 @@ export class PluginRepoService extends Service {
 				payload(200, { ok: true, result });
 				return;
 			}
-			if (operation === "remove") {
+                        case "remove": {
 				const name = String(body.name ?? "").trim();
 				if (name === "") {
 					payload(400, { ok: false, code: "plugin-repo/invalid-name", message: "缺少插件名" });
@@ -362,12 +370,12 @@ export class PluginRepoService extends Service {
 				payload(200, { ok: true, result });
 				return;
 			}
-			if (operation === "cancel") {
+                        case "cancel": {
 				const result = await manager.cancelInstall(String(body.requestId ?? ""));
 				payload(200, { ok: true, result });
 				return;
 			}
-			if (operation === "enable") {
+                        case "enable": {
 				const name = String(body.name ?? "").trim();
 				if (name === "") {
 					payload(400, { ok: false, code: "plugin-repo/invalid-name", message: "缺少插件名" });
@@ -381,9 +389,11 @@ export class PluginRepoService extends Service {
 				payload(200, { ok: true, result });
 				return;
 			}
-			payload(404, { ok: false, code: "plugin-repo/unknown", message: "unknown operation" });
+                        default:
+                                payload(404, { ok: false, code: "plugin-repo/unknown", message: "unknown operation" });
+                        }
 		} catch (error) {
-			payload(400, { ok: false, code: error.code ?? "plugin-repo/failure", message: error.message });
+                        payload(error.code === "plugin-repo/body-too-large" ? 413 : 400, { ok: false, code: error.code ?? "plugin-repo/failure", message: error.message });
 		}
 	}
 

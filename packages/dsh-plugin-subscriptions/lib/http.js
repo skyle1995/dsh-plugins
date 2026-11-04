@@ -15,7 +15,7 @@
  */
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
 import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { getDefaultAutoSelectFamilyAttemptTimeout, setDefaultAutoSelectFamilyAttemptTimeout } from 'node:net';
+import { getDefaultAutoSelectFamilyAttemptTimeout, isIP, setDefaultAutoSelectFamilyAttemptTimeout } from 'node:net';
 import { dirname } from 'node:path';
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths';
 /**
@@ -65,6 +65,8 @@ let agent;
 let configError;
 /** One lazy load of the on-disk config (module-import cheap; file read once). */
 let ready;
+/** 同一代理配置的写队列，避免并发保存丢失密码或让磁盘与内存状态不一致。 */
+let configWrites = Promise.resolve();
 /** Absolute path of the proxy config file. */
 export function proxyFilePath() {
     return dshHomePath('plugins', 'subscriptions', 'proxy.json');
@@ -113,10 +115,9 @@ function withError(error) {
     configError = errorMessage(error);
 }
 /**
- * Parse and validate a proxy URL. Only HTTP(S) proxies are supported because
- * the undici dispatcher speaks CONNECT over HTTP; socks5 is not supported.
- * @param raw - the URL the user configured.
- * @returns the parsed URL (credentials attached by the caller).
+ * 校验 HTTP(S) 代理 URL，拒绝其它协议，错误信息不回显可能含凭据的原始地址。
+ * @param raw 用户配置的地址。
+ * @returns 解析后的 URL。
  */
 export function parseProxyUrl(raw) {
     let url;
@@ -124,64 +125,85 @@ export function parseProxyUrl(raw) {
         url = new URL(raw);
     }
     catch {
-        throw new Error(`proxy URL "${raw}" is not a valid URL`);
+        throw new Error('proxy URL is not a valid URL');
     }
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-        throw new Error(`proxy URL must use the http:// or https:// scheme (got "${raw}")`);
+        throw new Error('proxy URL must use the http:// or https:// scheme');
     }
     if (url.hostname === '')
         throw new Error('proxy URL must include a host');
     return url;
 }
 /**
- * Whether a request hostname bypasses the proxy.
- * @param hostname - the request's hostname.
- * @param entries - configured bypass entries: exact host, plain suffix
- *   (`example.com` also matches `api.example.com`), or `*.example.com`.
+ * 判断主机是否绕过插件代理，支持 DNS 后缀、通配符及 IPv4/IPv6 精确地址。
+ * @param hostname 请求主机；entries 绕过规则，可包含 URL、IPv6 方括号与端口。
+ * @returns 是否匹配；IP 不参与 DNS 后缀匹配。
  */
 export function matchesBypass(hostname, entries) {
-    const host = hostname.toLowerCase();
+    const host = normalizeHostname(hostname);
     for (const raw of entries) {
         let entry = raw.trim().toLowerCase();
         if (entry === '')
             continue;
-        if (entry.includes('://')) {
+        if (entry.includes('://') || entry.includes(':') && isIP(entry) === 0) {
             try {
-                entry = new URL(entry).hostname;
+                entry = new URL(entry.includes('://') ? entry : `http://${entry}`).hostname;
             }
             catch {
                 continue;
             }
         }
-        entry = entry.replace(/:\d+$/, '');
+        entry = normalizeHostname(entry);
         if (entry === '' || entry === '*')
+            continue;
+        if (host === entry)
+            return true;
+        if (isIP(host) !== 0 || isIP(entry) !== 0)
             continue;
         if (entry.startsWith('*.')) {
             if (host.endsWith(entry.slice(1)))
                 return true;
         }
-        else if (host === entry || host.endsWith(`.${entry}`)) {
+        else if (host.endsWith(`.${entry}`)) {
             return true;
         }
     }
     return false;
 }
-/** Validate and normalize one config (throws with a user-facing message). */
+/** 规范化 DNS/IP 主机名；参数为主机名，返回去掉 IPv6 方括号和 DNS 尾点的小写名称。 */
+function normalizeHostname(hostname) {
+    let host = hostname.toLowerCase();
+    if (host.startsWith('[') && host.endsWith(']'))
+        return host.slice(1, -1);
+    while (host.endsWith('.'))
+        host = host.slice(0, -1);
+    return host;
+}
+/** 校验并净化配置；参数为输入，返回将 URL 凭据拆入受保护字段的配置，非法输入抛错。 */
 function normalizeConfig(input) {
     const url = input.url.trim();
     if (input.enabled && url === '') {
         throw new Error('a proxy URL is required when the proxy is enabled');
     }
-    if (url !== '')
-        parseProxyUrl(url);
+    const parsed = url !== '' ? parseProxyUrl(url) : undefined;
+    const embeddedUsername = parsed?.username ? decodeURIComponent(parsed.username) : undefined;
+    const embeddedPassword = parsed?.password ? decodeURIComponent(parsed.password) : undefined;
+    const username = input.username ?? embeddedUsername;
+    const password = input.password === undefined ? embeddedPassword : input.password;
+    let cleanUrl = url;
+    if (parsed !== undefined && (parsed.username !== '' || parsed.password !== '')) {
+        parsed.username = '';
+        parsed.password = '';
+        cleanUrl = parsed.toString();
+    }
     const bypass = Array.from(new Set((input.bypass ?? [])
         .map(entry => entry.trim())
         .filter(entry => entry !== '')));
     return {
         enabled: input.enabled,
-        url,
-        ...input.username !== undefined && input.username !== '' ? { username: input.username.trim() } : {},
-        ...input.password !== undefined && input.password !== '' && input.password !== null ? { password: input.password } : {},
+        url: cleanUrl,
+        ...username !== undefined && username !== '' ? { username: username.trim() } : {},
+        ...password !== undefined && password !== '' && password !== null ? { password } : {},
         bypass,
     };
 }
@@ -279,11 +301,13 @@ async function persistConfig(cfg, path) {
     }
 }
 /**
- * Close the live agent and drop the cached config. Test-only: lets a suite
- *  unwind the agent's keep-alive sockets before the process exits.
+ * 等待配置写入完成后关闭代理并清除缓存，仅用于测试清理。
+ * @returns 清理完成的 Promise。
  * @internal Exported for tests only; not part of the plugin's public surface.
  */
 export async function resetProxyForTests() {
+    await configWrites;
+    await ready?.catch(() => undefined);
     const previous = agent;
     agent = undefined;
     current = { ...DISABLED, bypass: [] };
@@ -309,15 +333,21 @@ export async function proxyGetConfig() {
     };
 }
 /**
- * Validate, persist, and apply one proxy config. A `password` of `undefined`
- * keeps the stored value; `null` or `''` clears it.
- * @param input - the client's payload.
- * @returns the resulting view (secrets omitted).
+ * 串行校验、保存并应用代理配置，未提供密码时继承现值，null 或空串清除。
+ * @param input 客户端输入。
+ * @returns 脱敏配置视图，不返回密码或含凭据的 URL。
  */
 export async function proxySetConfig(input) {
+    const next = configWrites.then(() => saveProxyConfig(input));
+    configWrites = next.then(() => undefined, () => undefined);
+    return next;
+}
+/** 校验、落盘并应用一份代理配置；参数为客户端输入，返回脱敏视图，仅在写队列中调用。 */
+async function saveProxyConfig(input) {
     await ensureReady();
+    const embeddedPassword = input.url.trim() === '' ? '' : parseProxyUrl(input.url.trim()).password;
     const password = input.password === undefined
-        ? current.password
+        ? embeddedPassword !== '' ? decodeURIComponent(embeddedPassword) : current.password
         : input.password === null || input.password === ''
             ? undefined
             : input.password;
@@ -363,13 +393,9 @@ export async function proxiedFetch(input, init = {}) {
     return dispatchFetch(input, proxied);
 }
 /**
- * Probe a destination through a proxy, answering with the HTTP status or a
- * flattened transport error. The probe uses `draft` when given (the dialog's
- * current inputs, without saving) and the stored config otherwise.
- * @param target - `http(s)` URL to fetch; defaults to {@link DEFAULT_PROXY_TEST_URL}.
- * @param draft - unsaved proxy inputs to test; absent means the stored config.
- * @returns the result; any HTTP status counts as a successful connection,
- *   only a transport failure is an error.
+ * 探测 HTTP(S) 目标，收到状态码后取消响应体并释放临时代理，不下载无关内容。
+ * @param target 目标地址，默认 DEFAULT_PROXY_TEST_URL；draft 可选未保存代理输入。
+ * @returns 状态、延迟和路由信息；任何 HTTP 状态均表示连接成功，传输失败返回错误。
  */
 export async function proxyTestConnection(target = DEFAULT_PROXY_TEST_URL, draft) {
     let parsed;
@@ -415,8 +441,8 @@ export async function proxyTestConnection(target = DEFAULT_PROXY_TEST_URL, draft
         const response = probeAgent !== undefined
             ? await dispatchFetch(parsed.toString(), init)
             : await fetch(parsed.toString(), init);
-        // Drain so the connection can be released; the body is irrelevant.
-        void response.arrayBuffer().catch(() => undefined);
+        // 探测只需状态码，取消响应体，避免下载大文件或等待长连接才关闭临时代理。
+        await response.body?.cancel().catch(() => undefined);
         return { ok: true, viaProxy, status: response.status, latencyMs: Date.now() - started };
     }
     catch (error) {

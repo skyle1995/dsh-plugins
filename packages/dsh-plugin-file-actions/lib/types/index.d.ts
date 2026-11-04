@@ -2,6 +2,7 @@
  * dsh-plugin-file-actions 类型声明（无构建步骤，供编辑器/tsc 消费）。
  */
 import type { Service } from "@deepseek-ai/cordis";
+export { crc32, buildZipBuffer, collectZipEntries, createZipBuffer, writeZipFile } from "./file-actions.js";
 
 /** 插件配置契约。 */
 export interface FileActionsConfig {
@@ -9,11 +10,19 @@ export interface FileActionsConfig {
 	maxZipFileBytes: number;
 	/** 文本编辑（读取/保存）的文件大小上限（字节），默认 1048576。 */
 	maxEditBytes: number;
+        /** 压缩总输入大小上限，默认 1GB；参数为字节数。 */
+        maxZipTotalBytes?: number;
+        /** 压缩条目数上限，默认 10000，含目录。 */
+        maxZipEntries?: number;
+        /** 批量路径数上限，默认 1000。 */
+        maxBatchPaths?: number;
 }
 
 /** 带错误码的操作失败。 */
 export declare class FileActionsError extends Error {
 	code: string;
+        /** 批量操作失败时已完成源及当前失败目标。 */
+        details?: { completed: string[]; failed: string; target: string };
 	constructor(code: string, message: string, options?: ErrorOptions);
 }
 
@@ -31,6 +40,8 @@ export interface FileActionsRequest {
 	/** 压缩包文件名（可选；自动剥离目录部分并补 .zip 后缀）；
 	 *  重命名时为新的单段名字（不含路径分隔符）。 */
 	name?: string;
+        /** 读取返回的版本标识；保存时校验外部修改，缺省保留旧服务调用兼容性。 */
+        version?: string;
 }
 
 /**
@@ -48,8 +59,8 @@ export declare class FileActionsService extends Service {
 	renameEntry(request: FileActionsRequest): Promise<{ name: string; from?: string; unchanged?: boolean }>;
 	deleteEntries(request: FileActionsRequest): Promise<{ count: number; missing: number }>;
 	compressEntries(request: FileActionsRequest): Promise<{ name: string; count: number; skipped: number }>;
-	readTextEntry(request: FileActionsRequest): Promise<{ content: string; bytes: number; truncated: boolean }>;
-	saveTextEntry(request: FileActionsRequest & { content?: string }): Promise<{ bytes: number }>;
+        readTextEntry(request: FileActionsRequest): Promise<{ content: string; bytes: number; truncated: boolean; version: string }>;
+        saveTextEntry(request: FileActionsRequest & { content?: string }): Promise<{ bytes: number; version: string }>;
 	formatTextEntry(request: FileActionsRequest & { content?: string }): Promise<{ content: string; parser: string }>;
 	handleRequest(req: any, res: any, operation: "copy" | "move" | "rename" | "delete" | "compress" | "read" | "save" | "format"): Promise<void>;
 }
@@ -58,7 +69,10 @@ export default FileActionsService;
 export const FILE_ACTIONS_API: string;
 export const DEFAULT_MAX_ZIP_FILE_BYTES: number;
 export const DEFAULT_MAX_EDIT_BYTES: number;
+export const DEFAULT_MAX_ZIP_TOTAL_BYTES: number;
+export const DEFAULT_MAX_ZIP_ENTRIES: number;
+export const DEFAULT_MAX_BATCH_PATHS: number;
 export declare function zipNameFor(sourceNames: string[]): string;
-export declare function sanitizeZipName(name: unknown): string;
-export declare function sanitizeEntryName(name: unknown): string;
+export declare function sanitizeZipName(name: unknown, platform?: string): string;
+export declare function sanitizeEntryName(name: unknown, platform?: string): string;
 export declare function parserForPath(path: unknown): string | null;

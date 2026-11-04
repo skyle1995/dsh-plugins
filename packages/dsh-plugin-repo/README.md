@@ -84,6 +84,16 @@ const { spec, result } = await ctx.pluginRepo.install("dsh-plugin-repo", { enabl
 
 ## 约定与限制
 
+- `0.3.4` 起 Gitea API 路径和分支参数编码，目录 `404` 正确返回空数组；
+  仓库、技能和会话管理 JSON 请求限制为 1MB，超限返回 `413`。
+- 技能编辑必须引用当前技能列表中的实际文件，新建或改名不覆盖其它技能；
+  编辑保留 frontmatter 中的模型/用户开关及额外字段，保留原 CRLF 换行风格。
+  保存、模型开关、单文件导入和规则保存使用同目录临时文件替换，保留模式权限；
+  压缩包中的目录技能导入仍按既有覆盖语义处理，不承诺整个导入具有事务性。
+- Windows 技能名称额外拒绝设备保留名，不将其限制强加给 macOS/Linux；
+  会话清理不会把带分隔符的原始 id 拼入标题缓存路径。
+- 新增离线回归在仓库根运行 `node --test demo-test/other-plugins.test.mjs`，
+  本轮在 Windows 执行，macOS/Linux 真机仍需验证。
 - 仓库公开时无需 token；私有仓库需在配置中提供带读取权限的 token。
 - 目录读取使用 Gitea API（`contents` 与 `raw` 端点，raw 失败时回退 base64）。
 - 分支名含 `#` 或 `&` 的仓库无法生成正确 spec（pnpm fragment 语法限制）。

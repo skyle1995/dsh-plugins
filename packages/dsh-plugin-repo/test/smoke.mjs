@@ -7,10 +7,10 @@
 import { Context, Service } from "@deepseek-ai/cordis";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const require = createRequire(import.meta.url);
-const { default: PluginRepoService } = await import(resolve(dirname(fileURLToPath(import.meta.url)), "../lib/index.js"));
+const { default: PluginRepoService } = await import(pathToFileURL(resolve(dirname(fileURLToPath(import.meta.url)), "../lib/index.js")).href);
 
 /** 记录 installBundle 调用并返回固定结果的桩。 */
 class StubManager extends Service {
@@ -87,4 +87,4 @@ try {
 if (!rejected) throw new Error("未知目标未按预期报错");
 
 console.log("SMOKE OK");
-await root.dispose?.();
+await root.fiber.dispose();

@@ -86,6 +86,10 @@ __DSH_SOUND_ALERT__.preview('done') // 手动试听
   按**宿主 loader 条目**扫描 `dsh.client` 声明后下发，所以本包必须同时提供宿主半区
   （`lib/index.js`，服务键 `soundAlert`）与浏览器半区（`lib/client.js`）。
 - **无构建依赖**：宿主半区是手写 ESM；浏览器半区预构建并提交（仓库约定）。
+- **`0.2.1` 生命周期优化**：自定义音频每次更新产生新快照，确保 React 立即更新
+  文件名与「恢复默认」按钮；同场景替换/重置串行落盘，忽略过期恢复结果。
+  IndexedDB 成功、失败或交易中止后关闭连接；卸载时停止播放并释放音频对象、
+  Blob URL、自动播放手势监听及面板计时器。取消文件选择时移除隐藏 input。
 
 ## 开发
 
@@ -98,3 +102,8 @@ node test/smoke.mjs              # 离线冒烟测试（node:vm 模拟浏览器�
 冒烟测试覆盖：导出面、设置分区注册契约与面板渲染、状态跃迁（基线/待操作/新交互/结束/幂等）、
 子代理过滤、偏好（总开关/音量/localStorage/试听）、场景开关、自定义音频（类型/大小校验 → 替换 →
 播放自定义源 → 恢复默认）、自动播放拦截与手势解锁。
+
+新增资源回归：仓库根运行 `node --test demo-test/sound-alert.test.mjs`。
+真实 React/IndexedDB 测试页：`node demo-test/sound-alert-browser.mjs`，按打印的
+本地地址打开，验证替换、恢复默认，再卸载并删除测试数据库；结束按 `Ctrl+C`。
+本轮已在 Windows 浏览器验证，macOS Safari 真机仍需确认自动播放策略与文件选择行为。

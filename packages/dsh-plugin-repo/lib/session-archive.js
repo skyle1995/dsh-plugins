@@ -24,6 +24,7 @@ import { existsSync } from "node:fs";
 import { readdir, readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { readJsonBody } from "./request.js";
 
 /** 浏览器半区使用的 HTTP 路由前缀。 */
 export const SESSION_ARCHIVE_API = "/api/dsh-session-archive";
@@ -245,7 +246,10 @@ export class SessionArchiveService extends Service {
 			throw new SessionArchiveError("session-archive/not-found", "会话文件不存在或已被删除。");
 		}
 		for (const dir of dirs) await rm(dir, { recursive: true, force: true });
-		await rm(join(this.projcacheDir, `${sessionId}.json`), { force: true });
+                // 缓存使用原始 id 作为单段文件名，不让特殊 id 越过缓存根目录。
+                if (!sessionId.includes("/") && !sessionId.includes("\\") && !sessionId.includes("\0")) {
+                        await rm(join(this.projcacheDir, `${sessionId}.json`), { force: true });
+                }
 		const registry = this.ctx.workspaceRegistry;
 		await registry.unarchiveSession(sessionId);
 		for (const entity of registry.list()) {
@@ -275,10 +279,9 @@ export class SessionArchiveService extends Service {
 			}
 			let body = {};
 			try {
-				const chunks = [];
-				for await (const chunk of req) chunks.push(chunk);
-				body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
-			} catch {
+                                body = await readJsonBody(req, SessionArchiveError, "session-archive");
+                        } catch (error) {
+                                if (error instanceof SessionArchiveError) throw error;
 				json(400, { ok: false, code: "session-archive/invalid-json", message: "请求体不是合法 JSON" });
 				return;
 			}
@@ -305,7 +308,7 @@ export class SessionArchiveService extends Service {
 			}
 			json(404, { ok: false, code: "session-archive/unknown", message: "unknown operation" });
 		} catch (error) {
-			json(400, { ok: false, code: error.code ?? "session-archive/failure", message: error.message });
+                        json(error.code === "session-archive/body-too-large" ? 413 : 400, { ok: false, code: error.code ?? "session-archive/failure", message: error.message });
 		}
 	}
 }

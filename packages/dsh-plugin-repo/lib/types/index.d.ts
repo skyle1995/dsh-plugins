@@ -55,6 +55,8 @@ export interface CatalogEntry {
 
 export class RepoError extends Error {
 	code: string;
+        /** Gitea HTTP 状态；参数来自错误构造选项，非 HTTP 错误可缺省。 */
+        status?: number;
 	status?: number;
 }
 

@@ -31,7 +31,8 @@ export class SkillError extends Error {
 
 export function resolveDshHome(): string;
 export function resolveSkillsDir(config: SkillManagerConfig): string;
-export function sanitizeSkillName(name: string): string;
+/** 净化技能名；参数为名称与可选宿主平台，返回名称或空串。 */
+export function sanitizeSkillName(name: string, platform?: string): string;
 export function isYamlTrue(value: unknown): boolean;
 export function parseFrontmatter(content: string): { fields: Record<string, string>; body: string; hasFrontmatter: boolean };
 export function buildFrontmatter(fields: Record<string, unknown>): string;

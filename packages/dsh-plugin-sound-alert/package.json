@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-sound-alert",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "DSH 手动交互提示音插件：Agent 停下来问你（选择方向 / 确认 / 审批）以及任务结束或停止时播放提示音；设置面板与「插件」页双入口，可按场景启用/关闭、替换为本地音频、恢复默认并试听",
   "type": "module",
   "main": "lib/index.js",
