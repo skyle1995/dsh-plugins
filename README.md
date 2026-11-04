@@ -44,6 +44,53 @@ monorepo 形态下有几件事裸 pnpm 做不了：
 `dsh-plugin-repo` 把这些能力收拢为服务（`ctx.pluginRepo`）和设置里的仓库分区页，
 后续插件与 agent 工具都建立在这个服务上。
 
+## 技能目录与商店
+
+技能使用 `skills/<id>/SKILL.md` 布局，脚本、参考资料和许可证等原包文件保留
+在同一子目录中。`id` 使用小写字母、数字及中划线，入口 frontmatter 至少包含：
+
+```yaml
+---
+name: my-skill
+description: 说明技能的功能与适用场景。
+---
+```
+
+`dsh-plugin-repo` 的「技能能力 → 技能商店」直接扫描这些目录并读取描述，
+无需手工 JSON 索引。新增目录推送后刷新商店即可发现；可选填写 `license`、
+`metadata.version/category`，不填版本也能通过 Git 目录版本识别更新。
+
+直接拷贝的 ZIP 可在仓库根运行：
+
+```bash
+node scripts/prepare-skills.mjs
+# 只准备指定技能
+node scripts/prepare-skills.mjs my-skill
+```
+
+ZIP 文件名为 `<id>.zip`，包内须以 `<id>/` 为顶层目录。脚本验证路径和内容后
+解包，已有目录不覆盖，macOS 附加元数据被过滤。脚本不自动删除输入 ZIP；
+确认解包内容后可移除原包。仓库已移除原始三个 ZIP，只保留技能目录，
+原有三个技能描述采用中文在前、英文在后的双语形式，保留原始英文描述及正文；
+商店直接显示双语描述，支持按中文或英文关键词搜索。
+
+当前新增五项仓库原创开发技能，均为中文说明、`1.0.0`、MIT 授权，
+每个目录附带独立许可证，可随商店安装：
+
+| 技能目录 | 适用场景 |
+|---|---|
+| `dsh-plugin-development` | Node.js 插件、Cordis 服务、宿主 API、配置与发布布局 |
+| `dsh-client-development` | React 设置面板、国际化、异步交互与预构建 bundle |
+| `cross-platform-file-ops` | Windows/macOS 路径、批量文件操作、原子保存与安全归档 |
+| `dsh-plugin-testing` | node:test 回归、服务替身、并发和卸载测试 |
+| `dsh-mcp-integration` | MCP 传输与预设、状态持久化、运行时投影和资源清理 |
+
+技能列表仍由目录自动发现，上表仅为说明，不参与商店读取。
+
+新增第三方技能前请核实许可证及来源；商店安装不会执行其中脚本，但技能被调用时
+仍需遵循宿主的权限与执行确认机制。详细配置与更新备份见
+[`dsh-plugin-repo` 文档](packages/dsh-plugin-repo/README.md)。
+
 ## 编写新插件的规范
 
 在 `packages/<插件名>/` 下新建包，满足：

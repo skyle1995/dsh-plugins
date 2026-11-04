@@ -215,6 +215,8 @@ export class PluginRepoService extends Service {
 		requestTimeoutMs: Schema.number().default(DEFAULT_REQUEST_TIMEOUT_MS),
 		/** 技能能力子服务的技能根目录；留空自动 $DSH_HOME/skills */
 		skillsDir: Schema.string().default(""),
+                /** 同仓库技能商店根目录；自动扫描子目录并读取 SKILL.md 描述。 */
+                skillsCatalogDir: Schema.string().default("skills"),
 		/** 会话归档子服务的会话根目录；留空自动 $DSH_HOME/sessions */
 		sessionsDir: Schema.string().default(""),
 	});
@@ -226,7 +228,11 @@ export class PluginRepoService extends Service {
 		// 基础能力子服务：技能能力（含规则提示词）与会话归档。作为子插件挂载，
 		// 各自持有独立的依赖注入面（会话归档需要 workspaceRegistry，缺失时仅
 		// 该子服务保持未激活，不影响主服务与技能能力）。
-		ctx.plugin(SkillManagerService, { skillsDir: config.skillsDir ?? "" });
+                ctx.plugin(SkillManagerService, { skillsDir: config.skillsDir ?? "", storeConfig: {
+                        gitHost: config.gitHost, owner: config.owner, repo: config.repo, branch: config.branch,
+                        token: config.token, requestTimeoutMs: config.requestTimeoutMs,
+                        skillsCatalogDir: config.skillsCatalogDir ?? "skills",
+                } });
 		ctx.plugin(SessionArchiveService, { sessionsDir: config.sessionsDir ?? "" });
 		// Web profile 中注册浏览器半区使用的目录路由。webServer 属于 Web 组合的
 		// 作用域，不能从本行的注入面直接读取（ctx.get 拿不到），因此用

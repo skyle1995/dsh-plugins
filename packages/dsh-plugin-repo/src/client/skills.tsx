@@ -7,13 +7,36 @@
  * 技能目录，保存后无需重启即可生效。
  */
 import { createElement as h, Fragment, useEffect, useRef, useState } from "react";
+import { SkillStoreSection } from "./skill-store";
 
 const NS = "dsh-plugin-skills";
 const API = "/api/dsh-plugin-skills";
 
 const zh = {
 	title: "技能能力",
-	description: "管理本地 skills 技能：新建、编辑、删除、导入，以及是否允许模型调用。",
+        description: "管理本地技能，或从仓库技能商店查看描述并安装、更新。",
+        installedTab: "已安装",
+        storeTab: "技能商店",
+        skillViews: "技能视图",
+        storeDescription: "自动读取仓库 skills 子目录的 SKILL.md 名称和描述，无需维护 JSON 索引。安装不执行包内脚本；更新保留旧技能备份。",
+        storeSearch: "搜索技能名称或描述",
+        storeLoading: "正在读取技能描述…",
+        storeLoadError: "技能商店加载失败：{message}",
+        storeEmpty: "仓库中暂未发现有效技能目录。",
+        storeNoMatch: "没有匹配的技能。",
+        storeWarnings: "以下目录缺少有效 SKILL.md 或描述，已跳过：{names}",
+        storeInstall: "安装",
+        storeUpdate: "更新 / 替换",
+        storeInstalling: "安装中…",
+        storeInstalled: "技能「{name}」已安装。",
+        storeInstalledBadge: "已安装",
+        storeModified: "本地已修改",
+        storeLocal: "本地同名技能",
+        storeVersion: "声明版本 / Git 目录版本",
+        storeLicense: "许可证声明",
+        storeLicenseUnknown: "未声明，请核实授权",
+        storeBackup: "旧技能备份：{path}",
+        storeReplaceConfirm: "确定更新 / 替换技能「{name}」吗？将替换现有内容（包括本地修改），旧技能会完整保留在备份目录中。",
 	refresh: "刷新",
 	create: "新建技能",
 	import: "导入",
@@ -61,7 +84,29 @@ const zh = {
 
 const en = {
 	title: "Skills",
-	description: "Manage local skills: create, edit, delete, import, and control model invocation.",
+        description: "Manage local skills or browse, install and update skills from the repository store.",
+        installedTab: "Installed",
+        storeTab: "Skill Store",
+        skillViews: "Skill views",
+        storeDescription: "Names and descriptions come directly from SKILL.md in repository skill folders; no JSON index is needed. Installation runs no scripts and updates retain a backup.",
+        storeSearch: "Search skill names or descriptions",
+        storeLoading: "Loading skill descriptions...",
+        storeLoadError: "Failed to load the skill store: {message}",
+        storeEmpty: "No valid skill folders found in the repository.",
+        storeNoMatch: "No matching skills.",
+        storeWarnings: "Skipped folders with missing or invalid SKILL.md metadata: {names}",
+        storeInstall: "Install",
+        storeUpdate: "Update / Replace",
+        storeInstalling: "Installing...",
+        storeInstalled: "Skill \"{name}\" installed.",
+        storeInstalledBadge: "Installed",
+        storeModified: "Locally modified",
+        storeLocal: "Local skill with the same name",
+        storeVersion: "Declared version / Git tree revision",
+        storeLicense: "Declared license",
+        storeLicenseUnknown: "Not declared; verify permission",
+        storeBackup: "Previous skill backup: {path}",
+        storeReplaceConfirm: "Update / replace \"{name}\"? Existing content, including local changes, will be replaced and retained in a complete backup.",
 	refresh: "Refresh",
 	create: "New skill",
 	import: "Import",
@@ -144,6 +189,11 @@ const css = `
 .dsk-notice{margin:0;border-radius:8px;padding:10px 14px;font-size:13px;line-height:1.6}
 .dsk-notice-err{background:color-mix(in srgb,var(--dsw-alias-state-error-primary,#d33) 12%,transparent);color:var(--dsw-alias-state-error-primary,#d33)}
 .dsk-notice-ok{background:color-mix(in srgb,var(--dsw-alias-state-success,#18864b) 12%,transparent);color:var(--dsw-alias-state-success,#18864b)}
+.dsk-tabs,.dsk-store-toolbar{display:flex;gap:8px;align-items:center}
+.dsk-store{display:flex;flex-direction:column;gap:12px}
+.dsk-store-toolbar .dsk-input{flex:1;min-width:0}
+.dsk-store-description{display:block;-webkit-line-clamp:unset;overflow:visible;white-space:pre-wrap}
+@media(max-width:600px){.dsk-store-row{flex-direction:column}.dsk-store-row .dsk-actions{align-self:flex-end}.dsk-head{flex-wrap:wrap}}
 `;
 
 /** 与宿主路由通信的极简 JSON 客户端。 */
@@ -163,6 +213,7 @@ async function api(path, options) {
 
 /** 设置分区组件：props 由 slot 框架提供 t（按 NS 绑定）。 */
 function SkillsSection({ t }) {
+        const [tab, setTab] = useState("installed");
 	const [skills, setSkills] = useState([]);
 	const [status, setStatus] = useState("loading");
 	const [notice, setNotice] = useState(null);
@@ -301,7 +352,7 @@ function SkillsSection({ t }) {
 			h("div", { className: "dsk-field" },
 				h("span", { className: "dsk-label" }, t("skillBody")),
 				h("textarea", { className: "dsk-input dsk-textarea", value: form.body, onChange: (event) => setForm({ ...form, body: event.target.value }) })),
-			h("div", { className: "dsk-actions" },
+                       h("div", { className: "dsk-actions" },
 				h("button", { className: "dsk-btn dsk-btn-primary", disabled: busy, onClick: () => void submit() }, t("save")),
 				h("button", { className: "dsk-btn", disabled: busy, onClick: () => setEditing(null) }, t("cancel"))));
 	}
@@ -361,15 +412,21 @@ function SkillsSection({ t }) {
 				h("div", null,
 					h("h1", { className: "dsk-title" }, t("title")),
 					h("p", { className: "dsk-subtitle" }, t("description"))),
-				h("div", { className: "dsk-actions" },
+                               h("div", { className: "dsk-actions", style: { display: tab === "installed" ? undefined : "none" } },
 					h("button", { className: "dsk-btn", onClick: () => void refresh() }, t("refresh")),
 					h("button", { className: "dsk-btn", onClick: () => fileRef.current?.click() }, t("import")),
 					h("button", { className: "dsk-btn dsk-btn-primary", onClick: openCreate }, t("create"))),
 				h("input", { ref: fileRef, type: "file", accept: ".md,.zip,.tar.gz,.tgz", style: { display: "none" }, onChange: (event) => void handleImport(event) })),
-			renderNotice(),
-			editing !== null && editing.mode === "view" ? renderDetail() : null,
-			editing !== null && editing.mode !== "view" ? renderForm() : null,
-			body));
+                        h("div", { className: "dsk-tabs", role: "group", "aria-label": t("skillViews") },
+                                h("button", { className: `dsk-btn ${tab === "installed" ? "dsk-btn-primary" : ""}`, "aria-pressed": tab === "installed", disabled: busy, onClick: () => { setTab("installed"); void refresh(); } }, t("installedTab")),
+                                h("button", { className: `dsk-btn ${tab === "store" ? "dsk-btn-primary" : ""}`, "aria-pressed": tab === "store", disabled: busy, onClick: () => setTab("store") }, t("storeTab"))),
+                        tab === "store"
+                                ? h(SkillStoreSection, { t, api, format, onInstalled: () => void refresh() })
+                                : h(Fragment, null,
+                                        renderNotice(),
+                                        editing !== null && editing.mode === "view" ? renderDetail() : null,
+                                        editing !== null && editing.mode !== "view" ? renderForm() : null,
+                                        body)));
 }
 
 /** 设置分区组件：全局规则（提示词）的查看与编辑。 */
@@ -445,5 +502,3 @@ export function register(ctx) {
 		locale: NS,
 	}, PromptSection));
 }
-
-

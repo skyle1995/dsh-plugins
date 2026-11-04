@@ -6,7 +6,7 @@
 | 分区 / 入口 | 能力 |
 |---|---|
 | **插件仓库** | 把 Gitea 上的插件 monorepo 注册为安装源：在线目录、安装、更新、卸载 |
-| **技能能力** | 本地 skills 管理：列表、新建、编辑、删除、导入、模型可见开关 |
+| **技能能力** | 本地 skills 管理，以及技能商店：自动读取描述、搜索、安装、更新 |
 | **规则（提示词）** | 全局 system-prompt persona 查看 / 编辑（热加载生效） |
 | **会话菜单 → 删除会话** | 会话右键菜单底部（归档项之后）永久删除会话：空闲会话立即从 live 存储摘除并从列表消失；正在运行的会话拒绝删除；文件与 workspace 记账一并清理 |
 
@@ -40,6 +40,7 @@ pnpm 安装，而 pnpm 11 支持 `git+https://host/owner/repo.git#<分支>&path:
 | `repo` | `dsh-plugins` | 仓库名 |
 | `branch` | `main` | 用于安装的分支 |
 | `catalogDir` | `packages` | monorepo 内插件目录 |
+| `skillsCatalogDir` | `skills` | 仓库技能根目录，自动扫描子目录并读取 `SKILL.md` |
 | `token` | `""`（secret） | Gitea Access Token；公开仓库可留空 |
 | `requestTimeoutMs` | `15000` | 单次 API 请求超时 |
 | `skillsDir` | `""`（自动） | 技能能力子服务的技能根目录；留空用 `$DSH_HOME/skills` |
@@ -83,6 +84,23 @@ const { spec, result } = await ctx.pluginRepo.install("dsh-plugin-repo", { enabl
 ```
 
 ## 约定与限制
+
+- `0.4.0` 起「技能能力」包含「已安装 / 技能商店」两个视图。商店沿用
+  `gitHost/owner/repo/branch/token`，描述直接来自 `skillsCatalogDir/<id>/SKILL.md`
+  的 frontmatter，不需要维护 `catalog.json`。新增目录推送到配置的分支后，
+  在商店刷新即可发现；原始 ZIP 和其他普通文件不参与列表。
+- 技能入口必须声明与目录一致的 `name` 和非空 `description`（最多 4000 字符）。
+  支持普通、单/双引号以及 `>`、`|` 多行字段；不是完整 YAML 解析器。
+  可选 `license`、`metadata.version/category`，未声明版本时使用 Git 目录树
+  id 前 8 位。商店完整显示原描述，不自动翻译或改写第三方技能。
+- 安装固定 Git revision 并校验文件 blob，不执行包内脚本；单文件最多 8MB、
+  总内容最多 64MB、树条目最多 1024，拒绝越界路径、符号链接、子模块和
+  Windows/macOS 文件名冲突。未声明许可证时显示提示，安装前应核实授权。
+- 同名替换必须确认，旧目录和平铺 `<id>.md` 完整备份到安装目录下的
+  `.dsh-skill-backups/`。安装器生成 `.dsh-skill-store.json` 作为本地安装记录，
+  用于识别文件增删修改及上游更新；该记录不是需要手工维护的商店索引。
+  安装、编辑、删除、导入共用写队列；取消或失败时清理暂存并尝试恢复旧技能。
+- 商店回归：在根目录运行 `node --test demo-test/skill-store.test.mjs`。
 
 - `0.3.4` 起 Gitea API 路径和分支参数编码，目录 `404` 正确返回空数组；
   仓库、技能和会话管理 JSON 请求限制为 1MB，超限返回 `413`。

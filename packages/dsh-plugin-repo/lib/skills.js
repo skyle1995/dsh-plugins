@@ -32,6 +32,7 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
 import { promisify } from "node:util";
 import { readJsonBody } from "./request.js";
+import { SkillStore, SkillStoreError } from "./skill-store.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -492,16 +493,30 @@ export function promptPatchPath(home = resolveDshHome()) {
 export class SkillManagerService extends Service {
 	static Config = Schema.object({
 		skillsDir: Schema.string().default(""),
+                storeConfig: Schema.any().default(null),
 	});
 
 	constructor(ctx, config) {
 		super(ctx, "skillManager");
 		this.config = config;
 		this.skillsDir = resolveSkillsDir(config);
+                this.store = config.storeConfig ? new SkillStore(config.storeConfig, this.skillsDir) : null;
+                this.mutation = Promise.resolve();
+                ctx.effect(() => () => this.store?.dispose(), "plugin-skills: skill store");
 		ctx.logger.info(`dsh-plugin-skills 已激活：技能目录 ${this.skillsDir}`);
 		ctx.inject(["webServer"], (webCtx) => {
 			webCtx.effect(() => {
 				const disposers = [
+                                        webCtx.webServer.register({
+                                                kind: "exact",
+                                                path: `${SKILLS_API_PREFIX}/store`,
+                                                handler: (req, res) => this.handleRequest(req, res, "store"),
+                                        }),
+                                        webCtx.webServer.register({
+                                                kind: "exact",
+                                                path: `${SKILLS_API_PREFIX}/store/install`,
+                                                handler: (req, res) => this.handleRequest(req, res, "store-install"),
+                                        }),
 					webCtx.webServer.register({
 						kind: "exact",
 						path: `${SKILLS_API_PREFIX}/skills`,
@@ -568,13 +583,40 @@ export class SkillManagerService extends Service {
 		return file;
 	}
 
-	/** 统一的路由处理器。 */
+        /** 排队写入技能目录；参数为异步操作，返回操作结果，与商店安装共用写队列。 */
+        mutate(operation) {
+                const next = (this.store?.pending ?? this.mutation).catch(() => {}).then(operation);
+                this.mutation = next;
+                if (this.store != null) this.store.pending = next;
+                return next;
+        }
+
+        /** 统一路由处理；参数为请求、响应和操作名，无返回值，输出 JSON 结果。 */
 	async handleRequest(req, res, operation) {
 		const json = (status, value) => {
 			res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
 			res.end(JSON.stringify(value));
 		};
 		try {
+                        switch (operation) {
+                                case "store": {
+                                        if (this.store === null) throw new SkillStoreError("config", "尚未配置技能商店仓库");
+                                        if (!["GET", "HEAD", "POST"].includes(req.method)) {
+                                                json(405, { ok: false, code: "skills/method", message: "method not allowed" });
+                                                return;
+                                        }
+                                        const options = req.method === "POST" ? await readJsonBody(req, SkillError, "skills") : {};
+                                        if (options.refresh !== undefined && typeof options.refresh !== "boolean") throw new SkillStoreError("invalid-request", "刷新参数必须为布尔值");
+                                        json(200, { ok: true, ...await this.store.view(options.refresh === true) });
+                                        return;
+                                }
+                                case "store-install":
+                                        if (req.method !== "POST") { json(405, { ok: false, code: "skills/method", message: "method not allowed" }); return; }
+                                        if (this.store === null) throw new SkillStoreError("config", "尚未配置技能商店仓库");
+                                        json(200, { ok: true, ...await this.store.install(await readJsonBody(req, SkillError, "skills")) });
+                                        return;
+                                default: break;
+                        }
 			if (operation === "skills") {
 				if (req.method !== "GET" && req.method !== "HEAD") {
 					json(405, { ok: false, code: "skills/method", message: "method not allowed" });
@@ -595,7 +637,7 @@ export class SkillManagerService extends Service {
 					filename = String(req.headers["x-file-name"] ?? "");
 				}
 				const data = await SkillManagerService.readBody(req, 20 * 1024 * 1024);
-				const result = await importSkills(this.skillsDir, { filename, data });
+                                const result = await this.mutate(() => importSkills(this.skillsDir, { filename, data }));
 				json(200, { ok: true, ...result });
 				return;
 			}
@@ -633,29 +675,37 @@ export class SkillManagerService extends Service {
 				json(400, { ok: false, code: "skills/invalid-json", message: "请求体不是合法 JSON" });
 				return;
 			}
-			if (operation === "save") {
-				const saved = await saveSkill(this.skillsDir, {
+                        switch (operation) {
+                        case "save": {
+                                const saved = await this.mutate(() => saveSkill(this.skillsDir, {
 					name: body.name,
 					description: body.description,
 					body: body.body,
 					...(body.previous === undefined ? {} : { previous: body.previous }),
-				});
+                                }));
 				json(200, { ok: true, skill: saved });
 				return;
-			}
-			if (operation === "delete") {
-				const removed = await deleteSkill(this.skillsDir, String(body.name ?? ""));
+                        }
+                        case "delete": {
+                                const removed = await this.mutate(() => deleteSkill(this.skillsDir, String(body.name ?? "")));
 				json(200, { ok: true, removed });
 				return;
-			}
-			if (operation === "toggle") {
-				const updated = await setSkillModelEnabled(this.skillsDir, String(body.name ?? ""), body.modelEnabled !== false);
+                        }
+                        case "toggle": {
+                                const updated = await this.mutate(() => setSkillModelEnabled(this.skillsDir, String(body.name ?? ""), body.modelEnabled !== false));
 				json(200, { ok: true, skill: updated });
 				return;
 			}
+                        default: break;
+                        }
 			json(404, { ok: false, code: "skills/unknown", message: "unknown operation" });
 		} catch (error) {
-                        json(error.code === "skills/body-too-large" ? 413 : 400, { ok: false, code: error.code ?? "skills/failure", message: error.message });
+                        const statuses = {
+                                "skills/body-too-large": 413, "skill-store/download-limit": 413,
+                                "skill-store/exists": 409, "skill-store/conflict": 409, "skill-store/rollback": 409, "skill-store/changed": 409,
+                                "skill-store/integrity": 422, "skill-store/http": 502, "skill-store/network": 502,
+                        };
+                        json(statuses[error.code] ?? 400, { ok: false, code: error.code ?? "skills/failure", message: error.message });
 		}
 	}
 }

@@ -2,10 +2,14 @@
  * dsh-plugin-skills 类型声明。
  */
 import type { Context, Service } from "@deepseek-ai/cordis";
+import type { SkillStore, SkillStoreConfig } from "./skill-store.js";
 
+/** 本地技能管理配置；参数指定安装目录及可选商店源，供服务初始化使用。 */
 export interface SkillManagerConfig {
 	/** 技能根目录；留空时自动使用 $DSH_HOME/skills（或 ~/.dsh/skills） */
 	skillsDir: string;
+        /** 商店仓库配置，未配置时仅提供本地管理。 */
+        storeConfig?: SkillStoreConfig | null;
 }
 
 export interface SkillEntry {
@@ -52,6 +56,10 @@ export class SkillManagerService extends Service {
 	constructor(ctx: Context, config: SkillManagerConfig);
 	config: SkillManagerConfig;
 	skillsDir: string;
+        store: SkillStore | null;
+        mutation: Promise<unknown>;
+        /** 参数为技能写入操作，返回其结果，与商店安装共用写队列。 */
+        mutate<T>(operation: () => Promise<T>): Promise<T>;
 }
 
 declare const SkillManager: typeof SkillManagerService;

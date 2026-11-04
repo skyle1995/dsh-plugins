@@ -323,12 +323,154 @@ function register(ctx) {
 }
 
 // src/client/skills.tsx
+var import_react3 = require("react");
+
+// src/client/skill-store.tsx
 var import_react2 = require("react");
+function SkillStoreSection({ t, api: api3, format: format4, onInstalled }) {
+  const [entries, setEntries] = (0, import_react2.useState)([]);
+  const [query, setQuery] = (0, import_react2.useState)("");
+  const [status, setStatus] = (0, import_react2.useState)("loading");
+  const [busy, setBusy] = (0, import_react2.useState)(null);
+  const [notice, setNotice] = (0, import_react2.useState)(null);
+  const [warnings, setWarnings] = (0, import_react2.useState)([]);
+  const active = (0, import_react2.useRef)(true);
+  const generation = (0, import_react2.useRef)(0);
+  const requests = (0, import_react2.useRef)(/* @__PURE__ */ new Set());
+  async function load(refresh) {
+    const token = ++generation.current;
+    const controller = new AbortController();
+    requests.current.add(controller);
+    setStatus("loading");
+    try {
+      const payload = await api3("/store", {
+        ...refresh ? { method: "POST", body: JSON.stringify({ refresh: true }) } : {},
+        signal: controller.signal
+      });
+      if (!active.current || token !== generation.current) return;
+      setEntries(payload.entries ?? []);
+      setWarnings(payload.warnings ?? []);
+      setStatus("ok");
+    } catch (error) {
+      if (!active.current || token !== generation.current || controller.signal.aborted) return;
+      setStatus("error");
+      setNotice({ kind: "error", text: format4(t("storeLoadError"), { message: error.message }) });
+    } finally {
+      requests.current.delete(controller);
+    }
+  }
+  (0, import_react2.useEffect)(() => {
+    active.current = true;
+    void load(false);
+    return () => {
+      active.current = false;
+      generation.current += 1;
+      for (const request of requests.current) request.abort();
+    };
+  }, []);
+  async function install(entry) {
+    if (busy !== null) return;
+    if (entry.installed && !window.confirm(format4(t("storeReplaceConfirm"), { name: entry.id }))) return;
+    const controller = new AbortController();
+    requests.current.add(controller);
+    setBusy(entry.id);
+    setNotice(null);
+    try {
+      const result = await api3("/store/install", {
+        method: "POST",
+        signal: controller.signal,
+        body: JSON.stringify({ id: entry.id, replace: entry.installed, treeSha: entry.treeSha })
+      });
+      if (!active.current) return;
+      const text = format4(t("storeInstalled"), { name: entry.id });
+      setNotice({ kind: "ok", text: result.backup ? `${text} ${format4(t("storeBackup"), { path: result.backup })}` : text });
+      onInstalled?.();
+      await load(false);
+    } catch (error) {
+      if (active.current && !controller.signal.aborted) setNotice({ kind: "error", text: format4(t("actionFailed"), { message: error.message }) });
+    } finally {
+      requests.current.delete(controller);
+      if (active.current) setBusy(null);
+    }
+  }
+  const search = query.trim().toLowerCase();
+  const shown = entries.filter((entry) => `${entry.id} ${entry.description}`.toLowerCase().includes(search));
+  return (0, import_react2.createElement)(
+    "div",
+    { className: "dsk-store" },
+    (0, import_react2.createElement)("p", { className: "dsk-subtitle" }, t("storeDescription")),
+    (0, import_react2.createElement)(
+      "div",
+      { className: "dsk-store-toolbar" },
+      (0, import_react2.createElement)("input", { className: "dsk-input", type: "search", value: query, placeholder: t("storeSearch"), "aria-label": t("storeSearch"), onChange: (event) => setQuery(event.target.value) }),
+      (0, import_react2.createElement)("button", { className: "dsk-btn", disabled: busy !== null || status === "loading", onClick: () => {
+        setNotice(null);
+        void load(true);
+      } }, t("refresh"))
+    ),
+    notice === null ? null : (0, import_react2.createElement)("p", { className: `dsk-notice ${notice.kind === "error" ? "dsk-notice-err" : "dsk-notice-ok"}`, role: "status" }, notice.text),
+    warnings.length === 0 ? null : (0, import_react2.createElement)("p", { className: "dsk-subtitle", role: "status" }, format4(t("storeWarnings"), { names: warnings.map((item) => item.id).join(", ") })),
+    status === "loading" ? (0, import_react2.createElement)("p", { className: "dsk-subtitle", role: "status" }, t("storeLoading")) : null,
+    status !== "loading" && shown.length === 0 ? (0, import_react2.createElement)("p", { className: "dsk-subtitle" }, t(search === "" ? "storeEmpty" : "storeNoMatch")) : null,
+    (0, import_react2.createElement)("div", { className: "dsk-list" }, shown.map((entry) => (0, import_react2.createElement)(
+      "article",
+      { key: entry.id, className: "dsk-row dsk-store-row" },
+      (0, import_react2.createElement)(
+        "div",
+        { className: "dsk-info" },
+        (0, import_react2.createElement)(
+          "div",
+          { className: "dsk-name" },
+          (0, import_react2.createElement)("span", null, entry.id),
+          entry.installed ? (0, import_react2.createElement)("span", { className: "dsk-badge dsk-badge-on" }, t("storeInstalledBadge")) : null,
+          entry.modified ? (0, import_react2.createElement)("span", { className: "dsk-badge dsk-badge-off" }, t("storeModified")) : null,
+          entry.installed && !entry.managed ? (0, import_react2.createElement)("span", { className: "dsk-badge dsk-badge-off" }, t("storeLocal")) : null
+        ),
+        (0, import_react2.createElement)("p", { className: "dsk-desc dsk-store-description" }, entry.description),
+        (0, import_react2.createElement)("p", { className: "dsk-meta" }, `${t("storeVersion")}\uFF1A${entry.version}`),
+        (0, import_react2.createElement)("p", { className: "dsk-meta" }, `${t("storeLicense")}\uFF1A${entry.license ?? t("storeLicenseUnknown")}`)
+      ),
+      (0, import_react2.createElement)(
+        "div",
+        { className: "dsk-actions" },
+        (0, import_react2.createElement)("button", {
+          className: "dsk-btn dsk-btn-primary",
+          disabled: busy !== null || status !== "ok" || entry.managed && !entry.updateAvailable && !entry.modified,
+          onClick: () => void install(entry)
+        }, busy === entry.id ? t("storeInstalling") : t(entry.installed ? "storeUpdate" : "storeInstall"))
+      )
+    )))
+  );
+}
+
+// src/client/skills.tsx
 var NS2 = "dsh-plugin-skills";
 var API2 = "/api/dsh-plugin-skills";
 var zh2 = {
   title: "\u6280\u80FD\u80FD\u529B",
-  description: "\u7BA1\u7406\u672C\u5730 skills \u6280\u80FD\uFF1A\u65B0\u5EFA\u3001\u7F16\u8F91\u3001\u5220\u9664\u3001\u5BFC\u5165\uFF0C\u4EE5\u53CA\u662F\u5426\u5141\u8BB8\u6A21\u578B\u8C03\u7528\u3002",
+  description: "\u7BA1\u7406\u672C\u5730\u6280\u80FD\uFF0C\u6216\u4ECE\u4ED3\u5E93\u6280\u80FD\u5546\u5E97\u67E5\u770B\u63CF\u8FF0\u5E76\u5B89\u88C5\u3001\u66F4\u65B0\u3002",
+  installedTab: "\u5DF2\u5B89\u88C5",
+  storeTab: "\u6280\u80FD\u5546\u5E97",
+  skillViews: "\u6280\u80FD\u89C6\u56FE",
+  storeDescription: "\u81EA\u52A8\u8BFB\u53D6\u4ED3\u5E93 skills \u5B50\u76EE\u5F55\u7684 SKILL.md \u540D\u79F0\u548C\u63CF\u8FF0\uFF0C\u65E0\u9700\u7EF4\u62A4 JSON \u7D22\u5F15\u3002\u5B89\u88C5\u4E0D\u6267\u884C\u5305\u5185\u811A\u672C\uFF1B\u66F4\u65B0\u4FDD\u7559\u65E7\u6280\u80FD\u5907\u4EFD\u3002",
+  storeSearch: "\u641C\u7D22\u6280\u80FD\u540D\u79F0\u6216\u63CF\u8FF0",
+  storeLoading: "\u6B63\u5728\u8BFB\u53D6\u6280\u80FD\u63CF\u8FF0\u2026",
+  storeLoadError: "\u6280\u80FD\u5546\u5E97\u52A0\u8F7D\u5931\u8D25\uFF1A{message}",
+  storeEmpty: "\u4ED3\u5E93\u4E2D\u6682\u672A\u53D1\u73B0\u6709\u6548\u6280\u80FD\u76EE\u5F55\u3002",
+  storeNoMatch: "\u6CA1\u6709\u5339\u914D\u7684\u6280\u80FD\u3002",
+  storeWarnings: "\u4EE5\u4E0B\u76EE\u5F55\u7F3A\u5C11\u6709\u6548 SKILL.md \u6216\u63CF\u8FF0\uFF0C\u5DF2\u8DF3\u8FC7\uFF1A{names}",
+  storeInstall: "\u5B89\u88C5",
+  storeUpdate: "\u66F4\u65B0 / \u66FF\u6362",
+  storeInstalling: "\u5B89\u88C5\u4E2D\u2026",
+  storeInstalled: "\u6280\u80FD\u300C{name}\u300D\u5DF2\u5B89\u88C5\u3002",
+  storeInstalledBadge: "\u5DF2\u5B89\u88C5",
+  storeModified: "\u672C\u5730\u5DF2\u4FEE\u6539",
+  storeLocal: "\u672C\u5730\u540C\u540D\u6280\u80FD",
+  storeVersion: "\u58F0\u660E\u7248\u672C / Git \u76EE\u5F55\u7248\u672C",
+  storeLicense: "\u8BB8\u53EF\u8BC1\u58F0\u660E",
+  storeLicenseUnknown: "\u672A\u58F0\u660E\uFF0C\u8BF7\u6838\u5B9E\u6388\u6743",
+  storeBackup: "\u65E7\u6280\u80FD\u5907\u4EFD\uFF1A{path}",
+  storeReplaceConfirm: "\u786E\u5B9A\u66F4\u65B0 / \u66FF\u6362\u6280\u80FD\u300C{name}\u300D\u5417\uFF1F\u5C06\u66FF\u6362\u73B0\u6709\u5185\u5BB9\uFF08\u5305\u62EC\u672C\u5730\u4FEE\u6539\uFF09\uFF0C\u65E7\u6280\u80FD\u4F1A\u5B8C\u6574\u4FDD\u7559\u5728\u5907\u4EFD\u76EE\u5F55\u4E2D\u3002",
   refresh: "\u5237\u65B0",
   create: "\u65B0\u5EFA\u6280\u80FD",
   import: "\u5BFC\u5165",
@@ -375,7 +517,29 @@ var zh2 = {
 };
 var en2 = {
   title: "Skills",
-  description: "Manage local skills: create, edit, delete, import, and control model invocation.",
+  description: "Manage local skills or browse, install and update skills from the repository store.",
+  installedTab: "Installed",
+  storeTab: "Skill Store",
+  skillViews: "Skill views",
+  storeDescription: "Names and descriptions come directly from SKILL.md in repository skill folders; no JSON index is needed. Installation runs no scripts and updates retain a backup.",
+  storeSearch: "Search skill names or descriptions",
+  storeLoading: "Loading skill descriptions...",
+  storeLoadError: "Failed to load the skill store: {message}",
+  storeEmpty: "No valid skill folders found in the repository.",
+  storeNoMatch: "No matching skills.",
+  storeWarnings: "Skipped folders with missing or invalid SKILL.md metadata: {names}",
+  storeInstall: "Install",
+  storeUpdate: "Update / Replace",
+  storeInstalling: "Installing...",
+  storeInstalled: 'Skill "{name}" installed.',
+  storeInstalledBadge: "Installed",
+  storeModified: "Locally modified",
+  storeLocal: "Local skill with the same name",
+  storeVersion: "Declared version / Git tree revision",
+  storeLicense: "Declared license",
+  storeLicenseUnknown: "Not declared; verify permission",
+  storeBackup: "Previous skill backup: {path}",
+  storeReplaceConfirm: 'Update / replace "{name}"? Existing content, including local changes, will be replaced and retained in a complete backup.',
   refresh: "Refresh",
   create: "New skill",
   import: "Import",
@@ -455,6 +619,11 @@ var css2 = `
 .dsk-notice{margin:0;border-radius:8px;padding:10px 14px;font-size:13px;line-height:1.6}
 .dsk-notice-err{background:color-mix(in srgb,var(--dsw-alias-state-error-primary,#d33) 12%,transparent);color:var(--dsw-alias-state-error-primary,#d33)}
 .dsk-notice-ok{background:color-mix(in srgb,var(--dsw-alias-state-success,#18864b) 12%,transparent);color:var(--dsw-alias-state-success,#18864b)}
+.dsk-tabs,.dsk-store-toolbar{display:flex;gap:8px;align-items:center}
+.dsk-store{display:flex;flex-direction:column;gap:12px}
+.dsk-store-toolbar .dsk-input{flex:1;min-width:0}
+.dsk-store-description{display:block;-webkit-line-clamp:unset;overflow:visible;white-space:pre-wrap}
+@media(max-width:600px){.dsk-store-row{flex-direction:column}.dsk-store-row .dsk-actions{align-self:flex-end}.dsk-head{flex-wrap:wrap}}
 `;
 async function api2(path, options) {
   const response = await fetch(`${API2}${path}`, {
@@ -470,13 +639,14 @@ async function api2(path, options) {
   return payload;
 }
 function SkillsSection({ t }) {
-  const [skills, setSkills] = (0, import_react2.useState)([]);
-  const [status, setStatus] = (0, import_react2.useState)("loading");
-  const [notice, setNotice] = (0, import_react2.useState)(null);
-  const [busy, setBusy] = (0, import_react2.useState)(false);
-  const [editing, setEditing] = (0, import_react2.useState)(null);
-  const [form, setForm] = (0, import_react2.useState)({ name: "", description: "", body: "" });
-  const fileRef = (0, import_react2.useRef)(null);
+  const [tab, setTab] = (0, import_react3.useState)("installed");
+  const [skills, setSkills] = (0, import_react3.useState)([]);
+  const [status, setStatus] = (0, import_react3.useState)("loading");
+  const [notice, setNotice] = (0, import_react3.useState)(null);
+  const [busy, setBusy] = (0, import_react3.useState)(false);
+  const [editing, setEditing] = (0, import_react3.useState)(null);
+  const [form, setForm] = (0, import_react3.useState)({ name: "", description: "", body: "" });
+  const fileRef = (0, import_react3.useRef)(null);
   async function refresh() {
     setStatus("loading");
     try {
@@ -488,7 +658,7 @@ function SkillsSection({ t }) {
       setNotice({ kind: "error", text: format2(t("loadError"), { message: error.message }) });
     }
   }
-  (0, import_react2.useEffect)(() => {
+  (0, import_react3.useEffect)(() => {
     void refresh();
   }, []);
   function openCreate() {
@@ -584,138 +754,151 @@ function SkillsSection({ t }) {
   }
   function renderNotice() {
     if (notice === null) return null;
-    return (0, import_react2.createElement)("p", { className: `dsk-notice ${notice.kind === "error" ? "dsk-notice-err" : "dsk-notice-ok"}` }, notice.text);
+    return (0, import_react3.createElement)("p", { className: `dsk-notice ${notice.kind === "error" ? "dsk-notice-err" : "dsk-notice-ok"}` }, notice.text);
   }
   function renderForm() {
-    return (0, import_react2.createElement)(
+    return (0, import_react3.createElement)(
       "div",
       { className: "dsk-form" },
-      (0, import_react2.createElement)(
+      (0, import_react3.createElement)(
         "div",
         { className: "dsk-field" },
-        (0, import_react2.createElement)("span", { className: "dsk-label" }, t("name")),
-        (0, import_react2.createElement)("input", { className: "dsk-input", value: form.name, placeholder: t("skillNamePlaceholder"), onChange: (event) => setForm({ ...form, name: event.target.value }) })
+        (0, import_react3.createElement)("span", { className: "dsk-label" }, t("name")),
+        (0, import_react3.createElement)("input", { className: "dsk-input", value: form.name, placeholder: t("skillNamePlaceholder"), onChange: (event) => setForm({ ...form, name: event.target.value }) })
       ),
-      (0, import_react2.createElement)(
+      (0, import_react3.createElement)(
         "div",
         { className: "dsk-field" },
-        (0, import_react2.createElement)("span", { className: "dsk-label" }, t("skillDescription")),
-        (0, import_react2.createElement)("input", { className: "dsk-input", value: form.description, onChange: (event) => setForm({ ...form, description: event.target.value }) })
+        (0, import_react3.createElement)("span", { className: "dsk-label" }, t("skillDescription")),
+        (0, import_react3.createElement)("input", { className: "dsk-input", value: form.description, onChange: (event) => setForm({ ...form, description: event.target.value }) })
       ),
-      (0, import_react2.createElement)(
+      (0, import_react3.createElement)(
         "div",
         { className: "dsk-field" },
-        (0, import_react2.createElement)("span", { className: "dsk-label" }, t("skillBody")),
-        (0, import_react2.createElement)("textarea", { className: "dsk-input dsk-textarea", value: form.body, onChange: (event) => setForm({ ...form, body: event.target.value }) })
+        (0, import_react3.createElement)("span", { className: "dsk-label" }, t("skillBody")),
+        (0, import_react3.createElement)("textarea", { className: "dsk-input dsk-textarea", value: form.body, onChange: (event) => setForm({ ...form, body: event.target.value }) })
       ),
-      (0, import_react2.createElement)(
+      (0, import_react3.createElement)(
         "div",
         { className: "dsk-actions" },
-        (0, import_react2.createElement)("button", { className: "dsk-btn dsk-btn-primary", disabled: busy, onClick: () => void submit() }, t("save")),
-        (0, import_react2.createElement)("button", { className: "dsk-btn", disabled: busy, onClick: () => setEditing(null) }, t("cancel"))
+        (0, import_react3.createElement)("button", { className: "dsk-btn dsk-btn-primary", disabled: busy, onClick: () => void submit() }, t("save")),
+        (0, import_react3.createElement)("button", { className: "dsk-btn", disabled: busy, onClick: () => setEditing(null) }, t("cancel"))
       )
     );
   }
   function renderDetail() {
     const skill = editing.skill;
     const badges = [
-      (0, import_react2.createElement)("span", { key: "layout", className: "dsk-badge" }, skill.layout === "bundle" ? t("layoutBundle") : t("layoutFlat")),
-      (0, import_react2.createElement)("span", { key: "model", className: `dsk-badge ${skill.modelDisabled ? "dsk-badge-off" : "dsk-badge-on"}` }, skill.modelDisabled ? t("modelDisabled") : t("modelEnabled")),
-      (0, import_react2.createElement)("span", { key: "user", className: `dsk-badge ${skill.userInvocable ? "dsk-badge-on" : "dsk-badge-off"}` }, skill.userInvocable ? t("userInvocable") : t("userNotInvocable"))
+      (0, import_react3.createElement)("span", { key: "layout", className: "dsk-badge" }, skill.layout === "bundle" ? t("layoutBundle") : t("layoutFlat")),
+      (0, import_react3.createElement)("span", { key: "model", className: `dsk-badge ${skill.modelDisabled ? "dsk-badge-off" : "dsk-badge-on"}` }, skill.modelDisabled ? t("modelDisabled") : t("modelEnabled")),
+      (0, import_react3.createElement)("span", { key: "user", className: `dsk-badge ${skill.userInvocable ? "dsk-badge-on" : "dsk-badge-off"}` }, skill.userInvocable ? t("userInvocable") : t("userNotInvocable"))
     ];
-    return (0, import_react2.createElement)(
+    return (0, import_react3.createElement)(
       "div",
       { className: "dsk-form" },
-      (0, import_react2.createElement)(
+      (0, import_react3.createElement)(
         "div",
         { className: "dsk-detail-head" },
-        (0, import_react2.createElement)(
+        (0, import_react3.createElement)(
           "div",
           { className: "dsk-name" },
-          (0, import_react2.createElement)("span", null, skill.name),
-          (0, import_react2.createElement)("div", { className: "dsk-badges" }, badges)
+          (0, import_react3.createElement)("span", null, skill.name),
+          (0, import_react3.createElement)("div", { className: "dsk-badges" }, badges)
         ),
-        (0, import_react2.createElement)("button", { className: "dsk-btn", onClick: () => setEditing(null) }, t("back"))
+        (0, import_react3.createElement)("button", { className: "dsk-btn", onClick: () => setEditing(null) }, t("back"))
       ),
-      skill.description ? (0, import_react2.createElement)("p", { className: "dsk-desc", style: { display: "block", WebkitLineClamp: "unset" } }, skill.description) : null,
-      skill.whenToUse ? (0, import_react2.createElement)("p", { className: "dsk-desc", style: { display: "block", WebkitLineClamp: "unset" } }, `${t("detailWhenToUse")}\uFF1A${skill.whenToUse}`) : (0, import_react2.createElement)("p", { className: "dsk-subtitle" }, `${t("detailWhenToUse")}\uFF1A${t("noWhenToUse")}`),
-      (0, import_react2.createElement)("p", { className: "dsk-meta" }, `${t("detailFile")}\uFF1A${skill.file}`),
-      (0, import_react2.createElement)(
+      skill.description ? (0, import_react3.createElement)("p", { className: "dsk-desc", style: { display: "block", WebkitLineClamp: "unset" } }, skill.description) : null,
+      skill.whenToUse ? (0, import_react3.createElement)("p", { className: "dsk-desc", style: { display: "block", WebkitLineClamp: "unset" } }, `${t("detailWhenToUse")}\uFF1A${skill.whenToUse}`) : (0, import_react3.createElement)("p", { className: "dsk-subtitle" }, `${t("detailWhenToUse")}\uFF1A${t("noWhenToUse")}`),
+      (0, import_react3.createElement)("p", { className: "dsk-meta" }, `${t("detailFile")}\uFF1A${skill.file}`),
+      (0, import_react3.createElement)(
         "div",
         { className: "dsk-field" },
-        (0, import_react2.createElement)("span", { className: "dsk-label" }, t("detailBody")),
-        (0, import_react2.createElement)("pre", { className: "dsk-body" }, skill.body)
+        (0, import_react3.createElement)("span", { className: "dsk-label" }, t("detailBody")),
+        (0, import_react3.createElement)("pre", { className: "dsk-body" }, skill.body)
       )
     );
   }
   function renderRow(skill) {
     const badges = [
-      (0, import_react2.createElement)("span", { key: "layout", className: "dsk-badge" }, skill.layout === "bundle" ? t("layoutBundle") : t("layoutFlat")),
-      (0, import_react2.createElement)("span", { key: "model", className: `dsk-badge ${skill.modelDisabled ? "dsk-badge-off" : "dsk-badge-on"}` }, skill.modelDisabled ? t("modelDisabled") : t("modelEnabled")),
-      (0, import_react2.createElement)("span", { key: "user", className: `dsk-badge ${skill.userInvocable ? "dsk-badge-on" : "dsk-badge-off"}` }, skill.userInvocable ? t("userInvocable") : t("userNotInvocable"))
+      (0, import_react3.createElement)("span", { key: "layout", className: "dsk-badge" }, skill.layout === "bundle" ? t("layoutBundle") : t("layoutFlat")),
+      (0, import_react3.createElement)("span", { key: "model", className: `dsk-badge ${skill.modelDisabled ? "dsk-badge-off" : "dsk-badge-on"}` }, skill.modelDisabled ? t("modelDisabled") : t("modelEnabled")),
+      (0, import_react3.createElement)("span", { key: "user", className: `dsk-badge ${skill.userInvocable ? "dsk-badge-on" : "dsk-badge-off"}` }, skill.userInvocable ? t("userInvocable") : t("userNotInvocable"))
     ];
-    return (0, import_react2.createElement)(
+    return (0, import_react3.createElement)(
       "div",
       { key: skill.name, className: "dsk-row" },
-      (0, import_react2.createElement)(
+      (0, import_react3.createElement)(
         "div",
         { className: "dsk-info" },
-        (0, import_react2.createElement)(
+        (0, import_react3.createElement)(
           "div",
           { className: "dsk-name" },
-          (0, import_react2.createElement)("span", null, skill.name),
-          (0, import_react2.createElement)("div", { className: "dsk-badges" }, badges)
+          (0, import_react3.createElement)("span", null, skill.name),
+          (0, import_react3.createElement)("div", { className: "dsk-badges" }, badges)
         ),
-        skill.description ? (0, import_react2.createElement)("p", { className: "dsk-desc" }, skill.description) : null
+        skill.description ? (0, import_react3.createElement)("p", { className: "dsk-desc" }, skill.description) : null
       ),
-      (0, import_react2.createElement)(
+      (0, import_react3.createElement)(
         "div",
         { className: "dsk-actions" },
-        (0, import_react2.createElement)("button", { className: "dsk-btn", disabled: busy, onClick: () => openView(skill) }, t("view")),
-        (0, import_react2.createElement)("button", { className: "dsk-btn", disabled: busy, onClick: () => openEdit(skill) }, t("edit")),
-        (0, import_react2.createElement)("button", { className: "dsk-btn", disabled: busy, onClick: () => void toggleModel(skill) }, skill.modelDisabled ? t("enableModel") : t("disableModel")),
-        (0, import_react2.createElement)("button", { className: "dsk-btn dsk-btn-danger", disabled: busy, onClick: () => void remove(skill) }, t("delete"))
+        (0, import_react3.createElement)("button", { className: "dsk-btn", disabled: busy, onClick: () => openView(skill) }, t("view")),
+        (0, import_react3.createElement)("button", { className: "dsk-btn", disabled: busy, onClick: () => openEdit(skill) }, t("edit")),
+        (0, import_react3.createElement)("button", { className: "dsk-btn", disabled: busy, onClick: () => void toggleModel(skill) }, skill.modelDisabled ? t("enableModel") : t("disableModel")),
+        (0, import_react3.createElement)("button", { className: "dsk-btn dsk-btn-danger", disabled: busy, onClick: () => void remove(skill) }, t("delete"))
       )
     );
   }
-  const body = status === "loading" ? (0, import_react2.createElement)("p", { className: "dsk-subtitle" }, t("loading")) : status === "error" ? (0, import_react2.createElement)("p", { className: "dsk-subtitle" }, format2(t("loadError"), { message: "" })) : skills.length === 0 ? (0, import_react2.createElement)("p", { className: "dsk-subtitle" }, t("empty")) : (0, import_react2.createElement)("div", { className: "dsk-list" }, skills.map(renderRow));
-  return (0, import_react2.createElement)(
-    import_react2.Fragment,
+  const body = status === "loading" ? (0, import_react3.createElement)("p", { className: "dsk-subtitle" }, t("loading")) : status === "error" ? (0, import_react3.createElement)("p", { className: "dsk-subtitle" }, format2(t("loadError"), { message: "" })) : skills.length === 0 ? (0, import_react3.createElement)("p", { className: "dsk-subtitle" }, t("empty")) : (0, import_react3.createElement)("div", { className: "dsk-list" }, skills.map(renderRow));
+  return (0, import_react3.createElement)(
+    import_react3.Fragment,
     null,
-    (0, import_react2.createElement)("style", null, css2),
-    (0, import_react2.createElement)(
+    (0, import_react3.createElement)("style", null, css2),
+    (0, import_react3.createElement)(
       "div",
       { className: "dsk-page" },
-      (0, import_react2.createElement)(
+      (0, import_react3.createElement)(
         "div",
         { className: "dsk-head" },
-        (0, import_react2.createElement)(
+        (0, import_react3.createElement)(
           "div",
           null,
-          (0, import_react2.createElement)("h1", { className: "dsk-title" }, t("title")),
-          (0, import_react2.createElement)("p", { className: "dsk-subtitle" }, t("description"))
+          (0, import_react3.createElement)("h1", { className: "dsk-title" }, t("title")),
+          (0, import_react3.createElement)("p", { className: "dsk-subtitle" }, t("description"))
         ),
-        (0, import_react2.createElement)(
+        (0, import_react3.createElement)(
           "div",
-          { className: "dsk-actions" },
-          (0, import_react2.createElement)("button", { className: "dsk-btn", onClick: () => void refresh() }, t("refresh")),
-          (0, import_react2.createElement)("button", { className: "dsk-btn", onClick: () => fileRef.current?.click() }, t("import")),
-          (0, import_react2.createElement)("button", { className: "dsk-btn dsk-btn-primary", onClick: openCreate }, t("create"))
+          { className: "dsk-actions", style: { display: tab === "installed" ? void 0 : "none" } },
+          (0, import_react3.createElement)("button", { className: "dsk-btn", onClick: () => void refresh() }, t("refresh")),
+          (0, import_react3.createElement)("button", { className: "dsk-btn", onClick: () => fileRef.current?.click() }, t("import")),
+          (0, import_react3.createElement)("button", { className: "dsk-btn dsk-btn-primary", onClick: openCreate }, t("create"))
         ),
-        (0, import_react2.createElement)("input", { ref: fileRef, type: "file", accept: ".md,.zip,.tar.gz,.tgz", style: { display: "none" }, onChange: (event) => void handleImport(event) })
+        (0, import_react3.createElement)("input", { ref: fileRef, type: "file", accept: ".md,.zip,.tar.gz,.tgz", style: { display: "none" }, onChange: (event) => void handleImport(event) })
       ),
-      renderNotice(),
-      editing !== null && editing.mode === "view" ? renderDetail() : null,
-      editing !== null && editing.mode !== "view" ? renderForm() : null,
-      body
+      (0, import_react3.createElement)(
+        "div",
+        { className: "dsk-tabs", role: "group", "aria-label": t("skillViews") },
+        (0, import_react3.createElement)("button", { className: `dsk-btn ${tab === "installed" ? "dsk-btn-primary" : ""}`, "aria-pressed": tab === "installed", disabled: busy, onClick: () => {
+          setTab("installed");
+          void refresh();
+        } }, t("installedTab")),
+        (0, import_react3.createElement)("button", { className: `dsk-btn ${tab === "store" ? "dsk-btn-primary" : ""}`, "aria-pressed": tab === "store", disabled: busy, onClick: () => setTab("store") }, t("storeTab"))
+      ),
+      tab === "store" ? (0, import_react3.createElement)(SkillStoreSection, { t, api: api2, format: format2, onInstalled: () => void refresh() }) : (0, import_react3.createElement)(
+        import_react3.Fragment,
+        null,
+        renderNotice(),
+        editing !== null && editing.mode === "view" ? renderDetail() : null,
+        editing !== null && editing.mode !== "view" ? renderForm() : null,
+        body
+      )
     )
   );
 }
 function PromptSection({ t }) {
-  const [persona, setPersona] = (0, import_react2.useState)("");
-  const [status, setStatus] = (0, import_react2.useState)("loading");
-  const [notice, setNotice] = (0, import_react2.useState)(null);
-  const [busy, setBusy] = (0, import_react2.useState)(false);
+  const [persona, setPersona] = (0, import_react3.useState)("");
+  const [status, setStatus] = (0, import_react3.useState)("loading");
+  const [notice, setNotice] = (0, import_react3.useState)(null);
+  const [busy, setBusy] = (0, import_react3.useState)(false);
   async function load() {
     setStatus("loading");
     try {
@@ -727,7 +910,7 @@ function PromptSection({ t }) {
       setNotice({ kind: "error", text: format2(t("promptSaveFailed"), { message: error.message }) });
     }
   }
-  (0, import_react2.useEffect)(() => {
+  (0, import_react3.useEffect)(() => {
     void load();
   }, []);
   async function save() {
@@ -742,31 +925,31 @@ function PromptSection({ t }) {
       setBusy(false);
     }
   }
-  const body = status === "loading" ? (0, import_react2.createElement)("p", { className: "dsk-subtitle" }, t("promptLoading")) : (0, import_react2.createElement)("textarea", { className: "dsk-input dsk-textarea", style: { minHeight: 380 }, value: persona, onChange: (event) => setPersona(event.target.value), placeholder: "You are a coding agent..." });
-  return (0, import_react2.createElement)(
-    import_react2.Fragment,
+  const body = status === "loading" ? (0, import_react3.createElement)("p", { className: "dsk-subtitle" }, t("promptLoading")) : (0, import_react3.createElement)("textarea", { className: "dsk-input dsk-textarea", style: { minHeight: 380 }, value: persona, onChange: (event) => setPersona(event.target.value), placeholder: "You are a coding agent..." });
+  return (0, import_react3.createElement)(
+    import_react3.Fragment,
     null,
-    (0, import_react2.createElement)("style", null, css2),
-    (0, import_react2.createElement)(
+    (0, import_react3.createElement)("style", null, css2),
+    (0, import_react3.createElement)(
       "div",
       { className: "dsk-page" },
-      (0, import_react2.createElement)(
+      (0, import_react3.createElement)(
         "div",
         { className: "dsk-head" },
-        (0, import_react2.createElement)(
+        (0, import_react3.createElement)(
           "div",
           null,
-          (0, import_react2.createElement)("h1", { className: "dsk-title" }, t("promptTitle")),
-          (0, import_react2.createElement)("p", { className: "dsk-subtitle" }, t("promptDescription"))
+          (0, import_react3.createElement)("h1", { className: "dsk-title" }, t("promptTitle")),
+          (0, import_react3.createElement)("p", { className: "dsk-subtitle" }, t("promptDescription"))
         ),
-        (0, import_react2.createElement)(
+        (0, import_react3.createElement)(
           "div",
           { className: "dsk-actions" },
-          (0, import_react2.createElement)("button", { className: "dsk-btn", onClick: () => void load() }, t("promptReload")),
-          (0, import_react2.createElement)("button", { className: "dsk-btn dsk-btn-primary", disabled: busy || status !== "ok", onClick: () => void save() }, t("promptSave"))
+          (0, import_react3.createElement)("button", { className: "dsk-btn", onClick: () => void load() }, t("promptReload")),
+          (0, import_react3.createElement)("button", { className: "dsk-btn dsk-btn-primary", disabled: busy || status !== "ok", onClick: () => void save() }, t("promptSave"))
         )
       ),
-      notice !== null ? (0, import_react2.createElement)("p", { className: `dsk-notice ${notice.kind === "error" ? "dsk-notice-err" : "dsk-notice-ok"}` }, notice.text) : null,
+      notice !== null ? (0, import_react3.createElement)("p", { className: `dsk-notice ${notice.kind === "error" ? "dsk-notice-err" : "dsk-notice-ok"}` }, notice.text) : null,
       body
     )
   );
@@ -791,7 +974,7 @@ function register2(ctx) {
 }
 
 // src/client/session-archive.tsx
-var import_react3 = require("react");
+var import_react4 = require("react");
 var import_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 var NS3 = "dsh-plugin-session-archive";
 var API3 = "/api/dsh-session-archive";
@@ -827,8 +1010,8 @@ function settleDelete() {
   for (const listener of listeners) listener();
 }
 function usePendingDelete() {
-  const [state, setState] = (0, import_react3.useState)(pendingDelete);
-  (0, import_react3.useEffect)(() => {
+  const [state, setState] = (0, import_react4.useState)(pendingDelete);
+  (0, import_react4.useEffect)(() => {
     const listener = () => setState(pendingDelete);
     listeners.add(listener);
     return () => {
@@ -839,9 +1022,9 @@ function usePendingDelete() {
 }
 function DeleteSessionMenuItem({ sessionId, useMenuOpenState, t, requestDelete: requestDelete2 }) {
   const [, setMenuOpen] = useMenuOpenState();
-  return (0, import_react3.createElement)(import_dsh_client_ui_primitives.MenuItemButton, {
+  return (0, import_react4.createElement)(import_dsh_client_ui_primitives.MenuItemButton, {
     danger: true,
-    icon: (0, import_react3.createElement)(import_dsh_client_ui_primitives.IconTrashOutlineRegular, { size: 14 }),
+    icon: (0, import_react4.createElement)(import_dsh_client_ui_primitives.IconTrashOutlineRegular, { size: 14 }),
     onSelect: () => {
       setMenuOpen(false);
       requestDelete2(sessionId);
@@ -851,11 +1034,11 @@ function DeleteSessionMenuItem({ sessionId, useMenuOpenState, t, requestDelete: 
 }
 function DeleteConfirmDialog({ t, usePendingDelete: usePendingDelete2, settleDelete: settleDelete2, confirmDelete }) {
   const request = usePendingDelete2();
-  const [acknowledged, setAcknowledged] = (0, import_react3.useState)(false);
-  (0, import_react3.useEffect)(() => {
+  const [acknowledged, setAcknowledged] = (0, import_react4.useState)(false);
+  (0, import_react4.useEffect)(() => {
     if (request !== null) setAcknowledged(false);
   }, [request]);
-  return (0, import_react3.createElement)(import_dsh_client_ui_primitives.RiskConfirmation, {
+  return (0, import_react4.createElement)(import_dsh_client_ui_primitives.RiskConfirmation, {
     open: request !== null,
     title: t("deleteConfirmTitle"),
     description: t("deleteConfirm"),

@@ -14,6 +14,8 @@ export interface PluginRepoConfig {
 	branch: string;
 	/** monorepo 内插件目录，默认 packages */
 	catalogDir: string;
+        /** 仓库技能根目录，默认 skills；自动读取子目录 SKILL.md，无需 JSON 索引。 */
+        skillsCatalogDir: string;
 	/** Gitea Access Token（公开仓库可留空） */
 	token: string;
 	/** API 请求超时毫秒数，默认 15000 */
@@ -57,7 +59,6 @@ export class RepoError extends Error {
 	code: string;
         /** Gitea HTTP 状态；参数来自错误构造选项，非 HTTP 错误可缺省。 */
         status?: number;
-	status?: number;
 }
 
 export function gitUrlOf(config: PluginRepoConfig): string;
