@@ -38,7 +38,7 @@ export interface FileActionsRequest {
 	/** 目标目录（复制/移动/压缩）。 */
 	destination?: string;
 	/** 压缩包文件名（可选；自动剥离目录部分并补 .zip 后缀）；
-	 *  重命名时为新的单段名字（不含路径分隔符）。 */
+         *  重命名时为宿主平台合法的单段名字；POSIX 保留空格与反斜杠。 */
 	name?: string;
         /** 读取返回的版本标识；保存时校验外部修改，缺省保留旧服务调用兼容性。 */
         version?: string;

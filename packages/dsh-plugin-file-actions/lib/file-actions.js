@@ -23,7 +23,7 @@
 import { Service } from "@deepseek-ai/cordis";
 import Schema from "@deepseek-ai/schemastery";
 import { constants } from "node:fs";
-import { copyFile, cp, link, lstat, mkdtemp, open, rename, rm, writeFile } from "node:fs/promises";
+import { copyFile, cp, link, lstat, mkdtemp, open, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { basename, dirname, extname, isAbsolute, join, relative, sep } from "node:path";
 import { format as prettierFormat } from "prettier";
@@ -65,7 +65,8 @@ export function zipNameFor(sourceNames) {
  * @returns 经过宿主名称校验的 ZIP 名称或空串。
  */
 export function sanitizeZipName(name, platform = process.platform) {
-	const value = String(name ?? "").trim().replace(/\\/g, "/");
+        const input = String(name ?? "").trim();
+        const value = platform === "win32" ? input.replaceAll("\\", "/") : input;
 	const base = value.split("/").pop() ?? "";
 	if (base === "" || base === "." || base === "..") return "";
         return sanitizeEntryName(base.toLowerCase().endsWith(".zip") ? base : `${base}.zip`, platform);
@@ -82,7 +83,7 @@ export function sanitizeEntryName(name, platform = process.platform) {
         if (value.trim() === "") throw new FileActionsError("file-actions/invalid-name", "新名字不能为空");
 	if (value === "." || value === "..") throw new FileActionsError("file-actions/invalid-name", `新名字不合法："${value}"`);
 	if (value.includes("\0")) throw new FileActionsError("file-actions/invalid-name", "新名字包含非法字符");
-	if (value.includes("/") || value.includes("\\")) throw new FileActionsError("file-actions/invalid-name", "新名字不能包含路径分隔符，跨目录请用移动");
+        if (value.includes("/") || platform === "win32" && value.includes("\\")) throw new FileActionsError("file-actions/invalid-name", "新名字不能包含路径分隔符，跨目录请用移动");
         if (platform === "win32") {
                 const stem = value.split(".")[0].trimEnd().toUpperCase();
                 const reserved = ["CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
@@ -395,9 +396,11 @@ export class FileActionsService extends Service {
 		if (target === host) return { name: nextName, unchanged: true };
 		if (await exists(target)) {
 			const [fromInfo, toInfo] = await Promise.all([lstat(host), lstat(target)]);
-			const same = fromInfo.ino !== undefined && toInfo.ino !== undefined
+                        const names = await readdir(dirname(host));
+                        const separateEntries = names.includes(basename(host)) && names.includes(nextName);
+                        const same = fromInfo.ino !== undefined && fromInfo.ino !== 0 && toInfo.ino !== undefined
 				&& fromInfo.ino === toInfo.ino && fromInfo.dev === toInfo.dev;
-			if (!same) throw new FileActionsError("file-actions/exists", `目标已存在同名项："${nextName}"`);
+                        if (!same || separateEntries) throw new FileActionsError("file-actions/exists", `目标已存在同名项："${nextName}"`);
 		}
 		try {
 			await rename(host, target);

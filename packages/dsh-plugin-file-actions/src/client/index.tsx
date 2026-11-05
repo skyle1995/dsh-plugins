@@ -75,7 +75,7 @@ const zh = {
 	"compress.cancel": "取消",
 	"compress.confirm": "压缩",
 	"rename.title": "重命名",
-	"rename.description": "为「{name}」输入新名字（不能包含路径分隔符）：",
+        "rename.description": "为「{name}」输入新名字（仅限单段名称，不能跨目录）：",
 	"rename.cancel": "取消",
 	"rename.confirm": "重命名",
 	"menu.edit": "编辑",
@@ -152,7 +152,7 @@ const en = {
 	"compress.cancel": "Cancel",
 	"compress.confirm": "Compress",
 	"rename.title": "Rename",
-	"rename.description": "Enter a new name for {name} (path separators are not allowed):",
+        "rename.description": "Enter a new name for {name} (one filename only; moving between folders is not allowed):",
 	"rename.cancel": "Cancel",
 	"rename.confirm": "Rename",
 	"menu.edit": "Edit",
@@ -302,26 +302,68 @@ function syncCutMarks() {
 	}
 }
 
-/** 解析浏览器宿主路径；参数为路径，返回父目录与短名，保留盘符、UNC 和 POSIX 根。 */
-function pathParts(path) {
+/** 规范宿主路径；参数为路径，返回统一反斜杠的 Windows 路径，POSIX 路径原样保留。 */
+function normalizeHostPath(path) {
         const value = String(path);
-        const separator = value.startsWith("/") || !value.includes("\\") ? "/" : "\\";
-        let rootLength = value.startsWith(separator) ? 1 : 0;
-        if (value[1] === ":" && value[2] === separator) rootLength = 3;
-        if (value.startsWith(separator + separator)) {
-                const serverEnd = value.indexOf(separator, 2);
-                const shareEnd = serverEnd < 0 ? -1 : value.indexOf(separator, serverEnd + 1);
-                rootLength = shareEnd < 0 ? value.length : shareEnd + 1;
+        return isWindowsHostPath(value) ? value.replaceAll("/", "\\") : value;
+}
+
+/** 判断宿主路径格式；参数为路径，返回是否具有 Windows 盘符或反斜杠路径语义，不依赖浏览器系统。 */
+function isWindowsHostPath(path) {
+        const value = String(path);
+        const drive = value[1] === ":" && "abcdefghijklmnopqrstuvwxyz".includes(value[0]?.toLowerCase());
+        return drive || (!value.startsWith("/") && value.includes("\\"));
+}
+
+/** 获取根前缀长度；参数为规范路径与分隔符，返回保留盘符、共享目录及扩展 UNC 根的字符数。 */
+function pathRootLength(value, separator) {
+        switch (true) {
+                case value.slice(0, 8).toUpperCase() === "\\\\?\\UNC\\": {
+                        const serverEnd = value.indexOf("\\", 8);
+                        const shareEnd = serverEnd < 0 ? -1 : value.indexOf("\\", serverEnd + 1);
+                        return shareEnd < 0 ? value.length : shareEnd + 1;
+                }
+                case value.startsWith("\\\\?\\") && value[5] === ":" && value[6] === "\\":
+                        return 7;
+                case value.startsWith(separator + separator): {
+                        const serverEnd = value.indexOf(separator, 2);
+                        const shareEnd = serverEnd < 0 ? -1 : value.indexOf(separator, serverEnd + 1);
+                        return shareEnd < 0 ? value.length : shareEnd + 1;
+                }
+                case value[1] === ":" && value[2] === separator: return 3;
+                default: return value.startsWith(separator) ? 1 : 0;
         }
+}
+
+/** 解析浏览器宿主路径；参数为路径，返回规范路径、父目录与短名，保留盘符、UNC 和 POSIX 根。 */
+function pathParts(path) {
+        const value = normalizeHostPath(path);
+        const separator = value.startsWith("/") || !value.includes("\\") ? "/" : "\\";
+        const rootLength = pathRootLength(value, separator);
         let end = value.length;
         while (end > rootLength && value[end - 1] === separator) end -= 1;
         const normalized = value.slice(0, end);
-        if (end <= rootLength) return { dirname: normalized, basename: "" };
+        if (end <= rootLength) {
+                const root = value.startsWith(separator + separator) && !normalized.endsWith(separator) ? normalized + separator : normalized;
+                return { dirname: root, basename: "", normalized: root };
+        }
         const index = normalized.lastIndexOf(separator);
         return {
                 dirname: index < 0 ? "." : normalized.slice(0, Math.max(rootLength, index)),
                 basename: normalized.slice(index + 1),
+                normalized,
         };
+}
+
+/** 比较宿主路径；参数为两条路径，返回分隔符及末尾目录分隔符规范后是否一致，不擅自折叠大小写。 */
+function sameHostPath(left, right) {
+        return pathParts(left).normalized === pathParts(right).normalized;
+}
+
+/** 校验客户端重命名单段名称；参数为新名字与源路径，返回是否为空、含 NUL 或目标平台分隔符。 */
+function invalidRenameName(name, path) {
+        return name.trim() === "" || name === "." || name === ".." || name.includes("\0")
+                || name.includes("/") || isWindowsHostPath(path) && name.includes("\\");
 }
 
 /** 获取父目录；参数为宿主路径，返回兼容 Windows/macOS/Linux 的目录字符串。 */
@@ -483,23 +525,28 @@ function stagePaths(paths, mode, workspaceRoot = currentTreeRoot()) {
 	pushToast(t(mode === "cut" ? "toast.cut" : "toast.copied", { count: paths.length }));
 }
 
-/** 复制路径到系统剪贴板（写入成功后清除多选）。 */
+/** 复制路径到系统剪贴板；参数为路径数组，无返回值，规范 Windows 分隔符，成功后清除多选。 */
 function copyPaths(paths) {
-	void writeClipboard(paths.join("\n")).then((ok) => {
+        void writeClipboard(paths.map(normalizeHostPath).join("\n")).then((ok) => {
 		if (ok) clearSelection();
 		pushToast(ok ? t("toast.pathCopied") : t("toast.clipboardFailed"), ok ? "ok" : "error");
 	});
 }
 
-/** 粘贴到目标目录（目录路径即工作区绝对路径）。 */
+/** 粘贴到目标目录；参数为目标及工作区路径，无返回值，拒绝跨工作区并保留后来替换的剪贴板。 */
 function pasteInto(destination, workspaceRoot) {
 	const clipboard = state.clipboard;
 	if (clipboard === null || destination === null || destination === "") return;
+        if (workspaceRoot == null || !sameHostPath(workspaceRoot, clipboard.workspaceRoot)) return;
 	const operation = clipboard.mode === "cut" ? "move" : "copy";
 	api(operation, { workspaceRoot, sources: clipboard.paths, destination }).then(() => {
 		pushToast(t(clipboard.mode === "cut" ? "toast.moved" : "toast.pasted", { count: clipboard.paths.length }));
-		if (clipboard.mode === "cut") setClipboard(null);
+                if (clipboard.mode === "cut" && state.clipboard === clipboard) setClipboard(null);
 	}).catch((error) => {
+                if (clipboard.mode === "cut" && state.clipboard === clipboard && Array.isArray(error.details?.completed)) {
+                        const remaining = clipboard.paths.filter((path) => !error.details.completed.some((done) => sameHostPath(path, done)));
+                        setClipboard(remaining.length === 0 ? null : { ...clipboard, paths: remaining });
+                }
 		pushToast(error.message, "error");
 	});
 }
@@ -540,10 +587,10 @@ function renamePath(path, workspaceRoot = currentTreeRoot()) {
 	requestRename({ path, workspaceRoot, name: basenameOf(path) });
 }
 
-/** 重命名确认后发宿主请求；成功后清除多选（树由官方文件面板自行刷新）。 */
+/** 重命名确认后发宿主请求；参数为源请求及原始新名字，无返回值，保留合法空格，成功后清除多选。 */
 function performRename(request, rawName) {
-	const name = String(rawName ?? "").trim();
-	if (name === "" || name === request.name) return;
+        const name = String(rawName ?? "");
+        if (invalidRenameName(name, request.path) || name === request.name) return;
 	api("rename", { workspaceRoot: request.workspaceRoot, path: request.path, name }).then((payload) => {
 		clearSelection();
 		pushToast(t("toast.renamed", { name: payload.name }));
@@ -817,8 +864,8 @@ function RenameDialog() {
 		});
 		return () => cancelAnimationFrame(frame);
 	}, [request]);
-	const next = name.trim();
-	const invalid = next === "" || /[/\\]/.test(next);
+        const next = name;
+        const invalid = invalidRenameName(next, request?.path ?? "");
 	const confirm = () => {
 		const pending = request;
 		if (pending === null || invalid) return;
@@ -859,18 +906,21 @@ const EDIT_KIND = "file-editor";
 const EDIT_ID = "dsh-plugin-file-actions";
 const EDIT_PREFIX = "dsh-resource://file-edit/";
 
+/** 生成编辑标签地址；参数为工作区及文件路径，返回分隔符规范后的唯一资源地址。 */
 function editAddress(workspaceRoot, path) {
-	return `${EDIT_PREFIX}${encodeURIComponent(workspaceRoot)}/${encodeURIComponent(path)}`;
+        return `${EDIT_PREFIX}${encodeURIComponent(pathParts(workspaceRoot).normalized)}/${encodeURIComponent(pathParts(path).normalized)}`;
 }
 
+/** 解析编辑标签地址；参数为资源地址，返回规范后的工作区与路径，非法地址返回 null。 */
 function parseEditAddress(address) {
+        if (!String(address).startsWith(EDIT_PREFIX)) return null;
 	const rest = String(address).slice(EDIT_PREFIX.length);
 	const sep = rest.indexOf("/");
 	if (sep < 0) return null;
 	try {
 		return {
-			workspaceRoot: decodeURIComponent(rest.slice(0, sep)),
-			path: decodeURIComponent(rest.slice(sep + 1)),
+                        workspaceRoot: pathParts(decodeURIComponent(rest.slice(0, sep))).normalized,
+                        path: pathParts(decodeURIComponent(rest.slice(sep + 1))).normalized,
 		};
 	} catch {
 		return null;
@@ -2311,7 +2361,7 @@ export function apply(ctx) {
 				syncCutMarks();
 				const clipboard = readState().clipboard;
 				const root = currentTreeRoot();
-				if (clipboard !== null && (root === null || root !== clipboard.workspaceRoot)) setClipboard(null);
+                                if (clipboard !== null && (root === null || !sameHostPath(root, clipboard.workspaceRoot))) setClipboard(null);
 			});
 		};
 		const observer = new MutationObserver(observe);

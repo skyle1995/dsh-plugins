@@ -62,7 +62,7 @@ var zh = {
   "compress.cancel": "\u53D6\u6D88",
   "compress.confirm": "\u538B\u7F29",
   "rename.title": "\u91CD\u547D\u540D",
-  "rename.description": "\u4E3A\u300C{name}\u300D\u8F93\u5165\u65B0\u540D\u5B57\uFF08\u4E0D\u80FD\u5305\u542B\u8DEF\u5F84\u5206\u9694\u7B26\uFF09\uFF1A",
+  "rename.description": "\u4E3A\u300C{name}\u300D\u8F93\u5165\u65B0\u540D\u5B57\uFF08\u4EC5\u9650\u5355\u6BB5\u540D\u79F0\uFF0C\u4E0D\u80FD\u8DE8\u76EE\u5F55\uFF09\uFF1A",
   "rename.cancel": "\u53D6\u6D88",
   "rename.confirm": "\u91CD\u547D\u540D",
   "menu.edit": "\u7F16\u8F91",
@@ -138,7 +138,7 @@ var en = {
   "compress.cancel": "Cancel",
   "compress.confirm": "Compress",
   "rename.title": "Rename",
-  "rename.description": "Enter a new name for {name} (path separators are not allowed):",
+  "rename.description": "Enter a new name for {name} (one filename only; moving between folders is not allowed):",
   "rename.cancel": "Cancel",
   "rename.confirm": "Rename",
   "menu.edit": "Edit",
@@ -275,25 +275,58 @@ function syncCutMarks() {
     else row.removeAttribute("data-files-cut");
   }
 }
-function pathParts(path) {
+function normalizeHostPath(path) {
   const value = String(path);
-  const separator = value.startsWith("/") || !value.includes("\\") ? "/" : "\\";
-  let rootLength = value.startsWith(separator) ? 1 : 0;
-  if (value[1] === ":" && value[2] === separator) rootLength = 3;
-  if (value.startsWith(separator + separator)) {
-    const serverEnd = value.indexOf(separator, 2);
-    const shareEnd = serverEnd < 0 ? -1 : value.indexOf(separator, serverEnd + 1);
-    rootLength = shareEnd < 0 ? value.length : shareEnd + 1;
+  return isWindowsHostPath(value) ? value.replaceAll("/", "\\") : value;
+}
+function isWindowsHostPath(path) {
+  const value = String(path);
+  const drive = value[1] === ":" && "abcdefghijklmnopqrstuvwxyz".includes(value[0]?.toLowerCase());
+  return drive || !value.startsWith("/") && value.includes("\\");
+}
+function pathRootLength(value, separator) {
+  switch (true) {
+    case value.slice(0, 8).toUpperCase() === "\\\\?\\UNC\\": {
+      const serverEnd = value.indexOf("\\", 8);
+      const shareEnd = serverEnd < 0 ? -1 : value.indexOf("\\", serverEnd + 1);
+      return shareEnd < 0 ? value.length : shareEnd + 1;
+    }
+    case (value.startsWith("\\\\?\\") && value[5] === ":" && value[6] === "\\"):
+      return 7;
+    case value.startsWith(separator + separator): {
+      const serverEnd = value.indexOf(separator, 2);
+      const shareEnd = serverEnd < 0 ? -1 : value.indexOf(separator, serverEnd + 1);
+      return shareEnd < 0 ? value.length : shareEnd + 1;
+    }
+    case (value[1] === ":" && value[2] === separator):
+      return 3;
+    default:
+      return value.startsWith(separator) ? 1 : 0;
   }
+}
+function pathParts(path) {
+  const value = normalizeHostPath(path);
+  const separator = value.startsWith("/") || !value.includes("\\") ? "/" : "\\";
+  const rootLength = pathRootLength(value, separator);
   let end = value.length;
   while (end > rootLength && value[end - 1] === separator) end -= 1;
   const normalized = value.slice(0, end);
-  if (end <= rootLength) return { dirname: normalized, basename: "" };
+  if (end <= rootLength) {
+    const root = value.startsWith(separator + separator) && !normalized.endsWith(separator) ? normalized + separator : normalized;
+    return { dirname: root, basename: "", normalized: root };
+  }
   const index = normalized.lastIndexOf(separator);
   return {
     dirname: index < 0 ? "." : normalized.slice(0, Math.max(rootLength, index)),
-    basename: normalized.slice(index + 1)
+    basename: normalized.slice(index + 1),
+    normalized
   };
+}
+function sameHostPath(left, right) {
+  return pathParts(left).normalized === pathParts(right).normalized;
+}
+function invalidRenameName(name, path) {
+  return name.trim() === "" || name === "." || name === ".." || name.includes("\0") || name.includes("/") || isWindowsHostPath(path) && name.includes("\\");
 }
 function dirnameOf(path) {
   return pathParts(path).dirname;
@@ -418,7 +451,7 @@ function stagePaths(paths, mode, workspaceRoot = currentTreeRoot()) {
   pushToast(t(mode === "cut" ? "toast.cut" : "toast.copied", { count: paths.length }));
 }
 function copyPaths(paths) {
-  void (0, import_dsh_client_ui_primitives.writeClipboard)(paths.join("\n")).then((ok) => {
+  void (0, import_dsh_client_ui_primitives.writeClipboard)(paths.map(normalizeHostPath).join("\n")).then((ok) => {
     if (ok) clearSelection();
     pushToast(ok ? t("toast.pathCopied") : t("toast.clipboardFailed"), ok ? "ok" : "error");
   });
@@ -426,11 +459,16 @@ function copyPaths(paths) {
 function pasteInto(destination, workspaceRoot) {
   const clipboard = state.clipboard;
   if (clipboard === null || destination === null || destination === "") return;
+  if (workspaceRoot == null || !sameHostPath(workspaceRoot, clipboard.workspaceRoot)) return;
   const operation = clipboard.mode === "cut" ? "move" : "copy";
   api(operation, { workspaceRoot, sources: clipboard.paths, destination }).then(() => {
     pushToast(t(clipboard.mode === "cut" ? "toast.moved" : "toast.pasted", { count: clipboard.paths.length }));
-    if (clipboard.mode === "cut") setClipboard(null);
+    if (clipboard.mode === "cut" && state.clipboard === clipboard) setClipboard(null);
   }).catch((error) => {
+    if (clipboard.mode === "cut" && state.clipboard === clipboard && Array.isArray(error.details?.completed)) {
+      const remaining = clipboard.paths.filter((path) => !error.details.completed.some((done) => sameHostPath(path, done)));
+      setClipboard(remaining.length === 0 ? null : { ...clipboard, paths: remaining });
+    }
     pushToast(error.message, "error");
   });
 }
@@ -463,8 +501,8 @@ function renamePath(path, workspaceRoot = currentTreeRoot()) {
   requestRename({ path, workspaceRoot, name: basenameOf(path) });
 }
 function performRename(request, rawName) {
-  const name = String(rawName ?? "").trim();
-  if (name === "" || name === request.name) return;
+  const name = String(rawName ?? "");
+  if (invalidRenameName(name, request.path) || name === request.name) return;
   api("rename", { workspaceRoot: request.workspaceRoot, path: request.path, name }).then((payload) => {
     clearSelection();
     pushToast(t("toast.renamed", { name: payload.name }));
@@ -720,8 +758,8 @@ function RenameDialog() {
     });
     return () => cancelAnimationFrame(frame);
   }, [request]);
-  const next = name.trim();
-  const invalid = next === "" || /[/\\]/.test(next);
+  const next = name;
+  const invalid = invalidRenameName(next, request?.path ?? "");
   const confirm = () => {
     const pending = request;
     if (pending === null || invalid) return;
@@ -759,16 +797,17 @@ var EDIT_KIND = "file-editor";
 var EDIT_ID = "dsh-plugin-file-actions";
 var EDIT_PREFIX = "dsh-resource://file-edit/";
 function editAddress(workspaceRoot, path) {
-  return `${EDIT_PREFIX}${encodeURIComponent(workspaceRoot)}/${encodeURIComponent(path)}`;
+  return `${EDIT_PREFIX}${encodeURIComponent(pathParts(workspaceRoot).normalized)}/${encodeURIComponent(pathParts(path).normalized)}`;
 }
 function parseEditAddress(address) {
+  if (!String(address).startsWith(EDIT_PREFIX)) return null;
   const rest = String(address).slice(EDIT_PREFIX.length);
   const sep = rest.indexOf("/");
   if (sep < 0) return null;
   try {
     return {
-      workspaceRoot: decodeURIComponent(rest.slice(0, sep)),
-      path: decodeURIComponent(rest.slice(sep + 1))
+      workspaceRoot: pathParts(decodeURIComponent(rest.slice(0, sep))).normalized,
+      path: pathParts(decodeURIComponent(rest.slice(sep + 1))).normalized
     };
   } catch {
     return null;
@@ -2128,7 +2167,7 @@ function apply(ctx) {
         syncCutMarks();
         const clipboard = readState().clipboard;
         const root = currentTreeRoot();
-        if (clipboard !== null && (root === null || root !== clipboard.workspaceRoot)) setClipboard(null);
+        if (clipboard !== null && (root === null || !sameHostPath(root, clipboard.workspaceRoot))) setClipboard(null);
       });
     };
     const observer = new MutationObserver(observe);

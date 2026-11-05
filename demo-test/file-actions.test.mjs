@@ -8,7 +8,7 @@ import { test } from "node:test";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile, chmod } from "node:fs/promises";
+import { link, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile, chmod } from "node:fs/promises";
 import { inflateRawSync } from "node:zlib";
 
 const directory = dirname(fileURLToPath(import.meta.url));
@@ -91,16 +91,57 @@ function unzip(buffer) {
 
 test("名称校验区分 Windows 与 macOS/Linux，不擅自截掉 POSIX 空格", () => {
         for (const platform of ["darwin", "linux"]) {
-                for (const name of ["CON", "NUL.txt", "name:part", "file.", "file ", " 中文.txt "]) {
+                for (const name of ["CON", "NUL.txt", "name:part", "file.", "file ", " 中文.txt ", "name\\part.txt"]) {
                         assert.equal(sanitizeEntryName(name, platform), name);
                 }
                 assert.equal(sanitizeZipName("dir/CON", platform), "CON.zip");
+                assert.equal(sanitizeZipName("dir/name\\part", platform), "name\\part.zip");
         }
-        for (const name of ["CON", "NUL.txt", "COM1.js", "LPT9", "COM¹.txt", "file.", "file ", "a:b", "a?b", "a\u0001b"]) {
+        for (const name of ["CON", "NUL.txt", "COM1.js", "LPT9", "COM¹.txt", "file.", "file ", "a:b", "a?b", "a\u0001b", "name\\part.txt"]) {
                 assert.throws(() => sanitizeEntryName(name, "win32"), { code: "file-actions/invalid-name" });
         }
         assert.throws(() => sanitizeZipName("dir/CON", "win32"), { code: "file-actions/invalid-name" });
         assert.equal(sanitizeZipName("..\\中文包", "win32"), "中文包.zip");
+});
+
+test("重命名不能用同 inode 绕过独立硬链接目标冲突，正常大小写改名仍生效", async (t) => {
+        const { workspace, actions } = await fixture(t);
+        const source = join(workspace, "old.txt");
+        const target = join(workspace, "alias.txt");
+        await writeFile(source, "original");
+        try { await link(source, target); }
+        catch (error) {
+                switch (error.code) {
+                        case "EPERM": case "ENOTSUP": case "EOPNOTSUPP":
+                                t.skip("当前卷不支持硬链接");
+                                return;
+                        default: throw error;
+                }
+        }
+        await assert.rejects(actions.renameEntry({ workspaceRoot: workspace, path: source, name: "alias.txt" }), { code: "file-actions/exists" });
+        assert.equal(await readFile(source, "utf8"), "original");
+        assert.equal(await readFile(target, "utf8"), "original");
+        const upper = join(workspace, "OLD.TXT");
+        const insensitive = await lstat(upper).then(() => true, () => false);
+        if (!insensitive) {
+                await link(source, upper);
+                await assert.rejects(actions.renameEntry({ workspaceRoot: workspace, path: source, name: "OLD.TXT" }), { code: "file-actions/exists" });
+                await rm(upper);
+        }
+        await actions.renameEntry({ workspaceRoot: workspace, path: source, name: "OLD.TXT" });
+        assert.ok((await readdir(workspace)).includes("OLD.TXT"));
+        assert.equal(await readFile(upper, "utf8"), "original");
+});
+
+test("POSIX 重命名保留名称空格与反斜杠，不作为目录或路径穿越", async (t) => {
+        if (process.platform === "win32") { t.skip("真实 POSIX 文件名在 Windows 上无法创建；平台校验由纯函数回归覆盖"); return; }
+        const { workspace, actions } = await fixture(t);
+        const source = join(workspace, "old.txt");
+        await writeFile(source, "content");
+        const name = " new\\part.txt ";
+        await actions.renameEntry({ workspaceRoot: workspace, path: source, name });
+        assert.equal(await readFile(join(workspace, name), "utf8"), "content");
+        assert.deepEqual(await readdir(workspace), [name]);
 });
 
 test("批量同名在任何写入前拒绝，父子源只操作一次", async (t) => {
