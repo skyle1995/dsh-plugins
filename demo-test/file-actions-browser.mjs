@@ -22,15 +22,20 @@ const result = await build({
                 contents: `
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { EditorTab, ToastStack, RenameDialog, requestRename, injectStyles } from ${JSON.stringify(join(plugin, "src/client/index.tsx"))};
+import { EditorTab, ToastStack, RenameDialog, ContextMenu, openMenu, setSessionContextForTest, requestRename, injectStyles } from ${JSON.stringify(join(plugin, "src/client/index.tsx"))};
 injectStyles();
 const tab = { contentId: "dsh-resource://file-edit/" + encodeURIComponent("/workspace") + "/" + encodeURIComponent("/workspace/code.js"),
  actions: { bindCommands() {} } };
 const labels = { "edit.save":"保存", "edit.format":"格式化", "edit.reload":"重新加载", "edit.revert":"恢复原始",
  "edit.formatStale":"格式化期间内容已修改，未覆盖当前编辑", "edit.loading":"加载中", "edit.wrap":"自动换行", "edit.saved":"已保存" };
 const translate = key => labels[key] ?? key;
+/** 捕获模拟会话引用；参数为引用卡片，无返回值，不发送真实会话。 */
+const input = { actions:{captureInsertion:()=>({start:0,end:0,draftRev:1})}, insertReference:(ref)=>{document.getElementById("session-result").textContent="已有草稿 "+ref.clipboardText;return true;}, focus:()=>document.getElementById("session-result").focus() };
+setSessionContextForTest({sidebarRight:{mounted:{getSnapshot:()=>"test-session"}},sessions:{scope:()=>({}),list:{getSnapshot:()=>({byId:{"test-session":{cwd:"D:/workspace"}}})}},conversation:{input:{for:()=>input}}});
 createRoot(document.getElementById("app")).render(React.createElement(React.Fragment, null,
- React.createElement(EditorTab, { useTabInfo:()=>({tab}), t:translate }), React.createElement(ToastStack,{t:translate}), React.createElement(RenameDialog)));
+ React.createElement(EditorTab, { useTabInfo:()=>({tab}), t:translate }), React.createElement(ToastStack,{t:translate}), React.createElement(RenameDialog), React.createElement(ContextMenu)));
+/** 模拟右键文件菜单；参数为鼠标事件，无返回值。 */
+document.getElementById("session-file").oncontextmenu=(event)=>{event.preventDefault();openMenu({scope:"row",entry:"file",path:"D:/workspace/docs/my file.md",workspaceRoot:"D:/workspace",sessionId:"test-session",x:event.clientX,y:event.clientY});};
 document.getElementById("complete").onclick=()=>fetch("/complete",{method:"POST"});
 /** 打开 POSIX 重命名；无参数，无返回值，使用模拟工作区。 */
 document.getElementById("rename-posix").onclick=()=>requestRename({workspaceRoot:"/workspace",path:"/workspace/old.txt",name:"old.txt"});
@@ -50,7 +55,7 @@ document.getElementById("show-rename").onclick=async()=>{const result=await(awai
                                 contents: `import React from "react";
 export const ${icons.map((name) => `${name}=()=>null`).join(",")};
 export const useCodeHighlighter=()=>null, languageForPath=()=>"javascript", modalSelector=()=>null, writeClipboard=async()=>{};
-export const Menu=({children})=>React.createElement("div",null,children), MenuItemButton=({children,onSelect})=>React.createElement("button",{onClick:onSelect},children);
+export const Menu=({children})=>React.createElement("div",{style:{pointerEvents:"auto"}},children), MenuItemButton=({children,onSelect})=>React.createElement("button",{onClick:onSelect},children==="menu.addToSession"?"添加到会话":children);
 /** 渲染测试模态内容；参数为开关、内容和页脚，返回 React 节点或 null。 */
 export const Modal=({open,children,footer})=>open?React.createElement("div",null,children,footer):null;
 /** 渲染可点击测试按钮；参数为内容、回调和禁用状态，返回 React 按钮。 */
@@ -58,7 +63,7 @@ export const Button=({children,onClick,disabled})=>React.createElement("button",
                                 loader: "js",
                         }));
                         builder.onLoad({ filter: /src[\\/]client[\\/]index\.tsx$/ }, async ({ path }) => ({
-                                contents: `${await readFile(path, "utf8")}\nexport { EditorTab, ToastStack, RenameDialog, requestRename, injectStyles };`,
+				contents: `${await readFile(path, "utf8")}\n/** 注入模拟会话；参数为宿主桩，无返回值。 */\nexport function setSessionContextForTest(ctx) { sessionContext = ctx; sidebarRight = ctx.sidebarRight; }\nexport { EditorTab, ToastStack, RenameDialog, ContextMenu, openMenu, requestRename, injectStyles };`,
                                 loader: "tsx", resolveDir: dirname(path),
                         }));
                 },
@@ -79,7 +84,7 @@ const server = createServer(async (req, res) => {
                 switch (req.url) {
                         case "/":
                                 res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-                                res.end('<!doctype html><html lang="zh"><meta charset="utf-8"><title>文件编辑器回归测试</title><body style="margin:16px;background:#fafafa"><button id="complete">完成格式化</button><button id="rename-posix">模拟 POSIX 重命名</button><button id="show-rename">查看模拟提交名字</button><pre id="rename-result"></pre><div id="app" style="height:600px;margin-top:12px"></div><script type="module" src="/app.js"></script></body></html>');
+				res.end('<!doctype html><html lang="zh"><meta charset="utf-8"><title>文件编辑器回归测试</title><body style="margin:16px;background:#fafafa"><button id="complete">完成格式化</button><button id="rename-posix">模拟 POSIX 重命名</button><button id="show-rename">查看模拟提交名字</button><button id="session-file">右键测试文件 my file.md</button><pre id="session-result" tabindex="0">已有草稿</pre><pre id="rename-result"></pre><div id="app" style="height:600px;margin-top:12px"></div><script type="module" src="/app.js"></script></body></html>');
                                 return;
                         case "/app.js":
                                 res.writeHead(200, { "content-type": "application/javascript" });

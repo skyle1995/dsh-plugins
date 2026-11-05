@@ -35,8 +35,14 @@ var NS = "dsh-plugin-file-actions";
 var API = "/api/dsh-file-actions";
 var sidebarRight = null;
 var sidebarRightTabs = null;
+var sessionContext = null;
 var OWN_UI = "[data-dfa-ui], .dfa-menu";
 var zh = {
+  "menu.addToSession": "\u6DFB\u52A0\u5230\u4F1A\u8BDD",
+  "toast.addedToSession": "\u5DF2\u6DFB\u52A0\u5230\u4F1A\u8BDD\uFF1A{name}",
+  "toast.sessionUnavailable": "\u5F53\u524D\u4F1A\u8BDD\u4E0D\u53EF\u7528\u6216\u5DF2\u5207\u6362\uFF0C\u8BF7\u91CD\u65B0\u53F3\u952E\u9009\u62E9",
+  "toast.sessionBusy": "\u5F53\u524D\u8F93\u5165\u6846\u6682\u4E0D\u53EF\u7F16\u8F91\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5",
+  "toast.referenceInvalid": "\u8BE5\u8DEF\u5F84\u65E0\u6CD5\u4F5C\u4E3A\u5F53\u524D\u5DE5\u4F5C\u533A\u7684\u6587\u4EF6\u5F15\u7528",
   "menu.paste": "\u7C98\u8D34",
   "menu.pasteN": "\u7C98\u8D34 {count} \u9879",
   "menu.cut": "\u526A\u5207",
@@ -113,6 +119,11 @@ var zh = {
   "toast.dismiss": "\u5173\u95ED"
 };
 var en = {
+  "menu.addToSession": "Add to conversation",
+  "toast.addedToSession": "Added to conversation: {name}",
+  "toast.sessionUnavailable": "Conversation unavailable or changed. Open the context menu again.",
+  "toast.sessionBusy": "The composer is currently locked. Try again later.",
+  "toast.referenceInvalid": "This path cannot be referenced in the current workspace.",
   "menu.paste": "Paste",
   "menu.pasteN": "Paste {count} items",
   "menu.cut": "Cut",
@@ -444,6 +455,50 @@ function openEdit(path, workspaceRoot = currentTreeRoot()) {
     pushToast(error.message, "error");
   }
 }
+function sessionReference(path, workspaceRoot, entry) {
+  const value = pathParts(path).normalized;
+  const root = pathParts(workspaceRoot).normalized;
+  const separator = isWindowsHostPath(root) ? "\\" : "/";
+  const prefix = root.endsWith(separator) ? root : root + separator;
+  if (!value.startsWith(prefix)) return null;
+  let relative = value.slice(prefix.length);
+  if (separator === "\\") relative = relative.replaceAll("\\", "/");
+  if (relative === "" || relative.split("/").some((part) => part === "." || part === ".." || part === "")) return null;
+  for (const character of relative) {
+    const code = character.codePointAt(0);
+    if (character === '"' || code < 32 || code >= 127 && code <= 159) return null;
+  }
+  const directory = entry === "directory";
+  const referencePath = relative + (directory ? "/" : "");
+  const mention = referencePath.trim() !== referencePath || [...referencePath].some((character) => character.trim() === "") ? `@"${referencePath}"` : `@${referencePath}`;
+  return {
+    source: "reference",
+    ref: mention,
+    clipboardText: mention,
+    label: basenameOf(path) + (directory ? "/" : ""),
+    appearance: directory ? "folder" : "file"
+  };
+}
+function addToSession(menu) {
+  try {
+    const ctx = sessionContext;
+    const sessionId = sidebarRight?.mounted?.getSnapshot();
+    if (ctx === null || !menu.sessionId || menu.sessionId !== sessionId) throw new Error(t("toast.sessionUnavailable"));
+    const scope = ctx.sessions.scope(sessionId);
+    const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd;
+    if (!scope || !cwd || !sameHostPath(cwd, menu.workspaceRoot)) throw new Error(t("toast.sessionUnavailable"));
+    const reference = sessionReference(menu.path, menu.workspaceRoot, menu.entry);
+    if (reference === null) throw new Error(t("toast.referenceInvalid"));
+    const input = ctx.conversation.input.for(scope);
+    const span = input.actions.captureInsertion();
+    if (!input.insertReference(reference, { ...span, start: span.end })) throw new Error(t("toast.sessionBusy"));
+    clearSelection();
+    input.focus();
+    pushToast(t("toast.addedToSession", { name: basenameOf(menu.path) }));
+  } catch (error) {
+    pushToast(error.message, "error");
+  }
+}
 function stagePaths(paths, mode, workspaceRoot = currentTreeRoot()) {
   if (workspaceRoot === null || paths.length === 0) return;
   setClipboard({ mode, paths: [...paths], workspaceRoot });
@@ -585,6 +640,14 @@ function ContextMenu() {
               openEdit(targets[0], menu.workspaceRoot);
             },
             children: t("menu.edit")
+          }),
+          targets.length === 1 && (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, {
+            icon: (0, import_react.createElement)(import_dsh_client_ui_primitives.IconLinkOutlineRegular, { size: 14 }),
+            onSelect: () => {
+              closeMenu();
+              addToSession(menu);
+            },
+            children: t("menu.addToSession")
           }),
           // 重命名：文件与目录都适用，且只在单目标时出现（多选重命名语义不明）
           targets.length === 1 && menu.path !== null && (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, {
@@ -2023,6 +2086,10 @@ function apply(ctx) {
   }, RenameDialog));
   sidebarRight = ctx.sidebarRight;
   sidebarRightTabs = ctx.sidebarRightTabs;
+  sessionContext = ctx;
+  ctx.effect(() => () => {
+    if (sessionContext === ctx) sessionContext = null;
+  }, "file-actions: session reference cleanup");
   ctx.effect(() => sidebarRightTabs.register({
     id: EDIT_ID,
     kind: EDIT_KIND,
@@ -2077,7 +2144,7 @@ function apply(ctx) {
           return;
         }
         event.preventDefault();
-        openMenu({ x: event.clientX, y: event.clientY, path, entry, scope: "row", workspaceRoot });
+        openMenu({ x: event.clientX, y: event.clientY, path, entry, scope: "row", workspaceRoot, sessionId: sidebarRight?.mounted?.getSnapshot() });
         return;
       }
       if (target.closest("[data-files-body]")) {
@@ -2181,7 +2248,7 @@ function apply(ctx) {
     };
   }, "file-actions: global listeners");
 }
-var inject = ["slots", "locale", "sidebarRightTabs", "sidebarRight"];
+var inject = ["slots", "locale", "sidebarRightTabs", "sidebarRight", "sessions", "conversation"];
 
     return module.exports;
   }

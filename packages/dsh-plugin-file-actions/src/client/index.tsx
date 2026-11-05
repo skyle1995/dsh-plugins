@@ -1,7 +1,7 @@
 /**
  * dsh-plugin-file-actions 浏览器半区：文件列表（右侧 files 标签页）增强。
  *
- * - 右键菜单：编辑 / 重命名 / 剪切 / 复制 / 粘贴 / 复制路径 / 压缩 / 删除
+ * - 右键菜单：编辑 / 添加到会话 / 重命名 / 剪切 / 复制 / 粘贴 / 复制路径 / 压缩 / 删除
  *   （删除需确认）；重命名对文件与目录均适用，Enter 确认、Esc 取消；
  * - Ctrl/Cmd+点击 多选、Shift+点击 选中锚点到该行的连续区间（Ctrl/Cmd+Shift
  *   并入已有选择），选中行高亮；批量操作栏（剪切/复制/压缩/删除/复制路径/
@@ -9,7 +9,7 @@
  * - 文件树顶部（sidebar.right.tab.files.actions 官方槽位）追加「粘贴」按钮；
  * - 剪贴板为模块级内存缓冲（剪切项半透明标记，粘贴成功后清空）；切换
  *   工作区自动清空；
- * - 全部操作走宿主半区 /api/dsh-file-actions 路由，成功/失败均有 Toast。
+ * - 文件管理走宿主半区 /api/dsh-file-actions；添加到会话走客户端输入服务，均有 Toast。
  *
  * 行 DOM（官方 sidebar-files 渲染）：
  *   <li data-files-entry="file|directory|other" data-files-path="<绝对路径>">
@@ -46,10 +46,17 @@ const API = "/api/dsh-file-actions";
 /** 右侧栏控制器与 tab 类型注册表（apply 时注入）。 */
 let sidebarRight = null;
 let sidebarRightTabs = null;
+/** 会话引用操作的宿主上下文，随插件卸载释放。 */
+let sessionContext = null;
 /** 我们自己的 DOM 标记：全局监听器据此跳过自身 UI。 */
 const OWN_UI = "[data-dfa-ui], .dfa-menu";
 
 const zh = {
+	"menu.addToSession": "添加到会话",
+	"toast.addedToSession": "已添加到会话：{name}",
+	"toast.sessionUnavailable": "当前会话不可用或已切换，请重新右键选择",
+	"toast.sessionBusy": "当前输入框暂不可编辑，请稍后重试",
+	"toast.referenceInvalid": "该路径无法作为当前工作区的文件引用",
 	"menu.paste": "粘贴",
 	"menu.pasteN": "粘贴 {count} 项",
 	"menu.cut": "剪切",
@@ -127,6 +134,11 @@ const zh = {
 };
 
 const en = {
+	"menu.addToSession": "Add to conversation",
+	"toast.addedToSession": "Added to conversation: {name}",
+	"toast.sessionUnavailable": "Conversation unavailable or changed. Open the context menu again.",
+	"toast.sessionBusy": "The composer is currently locked. Try again later.",
+	"toast.referenceInvalid": "This path cannot be referenced in the current workspace.",
 	"menu.paste": "Paste",
 	"menu.pasteN": "Paste {count} items",
 	"menu.cut": "Cut",
@@ -212,7 +224,7 @@ function format(text, params) {
  * @typedef {{ mode: "cut" | "copy", paths: string[], workspaceRoot: string }} Clipboard
  * @typedef {{ x: number, y: number, path: string | null,
  *             entry: "file" | "directory" | null, scope: "row" | "body",
- *             workspaceRoot: string }} MenuState
+ *             workspaceRoot: string, sessionId?: string }} MenuState
  * @typedef {{ paths: string[], workspaceRoot: string }} DeleteRequest
  * @typedef {{ paths: string[], workspaceRoot: string, name: string }} CompressRequest
  * @typedef {{ path: string, workspaceRoot: string, name: string }} RenameRequest
@@ -517,6 +529,56 @@ function openEdit(path, workspaceRoot = currentTreeRoot()) {
 	}
 }
 
+/**
+ * 创建宿主兼容的工作区引用；参数为路径、工作区根和入口类型，返回引用卡片或 null。
+ * Windows 分隔符只在引用语法中转换，POSIX 文件名中的反斜杠保持原样。
+ */
+function sessionReference(path, workspaceRoot, entry) {
+	const value = pathParts(path).normalized;
+	const root = pathParts(workspaceRoot).normalized;
+	const separator = isWindowsHostPath(root) ? "\\" : "/";
+	const prefix = root.endsWith(separator) ? root : root + separator;
+	if (!value.startsWith(prefix)) return null;
+	let relative = value.slice(prefix.length);
+	if (separator === "\\") relative = relative.replaceAll("\\", "/");
+	if (relative === "" || relative.split("/").some((part) => part === "." || part === ".." || part === "")) return null;
+	for (const character of relative) {
+		const code = character.codePointAt(0);
+		if (character === '"' || code < 32 || code >= 127 && code <= 159) return null;
+	}
+	const directory = entry === "directory";
+	const referencePath = relative + (directory ? "/" : "");
+	const mention = referencePath.trim() !== referencePath || [...referencePath].some((character) => character.trim() === "")
+		? `@"${referencePath}"` : `@${referencePath}`;
+	return {
+		source: "reference", ref: mention, clipboardText: mention,
+		label: basenameOf(path) + (directory ? "/" : ""),
+		appearance: directory ? "folder" : "file",
+	};
+}
+
+/** 添加单项到会话草稿；参数为右键菜单快照，无返回值，失败不清除选择或覆盖草稿。 */
+function addToSession(menu) {
+	try {
+		const ctx = sessionContext;
+		const sessionId = sidebarRight?.mounted?.getSnapshot();
+		if (ctx === null || !menu.sessionId || menu.sessionId !== sessionId) throw new Error(t("toast.sessionUnavailable"));
+		const scope = ctx.sessions.scope(sessionId);
+		const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd;
+		if (!scope || !cwd || !sameHostPath(cwd, menu.workspaceRoot)) throw new Error(t("toast.sessionUnavailable"));
+		const reference = sessionReference(menu.path, menu.workspaceRoot, menu.entry);
+		if (reference === null) throw new Error(t("toast.referenceInvalid"));
+		const input = ctx.conversation.input.for(scope);
+		const span = input.actions.captureInsertion();
+		if (!input.insertReference(reference, { ...span, start: span.end })) throw new Error(t("toast.sessionBusy"));
+		clearSelection();
+		input.focus();
+		pushToast(t("toast.addedToSession", { name: basenameOf(menu.path) }));
+	} catch (error) {
+		pushToast(error.message, "error");
+	}
+}
+
 /** 把一组路径放进剪切/复制缓冲（操作完成即清除多选）。 */
 function stagePaths(paths, mode, workspaceRoot = currentTreeRoot()) {
 	if (workspaceRoot === null || paths.length === 0) return;
@@ -682,6 +744,14 @@ function ContextMenu() {
 					},
 					children: t("menu.edit"),
 				}),
+							targets.length === 1 && h(MenuItemButton, {
+								icon: h(IconLinkOutlineRegular, { size: 14 }),
+								onSelect: () => {
+									closeMenu();
+									addToSession(menu);
+								},
+								children: t("menu.addToSession"),
+							}),
 				// 重命名：文件与目录都适用，且只在单目标时出现（多选重命名语义不明）
 				targets.length === 1 && menu.path !== null && h(MenuItemButton, {
 					icon: h(IconListPenOutlineRegular, { size: 14 }),
@@ -2206,6 +2276,10 @@ export function apply(ctx) {
 	}, RenameDialog));
 	sidebarRight = ctx.sidebarRight;
 	sidebarRightTabs = ctx.sidebarRightTabs;
+		sessionContext = ctx;
+		ctx.effect(() => () => {
+			if (sessionContext === ctx) sessionContext = null;
+		}, "file-actions: session reference cleanup");
 	// 文件编辑 tab 类型：仅在显式指定 kind 时打开（patterns 只匹配本插件的
 	// file-edit 地址，不影响普通文件点击 → 官方预览）。
 	ctx.effect(() => sidebarRightTabs.register({
@@ -2264,7 +2338,7 @@ export function apply(ctx) {
 					return;
 				}
 				event.preventDefault();
-				openMenu({ x: event.clientX, y: event.clientY, path, entry, scope: "row", workspaceRoot });
+				openMenu({ x: event.clientX, y: event.clientY, path, entry, scope: "row", workspaceRoot, sessionId: sidebarRight?.mounted?.getSnapshot() });
 				return;
 			}
 			if (target.closest("[data-files-body]")) {
@@ -2377,4 +2451,4 @@ export function apply(ctx) {
 }
 
 /** 浏览器依赖注入面（服务名；包级依赖见 package.json 的 dsh.client.inject）。 */
-export const inject = ["slots", "locale", "sidebarRightTabs", "sidebarRight"];
+export const inject = ["slots", "locale", "sidebarRightTabs", "sidebarRight", "sessions", "conversation"];

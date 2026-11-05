@@ -16,7 +16,7 @@ const require = createRequire(join(packageDirectory, "package.json"));
 const { build } = require("esbuild");
 const source = await readFile(join(packageDirectory, "src/client/index.tsx"), "utf8");
 const compiled = await build({
-        stdin: { contents: `${source}\nexport { EditorTab, dirnameOf, basenameOf, editAddress, parseEditAddress, normalizeHostPath, copyPaths, sameHostPath, invalidRenameName, performRename, stagePaths, pasteInto, readState, presetZipName, performCompress };`, loader: "tsx", resolveDir: packageDirectory },
+	stdin: { contents: `${source}\n/** 注入测试会话上下文；参数为宿主桩，无返回值。 */\nexport function setSessionContextForTest(ctx) { sessionContext = ctx; sidebarRight = ctx.sidebarRight; }\nexport { EditorTab, ContextMenu, openMenu, sessionReference, addToSession, dirnameOf, basenameOf, editAddress, parseEditAddress, normalizeHostPath, copyPaths, sameHostPath, invalidRenameName, performRename, stagePaths, pasteInto, readState, presetZipName, performCompress };`, loader: "tsx", resolveDir: packageDirectory },
         bundle: true, format: "cjs", platform: "browser", external: ["react*", "@deepseek-ai/*"], write: false,
 });
 
@@ -35,6 +35,8 @@ function harness() {
                 /** 创建虚拟元素；参数为类型、属性和子节点，返回节点描述。 */
                 createElement(type, props, ...children) { return { type, props: { ...props, ...(children.length ? { children } : {}) } }; },
                 Fragment: "fragment",
+		/** 读取模块状态；参数为订阅与读取函数，返回当前快照。 */
+		useSyncExternalStore(subscribe, read) { return read(); },
                 /** 状态 Hook；参数为初值，返回当前状态和更新函数。 */
                 useState(initial) {
                         const current = index++;
@@ -131,6 +133,75 @@ function harness() {
 async function flush() {
         await new Promise((resolve) => setImmediate(resolve));
 }
+
+test("会话引用兼容 Windows 混合路径、中文、空格及 POSIX 反斜杠", () => {
+	const { sessionReference } = harness().exports;
+	for (const [path, root, entry, expected] of [
+		["D:\\work/docs/中文.md", "D:/work/", "file", "@docs/中文.md"],
+		["\\\\server\\share/docs/a.txt", "\\\\server\\share", "file", "@docs/a.txt"],
+		["/workspace/my file.txt", "/workspace", "file", '@"my file.txt"'],
+		["/workspace/my folder", "/workspace", "directory", '@"my folder/"'],
+		["/workspace/name\\part.txt", "/workspace", "file", "@name\\part.txt"],
+		["/file.txt", "/", "file", "@file.txt"],
+	]) {
+		const reference = sessionReference(path, root, entry);
+		assert.equal(reference.ref, expected);
+		assert.equal(reference.clipboardText, expected);
+		assert.equal(reference.source, "reference");
+		assert.equal(reference.appearance, entry === "file" ? "file" : "folder");
+	}
+	for (const path of ["/outside/a", "/workspace-other/a", "/workspace", "/workspace/../a", '/workspace/bad"name', "/workspace/bad\nname"]) {
+		assert.equal(sessionReference(path, "/workspace", "file"), null, path);
+	}
+});
+
+test("右键添加会话追加引用且不发送，切换会话、忙碌及越界保持草稿", () => {
+	const app = harness();
+	let current = "session-a";
+	let cwd = "/workspace";
+	let editable = true;
+	const inserted = [];
+	let focused = 0;
+	const scope = {};
+	const input = {
+		state: { getSnapshot: () => ({ draft: "已有草稿", draftRev: 7 }) },
+		actions: { captureInsertion: () => ({ start: 1, end: 4, draftRev: 7 }) },
+		/** 记录引用插入；参数为引用及版本跨度，返回是否可编辑。 */
+		insertReference(reference, span) { if (!editable) return false; inserted.push({ reference, span }); return true; },
+		/** 记录输入框聚焦；无参数，无返回值。 */
+		focus() { focused++; },
+	};
+	app.exports.setSessionContextForTest({
+		sidebarRight: { mounted: { getSnapshot: () => current } },
+		sessions: { scope: () => scope, list: { getSnapshot: () => ({ byId: { [current]: { cwd } } }) } },
+		conversation: { input: { for: (target) => { assert.equal(target, scope); return input; } } },
+	});
+	const menu = { scope: "row", x: 10, y: 10, sessionId: current, workspaceRoot: cwd, path: "/workspace/code.js", entry: "file" };
+	app.exports.openMenu(menu);
+	const tree = app.exports.ContextMenu();
+	const action = app.find((node) => node.props?.children === "menu.addToSession", tree);
+	assert.ok(action);
+	action.props.onSelect();
+	assert.equal(inserted.length, 1);
+	assert.equal(inserted[0].reference.ref, "@code.js");
+	assert.deepEqual({ ...inserted[0].span }, { start: 4, end: 4, draftRev: 7 });
+	assert.equal(focused, 1);
+	assert.equal(app.requests.length, 0);
+	assert.equal(app.exports.readState().menu, null);
+	current = "session-b";
+	app.exports.addToSession(menu);
+	current = "session-a";
+	cwd = "/other";
+	app.exports.addToSession(menu);
+	cwd = "/workspace";
+	editable = false;
+	app.exports.addToSession(menu);
+	editable = true;
+	app.exports.addToSession({ ...menu, path: "/outside/file" });
+	assert.equal(inserted.length, 1);
+	assert.equal(focused, 1);
+	assert.equal(app.exports.readState().toasts.at(-1).kind, "error");
+});
 
 test("浏览器路径覆盖 Windows 盘符/UNC、macOS 根及反斜杠文件名", () => {
         const { exports: paths } = harness();
