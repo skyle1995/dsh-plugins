@@ -985,7 +985,8 @@ var zh3 = {
   deleteAcknowledge: "\u6211\u5DF2\u77E5\u6653\u5220\u9664\u4E0D\u53EF\u6062\u590D",
   deleteCancel: "\u53D6\u6D88",
   deleteConfirmAction: "\u5220\u9664",
-  deleteFailed: "\u5220\u9664\u5931\u8D25\uFF1A{message}"
+  deleteFailed: "\u5220\u9664\u5931\u8D25\uFF1A{message}",
+  deleteSyncFailed: "\u4F1A\u8BDD\u5DF2\u5220\u9664\uFF0C\u4F46\u5217\u8868\u66F4\u65B0\u5931\u8D25\uFF1A{message}"
 };
 var en3 = {
   "menu.deleteSession": "Delete session",
@@ -994,7 +995,8 @@ var en3 = {
   deleteAcknowledge: "I understand this cannot be undone",
   deleteCancel: "Cancel",
   deleteConfirmAction: "Delete",
-  deleteFailed: "Delete failed: {message}"
+  deleteFailed: "Delete failed: {message}",
+  deleteSyncFailed: "Session deleted, but the list could not be updated: {message}"
 };
 function format3(text, params) {
   return text.replace(/\{(\w+)\}/g, (_, key) => String(params[key] ?? ""));
@@ -1058,21 +1060,39 @@ function DeleteConfirmDialog({ t, usePendingDelete: usePendingDelete2, settleDel
 function register3(ctx) {
   ctx.effect(() => ctx.locale.register(NS3, { zh: zh3, en: en3 }), "plugin-session-archive: dictionaries");
   const t = ctx.locale.bind(NS3);
-  const confirmDelete = (sessionId) => {
-    void fetch(`${API3}/delete`, {
-      method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ sessionId })
-    }).then(async (response) => {
+  const lifetime = new AbortController();
+  const deleting = /* @__PURE__ */ new Set();
+  ctx.effect(() => () => lifetime.abort(), "plugin-session-archive: cancel pending deletes");
+  const confirmDelete = async (sessionId) => {
+    if (lifetime.signal.aborted || deleting.has(sessionId)) return;
+    deleting.add(sessionId);
+    let deleted = false;
+    try {
+      const workspaceId = ctx.workspaces.list.getSnapshot().items.find((workspace) => workspace.sessionIds.includes(sessionId))?.workspaceId;
+      const response = await fetch(`${API3}/delete`, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ sessionId }),
+        signal: lifetime.signal
+      });
       const payload = await response.json().catch(() => ({}));
+      if (lifetime.signal.aborted) return;
       if (!response.ok || payload.ok !== true) {
-        globalThis.alert(format3(t("deleteFailed"), { message: payload.message ?? `HTTP ${response.status}` }));
-        return;
+        throw new Error(payload.message ?? `HTTP ${response.status}`);
       }
-      globalThis.location.reload();
-    }).catch((error) => {
-      globalThis.alert(format3(t("deleteFailed"), { message: error.message }));
-    });
+      deleted = true;
+      await ctx.sessions.refresh();
+      if (lifetime.signal.aborted) return;
+      if (ctx.sidebarRight.mounted.getSnapshot() === sessionId) {
+        ctx.uiWorkspace.startSession(workspaceId);
+      }
+    } catch (error) {
+      if (!lifetime.signal.aborted) {
+        globalThis.alert(format3(t(deleted ? "deleteSyncFailed" : "deleteFailed"), { message: error.message }));
+      }
+    } finally {
+      deleting.delete(sessionId);
+    }
   };
   ctx.slots.inject("shell.overlay", () => ctx.slots.register({
     name: "shell.overlay",
@@ -1097,7 +1117,11 @@ function apply(ctx) {
 }
 var inject = [
   "slots",
-  "locale"
+  "locale",
+  "sessions",
+  "workspaces",
+  "sidebarRight",
+  "uiWorkspace"
 ];
 
     return module.exports;

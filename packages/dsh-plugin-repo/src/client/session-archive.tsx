@@ -7,7 +7,7 @@
  * - 点击后经 shell.overlay 弹出 RiskConfirmation 确认弹窗（需勾选
  *   「已知晓不可恢复」才可确认），确认后走宿主半区的
  *   /api/dsh-session-archive/delete 路由（官方 workspaceRegistry 记账
- *   detach + 会话文件清理），成功后刷新页面同步会话列表。
+ *   detach + 会话文件清理），成功后局部同步会话列表，不刷新页面。
  */
 import { createElement as h, useEffect, useState } from "react";
 import { IconTrashOutlineRegular, MenuItemButton, RiskConfirmation } from "@deepseek-ai/dsh-client-ui-primitives";
@@ -23,6 +23,7 @@ const zh = {
 	deleteCancel: "取消",
 	deleteConfirmAction: "删除",
 	deleteFailed: "删除失败：{message}",
+        deleteSyncFailed: "会话已删除，但列表更新失败：{message}",
 };
 
 const en = {
@@ -33,6 +34,7 @@ const en = {
 	deleteCancel: "Cancel",
 	deleteConfirmAction: "Delete",
 	deleteFailed: "Delete failed: {message}",
+        deleteSyncFailed: "Session deleted, but the list could not be updated: {message}",
 };
 
 function format(text, params) {
@@ -106,21 +108,43 @@ function DeleteConfirmDialog({ t, usePendingDelete, settleDelete, confirmDelete 
 export function register(ctx) {
 	ctx.effect(() => ctx.locale.register(NS, { zh, en }), "plugin-session-archive: dictionaries");
 	const t = ctx.locale.bind(NS);
-	const confirmDelete = (sessionId) => {
-		void fetch(`${API}/delete`, {
-			method: "POST",
-			headers: { "content-type": "application/json", accept: "application/json" },
-			body: JSON.stringify({ sessionId }),
-		}).then(async (response) => {
+        const lifetime = new AbortController();
+        const deleting = new Set();
+        ctx.effect(() => () => lifetime.abort(), "plugin-session-archive: cancel pending deletes");
+        /** 删除并局部同步；参数为会话 ID，返回完成 Promise，重复提交和卸载后的操作忽略。 */
+        const confirmDelete = async (sessionId) => {
+                if (lifetime.signal.aborted || deleting.has(sessionId)) return;
+                deleting.add(sessionId);
+                let deleted = false;
+                try {
+                        const workspaceId = ctx.workspaces.list.getSnapshot().items
+                                .find((workspace) => workspace.sessionIds.includes(sessionId))?.workspaceId;
+                        const response = await fetch(`${API}/delete`, {
+                                method: "POST",
+                                headers: { "content-type": "application/json", accept: "application/json" },
+                                body: JSON.stringify({ sessionId }),
+                                signal: lifetime.signal,
+                        });
 			const payload = await response.json().catch(() => ({}));
+                        if (lifetime.signal.aborted) return;
 			if (!response.ok || payload.ok !== true) {
-				globalThis.alert(format(t("deleteFailed"), { message: payload.message ?? `HTTP ${response.status}` }));
-				return;
+                                throw new Error(payload.message ?? `HTTP ${response.status}`);
+                        }
+                        deleted = true;
+                        // 官方工作区状态通过推送同步；这里只拉取会话基线，保留页面和其它草稿。
+                        await ctx.sessions.refresh();
+                        if (lifetime.signal.aborted) return;
+                        // 以更新完成时的可见会话为准，避免覆盖删除等待期间用户的新选择。
+                        if (ctx.sidebarRight.mounted.getSnapshot() === sessionId) {
+                                ctx.uiWorkspace.startSession(workspaceId);
 			}
-			globalThis.location.reload();
-		}).catch((error) => {
-			globalThis.alert(format(t("deleteFailed"), { message: error.message }));
-		});
+                } catch (error) {
+                        if (!lifetime.signal.aborted) {
+                                globalThis.alert(format(t(deleted ? "deleteSyncFailed" : "deleteFailed"), { message: error.message }));
+                        }
+                } finally {
+                        deleting.delete(sessionId);
+                }
 	};
 	ctx.slots.inject("shell.overlay", () => ctx.slots.register({
 		name: "shell.overlay",

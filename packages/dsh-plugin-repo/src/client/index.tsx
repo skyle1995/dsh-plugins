@@ -21,4 +21,8 @@ export function apply(ctx) {
 export const inject = [
 	"slots",
 	"locale",
+        "sessions",
+        "workspaces",
+        "sidebarRight",
+        "uiWorkspace",
 ];
