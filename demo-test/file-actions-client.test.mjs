@@ -16,7 +16,7 @@ const require = createRequire(join(packageDirectory, "package.json"));
 const { build } = require("esbuild");
 const source = await readFile(join(packageDirectory, "src/client/index.tsx"), "utf8");
 const compiled = await build({
-	stdin: { contents: `${source}\n/** 注入测试会话上下文；参数为宿主桩，无返回值。 */\nexport function setSessionContextForTest(ctx) { sessionContext = ctx; sidebarRight = ctx.sidebarRight; }\nexport { EditorTab, ContextMenu, openMenu, sessionReference, addToSession, dirnameOf, basenameOf, editAddress, parseEditAddress, normalizeHostPath, copyPaths, sameHostPath, invalidRenameName, performRename, stagePaths, pasteInto, readState, presetZipName, performCompress };`, loader: "tsx", resolveDir: packageDirectory },
+	stdin: { contents: `${source}\n/** 注入测试会话上下文；参数为宿主桩，无返回值。 */\nexport function setSessionContextForTest(ctx) { sessionContext = ctx; sidebarRight = ctx.sidebarRight; }\nexport { EditorTab, BatchBar, fileMenuSnapshot, fileMenuActions, registerFileMenus, setState, sessionReference, addToSession, dirnameOf, basenameOf, editAddress, parseEditAddress, normalizeHostPath, copyPaths, sameHostPath, invalidRenameName, performRename, stagePaths, pasteInto, readState, presetZipName, performCompress };`, loader: "tsx", resolveDir: packageDirectory },
         bundle: true, format: "cjs", platform: "browser", external: ["react*", "@deepseek-ai/*"], write: false,
 });
 
@@ -26,6 +26,7 @@ function harness() {
         const effects = [];
         const requests = [];
         const copied = [];
+	const trees = [];
         const listeners = new Map();
         let index = 0;
         let tree;
@@ -78,7 +79,7 @@ function harness() {
                 AbortController,
                 document: {
                         /** 提供空文件树；参数为选择器，返回空节点列表，避免访问真实页面。 */
-                        querySelectorAll() { return []; },
+                        querySelectorAll(selector) { return selector === '[data-files-state="tree"]' ? trees : []; },
                 },
                 window: {
                         innerWidth: 1600, innerHeight: 1000,
@@ -126,13 +127,82 @@ function harness() {
         function cleanup() {
                 for (const slot of slots) slot?.cleanup?.();
         }
-        return { exports: module.exports, tab, requests, copied, render, find, cleanup, listeners, refresh: () => commands.refresh() };
+        return { exports: module.exports, tab, requests, copied, trees, render, find, cleanup, listeners, refresh: () => commands.refresh() };
 }
 
 /** 等待当前 Promise 链完成；无参数，返回下一事件循环轮次的 Promise。 */
 async function flush() {
         await new Promise((resolve) => setImmediate(resolve));
 }
+
+test("官方菜单贡献不重复复制路径，捕获目标并随插件卸载注销", () => {
+	const app = harness();
+	const providers = new Map();
+	const icons = [];
+	const cleanup = [];
+	app.exports.setSessionContextForTest({ sessions: { list: { getSnapshot: () => ({ byId: { session: { cwd: "D:/work" } } }) } } });
+	app.exports.registerFileMenus({
+		contextMenus: {
+			/** 捕获菜单注册并提供注销；参数为贡献定义，返回清理函数。 */
+			register(provider) { providers.set(provider.target, provider); return () => providers.delete(provider.target); },
+		},
+		/** 执行注册并保留清理函数；参数为效果，无返回值。 */
+		effect(fn) { cleanup.push(fn()); },
+		slots: {
+			/** 执行图标槽注入；参数为槽名和注册函数，无返回值。 */
+			inject(name, fn) { assert.equal(name, "contextMenu.icon"); fn(); },
+			/** 捕获图标定义；参数为定义，无返回值。 */
+			register(definition) { icons.push(definition.key); },
+		},
+	});
+	assert.equal(providers.size, 2);
+	for (const entry of ["file", "directory"]) {
+		const actions = providers.get(entry).resolve({ sessionId: "session", path: entry === "file" ? "docs/a.txt" : "docs" });
+		assert.ok(actions.some((action) => action.id === "rename"));
+		assert.ok(actions.some((action) => action.id === "addToSession"));
+		assert.equal(actions.some((action) => action.id === "copyPath"), false);
+		assert.equal(actions.some((action) => action.id === "edit"), entry === "file");
+		assert.equal(actions.some((action) => action.id === "paste"), entry === "directory");
+		assert.equal(new Set(actions.map((action) => action.id)).size, actions.length);
+		assert.ok(actions.every((action) => icons.includes(action.icon.key)));
+	}
+	const target = { sessionId: "session", path: "docs/a.txt" };
+	const action = providers.get("file").resolve(target).find((item) => item.id === "copy");
+	target.path = "changed.txt";
+	action.run();
+	assert.deepEqual(Array.from(app.exports.readState().clipboard.paths), ["D:\\work\\docs\\a.txt"]);
+	for (const dispose of cleanup) dispose();
+	assert.equal(providers.size, 0);
+});
+
+test("原生菜单解析隔离工作区、根目录与越界路径，保留真正的批量操作", () => {
+	const app = harness();
+	const api = app.exports;
+	app.exports.setSessionContextForTest({ sessions: { list: { getSnapshot: () => ({ byId: {
+		session: { cwd: "/workspace" }, windows: { cwd: "\\\\server\\share\\work" },
+	} }) } } });
+	assert.equal(api.fileMenuSnapshot({ sessionId: "session", path: "docs/a.txt" }, "file").path, "/workspace/docs/a.txt");
+	assert.equal(api.fileMenuSnapshot({ sessionId: "windows", path: "docs/a.txt" }, "file").path, "\\\\server\\share\\work\\docs\\a.txt");
+	for (const path of ["/outside/a", "/workspace-other/a", "../escape", "docs/../../escape", "/workspace/../escape"]) {
+		assert.equal(api.fileMenuActions({ sessionId: "session", path }, "file").length, 0);
+	}
+	assert.equal(api.fileMenuActions({ sessionId: "missing", path: "/workspace/a" }, "file").length, 0);
+	assert.deepEqual(Array.from(api.fileMenuActions({ sessionId: "session", path: "/workspace" }, "directory"), (item) => item.id), ["paste"]);
+	app.trees.push({
+		getBoundingClientRect: () => ({ width: 100 }), getAttribute: () => "/workspace", querySelectorAll: () => [],
+	});
+	api.setState({ selection: new Set(["/workspace/a.txt", "/workspace/b.txt"]), treeVisible: true });
+	const actions = api.fileMenuActions({ sessionId: "session", path: "/workspace/a.txt" }, "file");
+	assert.equal(actions.some((item) => ["edit", "rename", "addToSession", "copyPath"].includes(item.id)), false);
+	const copy = actions.find((item) => item.id === "copy");
+	api.setState({ selection: new Set(["/workspace/changed.txt"]) });
+	copy.run();
+	assert.deepEqual(Array.from(api.readState().clipboard.paths), ["/workspace/a.txt", "/workspace/b.txt"]);
+	api.setState({ selection: new Set(["/workspace/a.txt"]) });
+	assert.equal(app.find((node) => node.props?.title === "menu.copyPath", api.BatchBar()), undefined);
+	api.setState({ selection: new Set(["/workspace/a.txt", "/workspace/b.txt"]) });
+	assert.ok(app.find((node) => node.props?.title === "menu.copyPathN", api.BatchBar()));
+});
 
 test("会话引用兼容 Windows 混合路径、中文、空格及 POSIX 反斜杠", () => {
 	const { sessionReference } = harness().exports;
@@ -177,17 +247,14 @@ test("右键添加会话追加引用且不发送，切换会话、忙碌及越�
 		conversation: { input: { for: (target) => { assert.equal(target, scope); return input; } } },
 	});
 	const menu = { scope: "row", x: 10, y: 10, sessionId: current, workspaceRoot: cwd, path: "/workspace/code.js", entry: "file" };
-	app.exports.openMenu(menu);
-	const tree = app.exports.ContextMenu();
-	const action = app.find((node) => node.props?.children === "menu.addToSession", tree);
+	const action = app.exports.fileMenuActions({ sessionId: current, path: "code.js" }, "file").find((action) => action.id === "addToSession");
 	assert.ok(action);
-	action.props.onSelect();
+	action.run();
 	assert.equal(inserted.length, 1);
 	assert.equal(inserted[0].reference.ref, "@code.js");
 	assert.deepEqual({ ...inserted[0].span }, { start: 4, end: 4, draftRev: 7 });
 	assert.equal(focused, 1);
 	assert.equal(app.requests.length, 0);
-	assert.equal(app.exports.readState().menu, null);
 	current = "session-b";
 	app.exports.addToSession(menu);
 	current = "session-a";

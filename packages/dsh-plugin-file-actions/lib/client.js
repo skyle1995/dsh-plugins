@@ -36,7 +36,7 @@ var API = "/api/dsh-file-actions";
 var sidebarRight = null;
 var sidebarRightTabs = null;
 var sessionContext = null;
-var OWN_UI = "[data-dfa-ui], .dfa-menu";
+var OWN_UI = "[data-dfa-ui], .dfa-menu, [data-context-menu]";
 var zh = {
   "menu.addToSession": "\u6DFB\u52A0\u5230\u4F1A\u8BDD",
   "toast.addedToSession": "\u5DF2\u6DFB\u52A0\u5230\u4F1A\u8BDD\uFF1A{name}",
@@ -211,10 +211,6 @@ var state = {
     /** @type {Set<string>} */
     /* @__PURE__ */ new Set()
   ),
-  menu: (
-    /** @type {MenuState | null} */
-    null
-  ),
   deleteRequest: (
     /** @type {DeleteRequest | null} */
     null
@@ -240,7 +236,7 @@ function notify() {
 }
 function setState(patch) {
   const next = { ...state, ...patch };
-  if (next.clipboard === state.clipboard && next.selection === state.selection && next.menu === state.menu && next.deleteRequest === state.deleteRequest && next.compressRequest === state.compressRequest && next.renameRequest === state.renameRequest && next.toasts === state.toasts && next.treeVisible === state.treeVisible) return;
+  if (next.clipboard === state.clipboard && next.selection === state.selection && next.deleteRequest === state.deleteRequest && next.compressRequest === state.compressRequest && next.renameRequest === state.renameRequest && next.toasts === state.toasts && next.treeVisible === state.treeVisible) return;
   Object.assign(state, next);
   notify();
 }
@@ -415,13 +411,6 @@ function setClipboard(clipboard) {
   setState({ clipboard });
   syncCutMarks();
 }
-function openMenu(menu) {
-  setState({ menu });
-}
-function closeMenu() {
-  if (state.menu === null) return;
-  setState({ menu: null });
-}
 function requestDelete(request) {
   setState({ deleteRequest: request });
 }
@@ -580,130 +569,83 @@ function performDelete(request) {
 function itemLabel(key, keyN, count) {
   return count > 1 ? t(keyN, { count }) : t(key);
 }
-function ContextMenu() {
-  const menu = useStore((s) => s.menu);
-  const selection = useStore((s) => s.selection);
-  const clipboard = useStore((s) => s.clipboard);
-  if (menu === null) return null;
-  const clickedSelected = menu.path !== null && selection.has(menu.path);
-  const targets = clickedSelected ? [...selection] : menu.path !== null ? [menu.path] : [];
-  const MENU_MARGIN = 12;
-  const MENU_EST_WIDTH = 200;
-  const MENU_EST_HEIGHT = 240;
-  const side = menu.y + MENU_EST_HEIGHT <= window.innerHeight - MENU_MARGIN ? "bottom" : "top";
-  const align = menu.x + MENU_EST_WIDTH <= window.innerWidth - MENU_MARGIN ? "start" : "end";
-  const pasteTarget = menu.scope === "body" ? menu.workspaceRoot : menu.entry === "directory" ? menu.path : null;
-  return (0, import_react.createElement)(
-    "div",
-    { "data-dfa-ui": "menu", style: { position: "fixed", left: menu.x, top: menu.y, width: 0, height: 0, display: "flex", pointerEvents: "none" } },
-    (0, import_react.createElement)(import_dsh_client_ui_primitives.Menu, {
-      open: true,
-      portal: true,
-      compact: true,
-      autoFocus: true,
-      side,
-      align,
-      listClassName: "dfa-menu",
-      onClose: closeMenu,
-      getAnchorRect: () => ({
-        left: menu.x,
-        top: menu.y,
-        right: menu.x,
-        bottom: menu.y,
-        width: 0,
-        height: 0
-      }),
-      anchor: (0, import_react.createElement)("span", { style: { position: "fixed", left: menu.x, top: menu.y, width: 0, height: 0 } }),
-      children: [
-        pasteTarget !== null && (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, {
-          icon: (0, import_react.createElement)(import_dsh_client_ui_primitives.IconFolderOpenOutlineRegular, { size: 14 }),
-          disabled: clipboard === null,
-          onSelect: () => {
-            closeMenu();
-            pasteInto(pasteTarget, menu.workspaceRoot);
-          },
-          children: clipboard === null ? t("menu.paste") : itemLabel("menu.paste", "menu.pasteN", clipboard.paths.length)
-        }),
-        menu.scope === "body" && selection.size > 0 && (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, {
-          icon: (0, import_react.createElement)(import_dsh_client_ui_primitives.IconCloseOutlineRegular, { size: 14 }),
-          onSelect: () => {
-            closeMenu();
-            clearSelection();
-          },
-          children: t("menu.clearSelection")
-        }),
-        menu.scope === "row" && (0, import_react.createElement)(import_react.Fragment, { children: [
-          menu.entry === "file" && targets.length === 1 && (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, {
-            icon: (0, import_react.createElement)(import_dsh_client_ui_primitives.IconEditOutlineRegular, { size: 14 }),
-            onSelect: () => {
-              closeMenu();
-              openEdit(targets[0], menu.workspaceRoot);
-            },
-            children: t("menu.edit")
-          }),
-          targets.length === 1 && (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, {
-            icon: (0, import_react.createElement)(import_dsh_client_ui_primitives.IconLinkOutlineRegular, { size: 14 }),
-            onSelect: () => {
-              closeMenu();
-              addToSession(menu);
-            },
-            children: t("menu.addToSession")
-          }),
-          // 重命名：文件与目录都适用，且只在单目标时出现（多选重命名语义不明）
-          targets.length === 1 && menu.path !== null && (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, {
-            icon: (0, import_react.createElement)(import_dsh_client_ui_primitives.IconListPenOutlineRegular, { size: 14 }),
-            onSelect: () => {
-              closeMenu();
-              renamePath(targets[0], menu.workspaceRoot);
-            },
-            children: t("menu.rename")
-          }),
-          (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, {
-            icon: (0, import_react.createElement)(import_dsh_client_ui_primitives.IconEditOutlineRegular, { size: 14 }),
-            onSelect: () => {
-              closeMenu();
-              stagePaths(targets, "cut", menu.workspaceRoot);
-            },
-            children: itemLabel("menu.cut", "menu.cutN", targets.length)
-          }),
-          (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, {
-            icon: (0, import_react.createElement)(import_dsh_client_ui_primitives.IconCopyOutlineRegular, { size: 14 }),
-            onSelect: () => {
-              closeMenu();
-              stagePaths(targets, "copy", menu.workspaceRoot);
-            },
-            children: itemLabel("menu.copy", "menu.copyN", targets.length)
-          }),
-          (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, {
-            icon: (0, import_react.createElement)(import_dsh_client_ui_primitives.IconLinkOutlineRegular, { size: 14 }),
-            onSelect: () => {
-              closeMenu();
-              copyPaths(targets);
-            },
-            children: itemLabel("menu.copyPath", "menu.copyPathN", targets.length)
-          }),
-          (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, {
-            icon: (0, import_react.createElement)(import_dsh_client_ui_primitives.IconArchiveOutlineRegular, { size: 14 }),
-            onSelect: () => {
-              closeMenu();
-              compressPaths(targets, menu.workspaceRoot);
-            },
-            children: itemLabel("menu.compress", "menu.compressN", targets.length)
-          }),
-          (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, {
-            danger: true,
-            separatorBefore: true,
-            icon: (0, import_react.createElement)(import_dsh_client_ui_primitives.IconTrashOutlineRegular, { size: 14 }),
-            onSelect: () => {
-              closeMenu();
-              deletePaths(targets, menu.workspaceRoot);
-            },
-            children: itemLabel("menu.delete", "menu.deleteN", targets.length)
-          })
-        ] })
-      ]
-    })
+function fileMenuSnapshot(target, entry) {
+  const workspaceRoot = sessionContext?.sessions.list.getSnapshot().byId[target.sessionId]?.cwd;
+  if (!workspaceRoot || typeof target.path !== "string") return null;
+  const root = pathParts(workspaceRoot).normalized;
+  const separator = root.startsWith("/") ? "/" : "\\";
+  const absolute = target.path.startsWith("/") || /^[A-Za-z]:[/\\]/.test(target.path) || target.path.startsWith("\\\\");
+  const path = absolute ? target.path : root + (root.endsWith(separator) ? "" : separator) + target.path;
+  const normalized = pathParts(path).normalized;
+  const prefix = root.endsWith(separator) ? root : root + separator;
+  if (normalized !== root && !normalized.startsWith(prefix)) return null;
+  if (normalized.slice(prefix.length).split(separator).some((part) => part === "." || part === "..")) return null;
+  return { path: normalized, entry, workspaceRoot: root, sessionId: target.sessionId };
+}
+function fileMenuActions(target, entry) {
+  const menu = fileMenuSnapshot(target, entry);
+  if (menu === null) return [];
+  const selection = readState().selection;
+  const selected = sameHostPath(currentTreeRoot() ?? "", menu.workspaceRoot) && [...selection].some((path) => sameHostPath(path, menu.path));
+  const targets = selected ? [...selection] : [menu.path];
+  const clipboard = readState().clipboard;
+  const actions = [];
+  const add = (id, label, run, extra = {}) => actions.push({
+    id,
+    label,
+    icon: { key: `${NS}.${id}` },
+    run,
+    ...extra
+  });
+  if (entry === "directory") add(
+    "paste",
+    clipboard === null ? t("menu.paste") : itemLabel("menu.paste", "menu.pasteN", clipboard.paths.length),
+    () => pasteInto(menu.path, menu.workspaceRoot),
+    { disabled: clipboard === null || !sameHostPath(clipboard.workspaceRoot, menu.workspaceRoot) }
   );
+  if (targets.length === 1) {
+    if (entry === "file") add("edit", t("menu.edit"), () => openEdit(menu.path, menu.workspaceRoot));
+    if (!sameHostPath(menu.path, menu.workspaceRoot)) add("addToSession", t("menu.addToSession"), () => addToSession(menu));
+    if (!sameHostPath(menu.path, menu.workspaceRoot)) add("rename", t("menu.rename"), () => renamePath(menu.path, menu.workspaceRoot));
+  }
+  if (!sameHostPath(menu.path, menu.workspaceRoot)) {
+    add("cut", itemLabel("menu.cut", "menu.cutN", targets.length), () => stagePaths(targets, "cut", menu.workspaceRoot));
+    add("copy", itemLabel("menu.copy", "menu.copyN", targets.length), () => stagePaths(targets, "copy", menu.workspaceRoot));
+    add("compress", itemLabel("menu.compress", "menu.compressN", targets.length), () => compressPaths(targets, menu.workspaceRoot));
+    add(
+      "delete",
+      itemLabel("menu.delete", "menu.deleteN", targets.length),
+      () => deletePaths(targets, menu.workspaceRoot),
+      { danger: true, separatorBefore: true }
+    );
+  }
+  return actions;
+}
+function registerFileMenus(ctx) {
+  for (const entry of ["file", "directory"]) {
+    ctx.effect(() => ctx.contextMenus.register({
+      id: `${NS}.${entry}`,
+      target: entry,
+      order: 300,
+      resolve: (target) => fileMenuActions(target, entry)
+    }), `file-actions: ${entry} menu`);
+  }
+  for (const [id, icon] of [
+    ["paste", import_dsh_client_ui_primitives.IconFolderOpenOutlineRegular],
+    ["edit", import_dsh_client_ui_primitives.IconEditOutlineRegular],
+    ["addToSession", import_dsh_client_ui_primitives.IconLinkOutlineRegular],
+    ["rename", import_dsh_client_ui_primitives.IconListPenOutlineRegular],
+    ["cut", import_dsh_client_ui_primitives.IconEditOutlineRegular],
+    ["copy", import_dsh_client_ui_primitives.IconCopyOutlineRegular],
+    ["compress", import_dsh_client_ui_primitives.IconArchiveOutlineRegular],
+    ["delete", import_dsh_client_ui_primitives.IconTrashOutlineRegular]
+  ]) {
+    ctx.slots.inject("contextMenu.icon", () => ctx.slots.register({
+      name: "contextMenu.icon",
+      key: `${NS}.${id}`,
+      inject: () => ({})
+    }, () => (0, import_react.createElement)(icon, { size: 14 })));
+  }
 }
 function BatchBar() {
   const selection = useStore((s) => s.selection);
@@ -718,7 +660,7 @@ function BatchBar() {
     barButton(import_dsh_client_ui_primitives.IconEditOutlineRegular, itemLabel("menu.cut", "menu.cutN", paths.length), () => stagePaths(paths, "cut")),
     barButton(import_dsh_client_ui_primitives.IconCopyOutlineRegular, itemLabel("menu.copy", "menu.copyN", paths.length), () => stagePaths(paths, "copy")),
     barButton(import_dsh_client_ui_primitives.IconArchiveOutlineRegular, itemLabel("menu.compress", "menu.compressN", paths.length), () => compressPaths(paths)),
-    barButton(import_dsh_client_ui_primitives.IconLinkOutlineRegular, itemLabel("menu.copyPath", "menu.copyPathN", paths.length), () => copyPaths(paths)),
+    paths.length > 1 && barButton(import_dsh_client_ui_primitives.IconLinkOutlineRegular, itemLabel("menu.copyPath", "menu.copyPathN", paths.length), () => copyPaths(paths)),
     barButton(import_dsh_client_ui_primitives.IconTrashOutlineRegular, itemLabel("menu.delete", "menu.deleteN", paths.length), () => deletePaths(paths), true),
     barButton(import_dsh_client_ui_primitives.IconCloseOutlineRegular, t("menu.clearSelection"), clearSelection)
   ]);
@@ -1563,18 +1505,22 @@ function PasteHeaderAction(props) {
 }
 var CSS = `
 [data-files-path][data-files-entry][data-files-selected="true"] > button,
-[data-files-path][data-files-entry][data-files-selected="true"] > button:hover {
+[data-files-path][data-files-entry][data-files-selected="true"] > button:hover,
+[data-files-path][data-files-entry][data-files-selected="true"] > div > button,
+[data-files-path][data-files-entry][data-files-selected="true"] > div > button:hover {
 	background: var(--dsw-alias-interactive-bg-hover);
 	box-shadow: inset 2px 0 0 var(--dsw-alias-state-business-primary);
 }
-[data-files-path][data-files-entry][data-files-selected="true"] > button::after {
+[data-files-path][data-files-entry][data-files-selected="true"] > button::after,
+[data-files-path][data-files-entry][data-files-selected="true"] > div > button::after {
 	content: "\u2713";
 	margin-left: auto;
 	font-size: 12px;
 	color: var(--dsw-alias-state-business-primary);
 	flex: none;
 }
-[data-files-path][data-files-entry][data-files-cut="true"] > button {
+[data-files-path][data-files-entry][data-files-cut="true"] > button,
+[data-files-path][data-files-entry][data-files-cut="true"] > div > button {
 	opacity: .55;
 }
 .dfa-menu {
@@ -2060,12 +2006,6 @@ function apply(ctx) {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), "file-actions: dictionaries");
   ctx.slots.inject("shell.overlay", () => ctx.slots.register({
     name: "shell.overlay",
-    id: "file-actions-context-menu",
-    locale: NS,
-    inject: () => ({})
-  }, ContextMenu));
-  ctx.slots.inject("shell.overlay", () => ctx.slots.register({
-    name: "shell.overlay",
     id: "file-actions-batch-bar",
     locale: NS,
     inject: () => ({})
@@ -2094,6 +2034,7 @@ function apply(ctx) {
   ctx.effect(() => () => {
     if (sessionContext === ctx) sessionContext = null;
   }, "file-actions: session reference cleanup");
+  registerFileMenus(ctx);
   ctx.effect(() => sidebarRightTabs.register({
     id: EDIT_ID,
     kind: EDIT_KIND,
@@ -2129,35 +2070,6 @@ function apply(ctx) {
     inject: () => ({})
   }, PasteHeaderAction));
   ctx.effect(() => {
-    const onContextMenu = (event) => {
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      if (target.closest(OWN_UI)) return;
-      const tree = target.closest('[data-files-state="tree"]');
-      if (tree === null) return;
-      const row = target.closest("[data-files-path]");
-      if (row !== null) {
-        const entry = row.getAttribute("data-files-entry");
-        if (entry !== "file" && entry !== "directory") return;
-        const path = row.getAttribute("data-files-path");
-        const workspaceRoot = tree.getAttribute("data-files-root");
-        if (path === null || workspaceRoot === null) return;
-        if (event.ctrlKey || event.metaKey) {
-          event.preventDefault();
-          toggleSelect(path);
-          return;
-        }
-        event.preventDefault();
-        openMenu({ x: event.clientX, y: event.clientY, path, entry, scope: "row", workspaceRoot, sessionId: sidebarRight?.mounted?.getSnapshot() });
-        return;
-      }
-      if (target.closest("[data-files-body]")) {
-        const workspaceRoot = tree.getAttribute("data-files-root");
-        if (workspaceRoot === null) return;
-        event.preventDefault();
-        openMenu({ x: event.clientX, y: event.clientY, path: null, entry: null, scope: "body", workspaceRoot });
-      }
-    };
     const onClick = (event) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
@@ -2200,7 +2112,7 @@ function apply(ctx) {
       if (editable) return;
       if (document.querySelector(import_dsh_client_ui_primitives.modalSelector) !== null) return;
       if (event.key === "Escape") {
-        if (readState().menu === null) clearSelection();
+        if (ctx.contextMenus.active.getSnapshot() === null) clearSelection();
         return;
       }
       const snapshot = readState();
@@ -2216,7 +2128,6 @@ function apply(ctx) {
       event.preventDefault();
       requestDelete({ paths: [...snapshot.selection], workspaceRoot: root });
     };
-    document.addEventListener("contextmenu", onContextMenu, true);
     document.addEventListener("click", onClick, true);
     document.addEventListener("keydown", onKeyDown, true);
     let scheduled = false;
@@ -2230,7 +2141,6 @@ function apply(ctx) {
         if (!visible) {
           clearSelection();
           selectionAnchor = null;
-          closeMenu();
           if (readState().clipboard !== null) setClipboard(null);
           return;
         }
@@ -2246,13 +2156,12 @@ function apply(ctx) {
     observe();
     return () => {
       observer.disconnect();
-      document.removeEventListener("contextmenu", onContextMenu, true);
       document.removeEventListener("click", onClick, true);
       document.removeEventListener("keydown", onKeyDown, true);
     };
   }, "file-actions: global listeners");
 }
-var inject = ["slots", "locale", "sidebarRightTabs", "sidebarRight", "sessions", "conversation"];
+var inject = ["slots", "locale", "sidebarRightTabs", "sidebarRight", "sessions", "conversation", "contextMenus"];
 
     return module.exports;
   }
