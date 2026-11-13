@@ -595,7 +595,7 @@ function ContextMenu() {
   const pasteTarget = menu.scope === "body" ? menu.workspaceRoot : menu.entry === "directory" ? menu.path : null;
   return (0, import_react.createElement)(
     "div",
-    { "data-dfa-ui": "menu", style: { pointerEvents: "none" } },
+    { "data-dfa-ui": "menu", style: { position: "fixed", left: menu.x, top: menu.y, width: 0, height: 0, display: "flex", pointerEvents: "none" } },
     (0, import_react.createElement)(import_dsh_client_ui_primitives.Menu, {
       open: true,
       portal: true,
@@ -1480,7 +1480,11 @@ function EditorTab(props) {
         setMenuAt({ x: event.clientX, y: event.clientY });
       }
     }),
-    menuAt !== null && (0, import_react.createElement)(import_dsh_client_ui_primitives.Menu, {
+    menuAt !== null && (0, import_react.createElement)("div", {
+      "data-dfa-ui": "menu",
+      // 与文件列表菜单相同，兼容通过外层 span 测量锚点的旧版 Menu。
+      style: { position: "fixed", left: menuAt.x, top: menuAt.y, width: 0, height: 0, display: "flex", pointerEvents: "none" }
+    }, (0, import_react.createElement)(import_dsh_client_ui_primitives.Menu, {
       open: true,
       portal: true,
       compact: true,
@@ -1510,7 +1514,7 @@ function EditorTab(props) {
         (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, { separatorBefore: true, onSelect: format2, children: translate("edit.format") }),
         (0, import_react.createElement)(import_dsh_client_ui_primitives.MenuItemButton, { onSelect: save, disabled: !loaded || !dirty, children: translate("edit.save") })
       ]
-    })
+    }))
   ]);
 }
 function editorButton(label, onClick, icon = null, disabled = false, primary = false) {

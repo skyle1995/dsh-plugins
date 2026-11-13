@@ -1,6 +1,7 @@
 /**
  * 编辑器及重命名浏览器测试页，真实 React 组件配合最小平台桩，不修改真实文件。
  * 参数：无；运行后打印随机本地端口，Ctrl+C 关闭并释放端口，不写入测试缓存。
+ * 菜单桩默认使用 getAnchorRect；页面加 ?legacy 时模拟只测量外层 span 的定位契约。
  */
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
@@ -45,7 +46,7 @@ document.getElementById("show-rename").onclick=async()=>{const result=await(awai
                 loader: "jsx", resolveDir: plugin,
         },
         bundle: true, format: "esm", platform: "browser", jsx: "automatic", write: false,
-        alias: { react: reactRequire.resolve("react"), "react-dom/client": reactRequire.resolve("react-dom/client") },
+        alias: { react: reactRequire.resolve("react"), "react-dom": reactRequire.resolve("react-dom"), "react-dom/client": reactRequire.resolve("react-dom/client") },
         plugins: [{
                 name: "test-platform",
                 /** 替换平台模块并仅在内存导出测试组件；参数为构建器，无返回值。 */
@@ -53,13 +54,27 @@ document.getElementById("show-rename").onclick=async()=>{const result=await(awai
                         builder.onResolve({ filter: /^@deepseek-ai\/dsh-client-ui-primitives$/ }, () => ({ path: "ui", namespace: "stub" }));
                         builder.onLoad({ filter: /.*/, namespace: "stub" }, () => ({
                                 contents: `import React from "react";
+import { createPortal } from "react-dom";
 export const ${icons.map((name) => `${name}=()=>null`).join(",")};
 export const useCodeHighlighter=()=>null, languageForPath=()=>"javascript", modalSelector=()=>null, writeClipboard=async()=>{};
-export const Menu=({children})=>React.createElement("div",{style:{pointerEvents:"auto"}},children), MenuItemButton=({children,onSelect})=>React.createElement("button",{onClick:onSelect},children==="menu.addToSession"?"添加到会话":children);
+/** 模拟官方菜单定位契约；legacy 参数启用只测量外层锚点的旧版行为，返回菜单节点。 */
+export function Menu({children,anchor,side="bottom",align="start",getAnchorRect,className,listClassName,onClose}) {
+ const root=React.useRef(null),list=React.useRef(null),[position,setPosition]=React.useState({left:0,top:0});
+ React.useLayoutEffect(()=>{
+  const rect=new URLSearchParams(location.search).has("legacy")?root.current.getBoundingClientRect():getAnchorRect();
+  const width=list.current.offsetWidth,height=list.current.offsetHeight;
+  setPosition({left:Math.min(Math.max(align==="start"?rect.left:rect.right-width,12),innerWidth-width-12),
+   top:Math.min(Math.max(side==="bottom"?rect.bottom+4:rect.top-height-4,12),innerHeight-height-12)});
+ },[getAnchorRect,side,align]);
+ React.useEffect(()=>{const close=event=>{if(!root.current.contains(event.target)&&!list.current.contains(event.target))onClose();};document.addEventListener("pointerdown",close);return()=>document.removeEventListener("pointerdown",close);},[onClose]);
+ return React.createElement("span",{ref:root,className,style:{display:"inline-flex",position:"relative"}},anchor,
+  createPortal(React.createElement("div",{ref:list,className:listClassName,role:"menu",style:{position:"fixed",...position,pointerEvents:"auto",background:"white",zIndex:100,display:"flex",flexDirection:"column"}},children),document.body));
+}
+export const MenuItemButton=({children,onSelect})=>React.createElement("button",{onClick:onSelect},children==="menu.addToSession"?"添加到会话":children);
 /** 渲染测试模态内容；参数为开关、内容和页脚，返回 React 节点或 null。 */
 export const Modal=({open,children,footer})=>open?React.createElement("div",null,children,footer):null;
 /** 渲染可点击测试按钮；参数为内容、回调和禁用状态，返回 React 按钮。 */
-export const Button=({children,onClick,disabled})=>React.createElement("button",{onClick,disabled},children), RiskConfirmation=Menu;`,
+export const Button=({children,onClick,disabled})=>React.createElement("button",{onClick,disabled},children), RiskConfirmation=({children})=>children;`,
                                 loader: "js",
                         }));
                         builder.onLoad({ filter: /src[\\/]client[\\/]index\.tsx$/ }, async ({ path }) => ({
@@ -81,7 +96,7 @@ function json(res, status, payload) {
 /** 处理测试页面与桩接口；参数为 HTTP 请求/响应，返回异步处理结果。 */
 const server = createServer(async (req, res) => {
         try {
-                switch (req.url) {
+                switch (new URL(req.url, "http://localhost").pathname) {
                         case "/":
                                 res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
 				res.end('<!doctype html><html lang="zh"><meta charset="utf-8"><title>文件编辑器回归测试</title><body style="margin:16px;background:#fafafa"><button id="complete">完成格式化</button><button id="rename-posix">模拟 POSIX 重命名</button><button id="show-rename">查看模拟提交名字</button><button id="session-file">右键测试文件 my file.md</button><pre id="session-result" tabindex="0">已有草稿</pre><pre id="rename-result"></pre><div id="app" style="height:600px;margin-top:12px"></div><script type="module" src="/app.js"></script></body></html>');

@@ -698,7 +698,8 @@ function ContextMenu() {
 	const side = menu.y + MENU_EST_HEIGHT <= window.innerHeight - MENU_MARGIN ? "bottom" : "top";
 	const align = menu.x + MENU_EST_WIDTH <= window.innerWidth - MENU_MARGIN ? "start" : "end";
 	const pasteTarget = menu.scope === "body" ? menu.workspaceRoot : (menu.entry === "directory" ? menu.path : null);
-	return h("div", { "data-dfa-ui": "menu", style: { pointerEvents: "none" } },
+	// 旧版 Menu 测量自身外层 span；固定其布局位置，避免只定位内部 anchor 后外层仍留在原点。
+	return h("div", { "data-dfa-ui": "menu", style: { position: "fixed", left: menu.x, top: menu.y, width: 0, height: 0, display: "flex", pointerEvents: "none" } },
 		h(Menu, {
 			open: true,
 			portal: true,
@@ -1660,7 +1661,11 @@ function EditorTab(props) {
 					setMenuAt({ x: event.clientX, y: event.clientY });
 				},
 			}),
-		menuAt !== null && h(Menu, {
+		menuAt !== null && h("div", {
+			"data-dfa-ui": "menu",
+			// 与文件列表菜单相同，兼容通过外层 span 测量锚点的旧版 Menu。
+			style: { position: "fixed", left: menuAt.x, top: menuAt.y, width: 0, height: 0, display: "flex", pointerEvents: "none" },
+		}, h(Menu, {
 			open: true,
 			portal: true,
 			compact: true,
@@ -1690,7 +1695,7 @@ function EditorTab(props) {
 				h(MenuItemButton, { separatorBefore: true, onSelect: format, children: translate("edit.format") }),
 				h(MenuItemButton, { onSelect: save, disabled: !loaded || !dirty, children: translate("edit.save") }),
 			],
-		}),
+		})),
 	]);
 }
 
