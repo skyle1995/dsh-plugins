@@ -1,11 +1,11 @@
 # dsh-plugin-repo
 
 **DSH 基础插件**（dsh-plugins 仓库的基础能力合集）。设置面板左侧导航提供
-三个独立分区，另在会话右键菜单底部贡献「删除会话」项：
+两个独立分区，另在会话右键菜单底部贡献「删除会话」项。插件安装、更新与
+卸载使用 DSH 内置插件管理：
 
 | 分区 / 入口 | 能力 |
 |---|---|
-| **插件仓库** | 把 Gitea 上的插件 monorepo 注册为安装源：在线目录、安装、更新、卸载 |
 | **技能能力** | 本地 skills 管理，以及技能商店：自动读取描述、搜索、安装、更新 |
 | **规则（提示词）** | 全局 system-prompt persona 查看 / 编辑（热加载生效） |
 | **会话菜单 → 删除会话** | 会话右键菜单底部（归档项之后）永久删除会话：空闲会话立即从 live 存储摘除；成功后局部更新列表，不刷新页面，保留其它会话草稿；被删除会话仍在当前视图时转到同工作区的新会话；正在运行的会话拒绝删除；文件与 workspace 记账一并清理 |
@@ -16,7 +16,7 @@
 DSH 的插件安装（`dsh plugin --profile <name> add <spec>` / Web 插件页）本质是
 pnpm 安装，而 pnpm 11 支持 `git+https://host/owner/repo.git#<分支>&path:<子目录>`
 直接从 git 仓库**子目录**安装。因此 monorepo 里的每个插件（`packages/<name>`）
-天然都有可安装的 spec；本插件把它做成一等公民的「安装源」：
+天然都有可安装的 spec；本插件继续提供插件仓库宿主服务供程序调用：
 
 - **目录查询** `ctx.pluginRepo.catalog()` —— 通过 Gitea API 列出仓库内全部插件
   及版本、描述、是否组合包（`dsh.bundle.patch`）；
@@ -24,12 +24,8 @@ pnpm 安装，而 pnpm 11 支持 `git+https://host/owner/repo.git#<分支>&path:
 - **一键安装** `ctx.pluginRepo.install(name, options)` —— 解析后转发给 profile
   的 `pluginManager.installBundle`，复用其 DSH 版本兼容预检、失败回滚、
   构建脚本批准等全部流程；
-- **设置分区页（浏览器半区）** —— 设置面板左侧导航里的独立「插件仓库」
-  分区（与「内置插件」等分区并列，不混入其中）：读取宿主半区注册的
-  `/api/dsh-plugin-repo/catalog` 路由（目录已合并已安装/启用状态）渲染
-  在线目录；安装/更新/卸载走宿主半区的 `/install`、`/remove`、`/cancel`
-  路由（转发 profile 的 pluginManager 服务），更新即按分支 spec 重装
-  最新提交。
+- `0.4.2` 起不再注册设置中的「插件仓库 / 插件中心」分区；技能能力、
+  技能商店、规则提示词和会话菜单仍按原有入口提供。
 
 ## 配置
 
