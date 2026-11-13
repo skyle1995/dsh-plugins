@@ -28,7 +28,6 @@ dsh plugin --profile web add \
 | [`dsh-plugin-mcp`](packages/dsh-plugin-mcp) | `packages/dsh-plugin-mcp` | **MCP 服务器管理器**：设置面板「MCP 服务器」分区（已安装/预设分页）——可视化增删改/启停外部 MCP 服务器（stdio 本地进程 / streamable-http 远程），基于内置 `@deepseek-ai/dsh-mcp-client` 桥接（工具名 `mcp__<name>__<tool>`）；**43 个热门预设一键添加**（在线目录：更新仓库 presets.json 即可下发新预设，无需升级插件）（通用开发 / 代码托管（Gitea 官方·自建）/ 浏览器 Web / 搜索情报 / 云服务 / 逆向安全：Reqable、IDA Pro、Ghidra、Binary Ninja、Frida、JADX、VirusTotal、x64dbg、CyberChef、REA（多引擎编排）；八分类分组 + 搜索 + 弹窗表单 + 占位拦截 + $env:/$file: 动态参数解析）；状态存 JSON、运行时投影为 loader 树条目，重启自动重建；手工 cordis.patch.yml 条目只读展示 |
 | [`dsh-plugin-sound-alert`](packages/dsh-plugin-sound-alert) | `packages/dsh-plugin-sound-alert` | **手动交互提示音**：Agent 停下来需要你动手时响一声——会话出现待处理交互（选方向 / 确认 / 审批 / plan 复核）播上行双音铃，任务结束或停止播下行双音铃；子代理会话静默、同场景 280ms 合并连发；设置面板「提示音」分区（总开关 / 音量 / **按场景单独禁用** / **逐条替换成本地音频（wav·mp3·m4a·ogg·flac ≤4MB，存 IndexedDB）** / 恢复默认 / 逐条试听 / 依次试听）；音频随 bundle 内联下发、不依赖宿主路由，被浏览器自动播放策略拦截时自动挂手势解锁并提示 |
 | [`dsh-connect-workbuddy`](packages/dsh-connect-workbuddy) | `packages/dsh-connect-workbuddy` | **WorkBuddy 账号接入（第三方 · 上游镜像 v4.6.5 / 本仓库 v4.6.6，仅放宽 peer 范围）**：复用本机 WorkBuddy 桌面 App 的登录态（**无需二次登录、无需 Key**），把其模型接进 DSH 模型选择器；**国内版与国际版并行**（`workbuddy` / `workbuddy-global` 两个供应商，设置卡片以 tab 区分）；**账号池**（多账号添加/切换/轮换、凭据写入宿主凭据库）+ 模型勾选开关 + 只读积分/额度概览（侧栏用量卡、内联额度提示）；附带状态 CLI（`dsh-connect-workbuddy`）；Windows / macOS / Linux 三平台并列支持（Windows 为一等目标）。**注意**：MIT 上游镜像，产物文件逐字节未改，仅元数据对齐本仓库（新增 `@deepseek-ai/dsh` peer（semver 范围 `>=0.2.0-rc.2`）、移除失效的 `prepack`/构建脚本）；其派生关系（`dsh-workbuddy-connect`、`dsh-connect-trae`）由上游在 `THIRD_PARTY_NOTICES.md` 声明 |
-| [`dsh-plugin-subscriptions`](packages/dsh-plugin-subscriptions) | `packages/dsh-plugin-subscriptions` | **订阅账号接入（第三方 · 上游源码移植 v0.9.12 → 本仓库 0.9.13（含本地修复））**：把 ChatGPT(Codex) / Claude / Grok(X Premium) / GitHub Copilot / Google Antigravity 五家**订阅**当 LLM provider 用——Web 设置页「订阅」分区 OAuth 登录（Codex/Grok/Antigravity 走 OAuth，Copilot 走 GitHub 设备码，Claude 优先导入 Claude Code 本机凭据并回退 OAuth），**无需 API Key**，token 存 `~/.dsh/plugins/subscriptions/auth.json`（0600）自动刷新；登录后模型进入会话模型选择器（含推理档位 Effort、Codex Fast 速度开关 `/fast`）、账号池与默认账号、逐 provider 工具（`image_generate` / `video_generate` / `x_search`）与状态栏用量胶囊；`src/` 在上游基础上含本地修复（用量按模型选择过滤、地区封禁识别、目录命名与排序、额度按实际计量合并），打包层对齐本仓库（提交 `lib/` 构建产物、去掉 `prepare`、`pnpm.packageExtensions` 上移到工作区根），逐条补丁见其 `THIRD_PARTY_NOTICES.md` §5 |
 
 ## 为什么需要「仓库插件」
 
@@ -124,14 +123,12 @@ ZIP 文件名为 `<id>.zip`，包内须以 `<id>/` 为顶层目录。脚本验�
 > 例外必须预构建并提交：
 >
 > 1. 浏览器 bundle（`lib/client.js`），任何插件都一样；
-> 2. **上游镜像/移植包**——`dsh-connect-workbuddy`（逐字节镜像）与
->    `dsh-plugin-subscriptions`（上游 TS 源码移植，`tsc` + `tsdown` 产出
->    `lib/`）在仓库里直接提交完整构建产物，安装时不再跑 `prepare`/构建脚本，
->    避免 profile 的 `allowBuilds` 批准流程。
+> 2. **上游镜像包**——`dsh-connect-workbuddy`（逐字节镜像）在仓库里直接提交
+>    完整构建产物，安装时不再跑 `prepare`/构建脚本，避免 profile 的
+>    `allowBuilds` 批准流程。
 >
-> 需要 TypeScript 源码 + 构建的包（目前只有 `dsh-plugin-subscriptions`）：
-> 在工作区内 `pnpm install`（pnpm 12 需 `--allow-build=esbuild` 让 esbuild
-> 安装脚本落地）后，于包目录执行 `pnpm build` 重建 `lib/`、`pnpm test` 跑单测。
+> 浏览器半区与 `demo-test/` 测试页需要 React 时，从工作区根 `package.json` 的
+> `devDependencies` 解析；新增插件不要在别的包里借用依赖。
 
 ## 版本兼容
 

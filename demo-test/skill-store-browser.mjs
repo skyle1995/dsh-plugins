@@ -13,7 +13,7 @@ import { readSkillMetadata } from "../packages/dsh-plugin-repo/lib/skill-metadat
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const plugin = join(root, "packages/dsh-plugin-repo");
 const require = createRequire(join(plugin, "package.json"));
-const reactRequire = createRequire(join(root, "packages/dsh-plugin-subscriptions/package.json"));
+const reactRequire = createRequire(join(root, "package.json"));
 const { build } = require("esbuild");
 const ids = (await readdir(join(root, "skills"), { withFileTypes: true }))
         .filter((entry) => entry.isDirectory()).map((entry) => entry.name);

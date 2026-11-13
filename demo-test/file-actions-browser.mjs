@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const plugin = join(root, "packages/dsh-plugin-file-actions");
 const require = createRequire(join(plugin, "package.json"));
-const reactRequire = createRequire(join(root, "packages/dsh-plugin-subscriptions/package.json"));
+const reactRequire = createRequire(join(root, "package.json"));
 const { build } = require("esbuild");
 const icons = ["IconArchiveOutlineRegular", "IconCheckCircleFillRegular", "IconCloseCircleFillRegular",
         "IconCloseOutlineRegular", "IconCopyOutlineRegular", "IconEditOutlineRegular", "IconFolderOpenOutlineRegular",

@@ -11,5 +11,9 @@
   "repository": {
     "type": "git",
     "url": "https://hub.ifunx.com/skyle1995/dsh-plugins.git"
+  },
+  "devDependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.3.1"
   }
 }

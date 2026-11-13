@@ -1,9 +1,0 @@
-node_modules/
-lib-test/
-*.tgz
-overlay.yml
-.DS_Store
-
-# lib/ 是提交进仓库的构建产物（上游用 tsc + tsdown 产出，本仓库按「发布即源码」
-# 约定直接提交），因此不再忽略；只忽略 sourcemap（构建期调试用，不进仓库）。
-lib/**/*.js.map
