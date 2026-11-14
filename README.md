@@ -23,7 +23,7 @@ dsh plugin --profile web add \
 
 | 插件 | 目录 | 说明 |
 |---|---|---|
-| [`dsh-plugin-repo`](packages/dsh-plugin-repo) | `packages/dsh-plugin-repo` | **基础插件**：设置面板三个分区——插件仓库（在线目录/安装/更新/卸载）、技能能力（skills 管理+导入）、规则提示词（system-prompt persona 编辑，热加载）；另在会话右键菜单底部提供「删除会话」（红色警示+确认弹窗） |
+| [`dsh-plugin-repo`](packages/dsh-plugin-repo) | `packages/dsh-plugin-repo` | **基础插件**：设置面板两个分区——技能能力（skills 管理+导入+技能商店）、规则提示词（system-prompt persona 编辑，热加载）；另在会话右键菜单底部提供「删除会话」（红色警示+确认弹窗）；插件管理使用 DSH 内置功能 |
 | [`dsh-plugin-file-actions`](packages/dsh-plugin-file-actions) | `packages/dsh-plugin-file-actions` | **文件列表增强**：文件树右键菜单与批量操作——侧边栏编辑 tab（编辑态实时语法高亮 + prettier 一键格式化）、**重命名**（文件/目录，右键或 `F2`，命名弹窗）、剪切/复制/粘贴、删除（确认弹窗）、压缩为 ZIP（命名弹窗）、复制路径、**多选与范围选择**（`⌘/Ctrl` 点击切换、`Shift` 点击选中连续区间）+ 底部批量操作栏（宿主半区路由 + 工作区安全约束） |
 | [`dsh-plugin-mcp`](packages/dsh-plugin-mcp) | `packages/dsh-plugin-mcp` | **MCP 服务器管理器**：设置面板「MCP 服务器」分区（已安装/预设分页）——可视化增删改/启停外部 MCP 服务器（stdio 本地进程 / streamable-http 远程），基于内置 `@deepseek-ai/dsh-mcp-client` 桥接（工具名 `mcp__<name>__<tool>`）；**43 个热门预设一键添加**（在线目录：更新仓库 presets.json 即可下发新预设，无需升级插件）（通用开发 / 代码托管（Gitea 官方·自建）/ 浏览器 Web / 搜索情报 / 云服务 / 逆向安全：Reqable、IDA Pro、Ghidra、Binary Ninja、Frida、JADX、VirusTotal、x64dbg、CyberChef、REA（多引擎编排）；八分类分组 + 搜索 + 弹窗表单 + 占位拦截 + $env:/$file: 动态参数解析）；状态存 JSON、运行时投影为 loader 树条目，重启自动重建；手工 cordis.patch.yml 条目只读展示 |
 | [`dsh-plugin-sound-alert`](packages/dsh-plugin-sound-alert) | `packages/dsh-plugin-sound-alert` | **手动交互提示音**：Agent 停下来需要你动手时响一声——会话出现待处理交互（选方向 / 确认 / 审批 / plan 复核）播上行双音铃，任务结束或停止播下行双音铃；子代理会话静默、同场景 280ms 合并连发；设置面板「提示音」分区（总开关 / 音量 / **按场景单独禁用** / **逐条替换成本地音频（wav·mp3·m4a·ogg·flac ≤4MB，存 IndexedDB）** / 恢复默认 / 逐条试听 / 依次试听）；音频随 bundle 内联下发、不依赖宿主路由，被浏览器自动播放策略拦截时自动挂手势解锁并提示 |
@@ -40,8 +40,9 @@ monorepo 形态下有几件事裸 pnpm 做不了：
 - **一键安装**：把「解析 + 安装」转发给 profile 的 `pluginManager`，复用 DSH
   原生的版本兼容预检、失败回滚、构建脚本批准流程。
 
-`dsh-plugin-repo` 把这些能力收拢为服务（`ctx.pluginRepo`）和设置里的仓库分区页，
-后续插件与 agent 工具都建立在这个服务上。
+`dsh-plugin-repo` 把这些能力收拢为宿主服务（`ctx.pluginRepo`）。
+设置中的插件安装、更新和卸载使用 DSH 内置插件管理；基础插件仅提供技能和
+规则设置分区，以及会话菜单。
 
 ## 技能目录与商店
 
@@ -143,7 +144,7 @@ DSH 版本」精确豁免后才可运行。
 ## 路线图
 
 - [x] `dsh-plugin-repo`：宿主服务（catalog / spec / install）
-- [x] 设置里的「插件仓库」独立分区：在线列表查看、安装、更新、卸载（浏览器半区）
+- [x] 插件安装、更新和卸载统一使用 DSH 内置插件管理，移除重复设置分区
 - [x] `dsh-plugin-mcp`：设置面板 MCP 服务器管理器（增删改/启停 + 状态投影 + 重启重建）
 - [x] `dsh-plugin-mcp`：21 个热门预设一键添加（通用开发 + 逆向/安全，零配置直存 / 需密钥预填表单 + 占位拦截）
 - [x] `dsh-plugin-sound-alert`：手动交互提示音（待操作 / 任务结束）+ 设置面板试听与音量
