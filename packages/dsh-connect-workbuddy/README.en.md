@@ -29,7 +29,7 @@
 >
 > ```sh
 > dsh plugin --profile <profile> add \
->   "https://hub.ifunx.com/skyle1995/dsh-plugins.git#main&path:packages/dsh-connect-workbuddy"
+>   "https://github.com/skyle1995/dsh-plugins.git#main&path:packages/dsh-connect-workbuddy"
 > ```
 >
 > Provenance, licence and the exact deviation list are in the Chinese [`README.md`](README.md#本仓库收录说明).

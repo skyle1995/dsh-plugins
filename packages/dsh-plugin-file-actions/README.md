@@ -75,7 +75,7 @@
 
 ```bash
 dsh plugin --profile <profile> add \
-  "https://hub.ifunx.com/skyle1995/dsh-plugins.git#main&path:packages/dsh-plugin-file-actions"
+  "https://github.com/skyle1995/dsh-plugins.git#main&path:packages/dsh-plugin-file-actions"
 ```
 
 开发调试时也可以用本地路径：

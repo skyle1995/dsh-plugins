@@ -341,3 +341,43 @@ test("商店安装和本地管理共用队列，失败后不阻塞下一次操�
         await following;
         assert.deepEqual(order, ["example", "save", "another"]);
 });
+
+test("GitHub 主机使用 api.github.com 前缀并读取 commit.sha", async (t) => {
+        const folder = await mkdtemp(join(directory, ".skill-store-github-"));
+        const revision = "2".repeat(40);
+        const seen = [];
+        const markdownText = markdown("gh-example");
+        const treeSha = blob("github-tree");
+        const contentsSha = blob(markdownText);
+        /** GitHub 风格替身；参数为 URL 与请求选项，返回 Response。 */
+        async function fetchImpl(input, options) {
+                const url = new URL(input);
+                seen.push(url);
+                assert.equal(options.redirect, "error");
+                assert.equal(url.origin, "https://api.github.com");
+                const path = decodeURIComponent(url.pathname.replace("/repos/test/test/", ""));
+                switch (true) {
+                        case path.startsWith("branches/"):
+                                assert.equal(path, "branches/main");
+                                return Response.json({ commit: { sha: revision } });
+                        case path === "contents/skills":
+                                assert.equal(url.searchParams.get("ref"), revision);
+                                return Response.json([{ name: "gh-example", type: "dir", path: "skills/gh-example", sha: treeSha }]);
+                        case path.startsWith("git/trees/"):
+                                assert.equal(url.searchParams.get("recursive"), "true");
+                                return Response.json({ sha: treeSha, truncated: false, tree: [{ path: "SKILL.md", type: "blob", sha: contentsSha, mode: "100644" }] });
+                        case path.startsWith("contents/skills/"):
+                                assert.equal(url.searchParams.get("ref"), revision);
+                                return Response.json({ encoding: "base64", sha: contentsSha, content: Buffer.from(markdownText).toString("base64") });
+                        default: throw new Error(`Unexpected URL: ${url}`);
+                }
+        }
+        const store = new SkillStore({ gitHost: "https://github.com", owner: "test", repo: "test", branch: "main" }, folder, fetchImpl);
+        t.after(async () => { store.dispose(); await rm(folder, { recursive: true, force: true }); });
+        const catalog = await store.catalog(true);
+        assert.equal(catalog.revision, revision);
+        assert.deepEqual(catalog.skills.map((skill) => skill.id), ["gh-example"]);
+        assert.deepEqual(catalog.warnings, []);
+        assert.equal(store.apiUrl("branches", "main"), "https://api.github.com/repos/test/test/branches/main?ref=main");
+        assert.ok(seen.length >= 3);
+});

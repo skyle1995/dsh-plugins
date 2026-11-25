@@ -13,7 +13,7 @@ logs/
 # Local test artifacts
 .dsh-cache/
 
-# 含明文 Gitea TOKEN 的操作说明，绝不能进入公开仓库
+# 含明文访问令牌（Gitea/GitHub）的操作说明，绝不能进入公开仓库
 Git多仓库提交说明.md
 
 # scratch DSH home for tests
@@ -21,3 +21,9 @@ Git多仓库提交说明.md
 
 # pnpm store (sandboxed env redirects it here)
 .pnpm-store/
+
+# 迁移前的完整历史备份（含旧凭据的 git bundle，只在本地留存，不进入远端仓库）
+.migration-backup/
+
+# 已下线插件残留的构建产物（目录已从仓库移除，避免误提交）
+packages/dsh-plugin-subscriptions/

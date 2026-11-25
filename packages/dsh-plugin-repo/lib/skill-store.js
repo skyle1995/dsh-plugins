@@ -140,10 +140,14 @@ export class SkillStore {
                 if (!["http:", "https:"].includes(host.protocol) || host.username !== "" || host.password !== "" || host.search !== "" || host.hash !== "") {
                         throw new SkillStoreError("config", "技能仓库必须使用不含凭据的 HTTP(S) 地址");
                 }
-                const prefix = host.toString().replace(/\/+$/, "");
+                // GitHub 的 REST 前缀固定为 api.github.com；Gitea / Forgejo 挂在 <host>/api/v1 下。
+                // 两者的 repos/contents、repos/git/trees 端点形状一致，可直接复用。
+                const prefix = /(^|\.)github\.com$/i.test(host.hostname.toLowerCase())
+                        ? "https://api.github.com"
+                        : `${host.toString().replace(/\/+$/, "")}/api/v1`;
                 const repository = `${encodeURIComponent(this.config.owner)}/${encodeURIComponent(this.config.repo)}`;
                 const query = kind === "git/trees" ? "recursive=true" : `ref=${encodeURIComponent(revision)}`;
-                return `${prefix}/api/v1/repos/${repository}/${kind}/${file}?${query}`;
+                return `${prefix}/repos/${repository}/${kind}/${file}?${query}`;
         }
 
         /** 下载同源内容；参数为 API 类型、路径与上限，返回 Buffer，禁止重定向携带仓库 token。 */
@@ -191,7 +195,7 @@ export class SkillStore {
         async loadCatalog() {
                 const path = this.config.skillsCatalogDir ?? "skills";
                 const head = JSON.parse((await this.download("branches", this.config.branch || "main", MAX_CATALOG_BYTES)).toString("utf8"));
-                const revision = head?.commit?.id;
+                const revision = head?.commit?.sha ?? head?.commit?.id;
                 if (!validGitObject(revision)) throw new SkillStoreError("integrity", "技能仓库未返回有效分支 revision");
                 const entries = JSON.parse((await this.download("contents", path, MAX_CATALOG_BYTES, revision)).toString("utf8"));
                 if (!Array.isArray(entries) || entries.length > 1000) throw new SkillStoreError("invalid-catalog", "技能根目录响应格式不合法或条目过多");

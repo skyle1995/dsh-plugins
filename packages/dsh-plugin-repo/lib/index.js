@@ -1,10 +1,10 @@
 /**
- * dsh-plugin-repo —— 把 Gitea 上的插件 monorepo 注册为 DSH 的插件安装源。
+ * dsh-plugin-repo —— 把 GitHub 上的插件 monorepo 注册为 DSH 的插件安装源。
  *
  * 设计要点：
  * - pnpm 支持 `git+https://host/owner/repo.git#<branch>&path:<子目录>` 安装
  *   仓库子目录，因此每个插件（packages/<name>）都有可直接安装的 git spec；
- *   本插件负责从 Gitea API 生成目录（catalog）、拼装 spec，并把安装转发给
+ *   本插件负责从仓库 API（GitHub REST，兼容 Gitea/Forgejo）生成目录（catalog）、拼装 spec，并把安装转发给
  *   profile 的 pluginManager 服务（享受其兼容性预检、回滚与构建批准流程）。
  * - 服务键为 `pluginRepo`（ctx.pluginRepo），注入 pluginManager；激活由
  *   服务可用性驱动：没有 plugin-manager 的环境里本插件保持未激活。
@@ -21,13 +21,13 @@ import { SessionArchiveService } from "./session-archive.js";
 import { SkillManagerService } from "./skills.js";
 import { readJsonBody } from "./request.js";
 
-/** 本插件默认对接的 Gitea 主机。 */
-export const DEFAULT_GIT_HOST = "https://hub.ifunx.com";
+/** 本插件默认对接的代码托管主机（GitHub）。 */
+export const DEFAULT_GIT_HOST = "https://github.com";
 
 /** 默认 catalog 目录：monorepo 内每个子目录是一个插件包。 */
 export const DEFAULT_CATALOG_DIR = "packages";
 
-/** 一次 Gitea API 请求的超时（毫秒）。 */
+/** 一次仓库 API 请求的超时（毫秒）。 */
 export const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
 
 /** 浏览器半区读取仓库目录的 HTTP 路由（注册在 web profile 的 webServer 上）。 */
@@ -72,7 +72,7 @@ export function gitUrlOf(config) {
  * @param config - 插件配置（gitHost/owner/repo/branch/catalogDir）。
  * @param pluginPath - 仓库内插件目录，如 `packages/dsh-plugin-repo`；
  *   不带 `/` 时视为 catalog 目录下的包名。
- * @returns 如 `https://hub.ifunx.com/skyle1995/dsh-plugins.git#main&path:packages/dsh-plugin-repo`
+ * @returns 如 `https://github.com/skyle1995/dsh-plugins.git#main&path:packages/dsh-plugin-repo`
  */
 export function specFor(config, pluginPath) {
 	const normalized = pluginPath.includes("/") ? pluginPath : `${config.catalogDir ?? DEFAULT_CATALOG_DIR}/${pluginPath}`;
@@ -80,10 +80,39 @@ export function specFor(config, pluginPath) {
 	return `${gitUrlOf(config)}#${fragment}`;
 }
 
-/** 单次 Gitea API 请求；返回 JSON 或文本，失败统一抛 RepoError。 */
-export async function giteaRequest(config, path, { text = false } = {}) {
-	const host = (config.gitHost ?? DEFAULT_GIT_HOST).replace(/\/+$/, "");
-	const url = `${host}/api/v1${path}`;
+/**
+ * 判断 gitHost 属于哪种仓库 API 风格。
+ * GitHub 使用固定前缀的 REST API（分支 head 为 `commit.sha`、没有 `/raw/` 端点）；
+ * Gitea / Forgejo 挂在 `<host>/api/v1` 下（分支 head 为 `commit.id`）。
+ *
+ * @param config - 插件配置（gitHost）。
+ * @returns `"github"` 或 `"gitea"`。
+ */
+export function apiFlavorOf(config) {
+	const raw = String(config?.gitHost ?? DEFAULT_GIT_HOST).trim();
+	let hostname = raw;
+	try {
+		hostname = new URL(raw.includes("://") ? raw : `https://${raw}`).hostname;
+	} catch {
+		// 非法地址交给后续请求报错，这里按 Gitea 风格兜底。
+	}
+	return /(^|\.)github\.com$/i.test(hostname.toLowerCase()) ? "github" : "gitea";
+}
+
+/**
+ * 拼出 REST API 前缀：GitHub 固定 `https://api.github.com`，
+ * Gitea / Forgejo 为 `<host>/api/v1`。
+ * @param config - 插件配置（gitHost）。
+ * @returns REST 前缀（无尾斜杠）。
+ */
+export function apiBaseOf(config) {
+	if (apiFlavorOf(config) === "github") return "https://api.github.com";
+	return `${String(config?.gitHost ?? DEFAULT_GIT_HOST).replace(/\/+$/, "")}/api/v1`;
+}
+
+/** 单次仓库 API 请求；返回 JSON 或文本，失败统一抛 RepoError。 */
+export async function repoRequest(config, path, { text = false } = {}) {
+	const url = `${apiBaseOf(config)}${path}`;
 	const headers = { accept: text ? "text/plain" : "application/json" };
 	if (config.token) headers.authorization = `token ${config.token}`;
 	let response;
@@ -94,11 +123,44 @@ export async function giteaRequest(config, path, { text = false } = {}) {
 			signal: AbortSignal.timeout(config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS),
 		});
 	} catch (error) {
-		if (error.name === "TimeoutError") throw new RepoError("plugin-repo/timeout", `Gitea API 超时（${url}）`);
-		throw new RepoError("plugin-repo/network", `Gitea API 不可达（${url}）：${error.message}`, { cause: error });
+		if (error.name === "TimeoutError") throw new RepoError("plugin-repo/timeout", `仓库 API 超时（${url}）`);
+		throw new RepoError("plugin-repo/network", `仓库 API 不可达（${url}）：${error.message}`, { cause: error });
 	}
-	if (!response.ok) throw new RepoError("plugin-repo/http", `Gitea API ${response.status}：GET ${url}`, { status: response.status });
+	if (!response.ok) throw new RepoError("plugin-repo/http", `仓库 API ${response.status}：GET ${url}`, { status: response.status });
 	return text ? await response.text() : await response.json();
+}
+
+/** 旧名兼容：`giteaRequest` 等价于 {@link repoRequest}（按 gitHost 自动选 API 风格）。 */
+export const giteaRequest = repoRequest;
+
+/** 从 contents 响应解出文件文本（GitHub/Gitea 均为 base64 编码的 `content`）。 */
+function decodeContentsText(file) {
+	return Buffer.from(file?.content ?? "", file?.encoding ?? "base64").toString("utf8");
+}
+
+/** 校验并解析 package.json 文本，形状不合法时抛 RepoError。 */
+function parseManifest(text) {
+	const parsed = JSON.parse(text);
+	if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+		throw new RepoError("plugin-repo/catalog", "package.json 必须是对象");
+	}
+	return parsed;
+}
+
+/**
+ * 读取单个插件目录的 package.json。
+ * Gitea / Forgejo 优先走 `/raw/` 端点（少一次 base64），
+ * GitHub 没有该端点，直接走 contents（base64）。
+ */
+async function readManifest(config, request, repository, apiPath, ref) {
+	if (apiFlavorOf(config) === "gitea") {
+		try {
+			return parseManifest(await request(config, `${repository}/raw/${apiPath}/package.json?ref=${ref}`, { text: true }));
+		} catch {
+			// 某些 Gitea 部署不开放 raw 端点：回退到 contents 的 base64。
+		}
+	}
+	return parseManifest(decodeContentsText(await request(config, `${repository}/contents/${apiPath}/package.json?ref=${ref}`)));
 }
 
 /**
@@ -106,10 +168,10 @@ export async function giteaRequest(config, path, { text = false } = {}) {
  * 纯函数，可脱离 Cordis 单独测试。
  *
  * @param config - 插件配置。
- * @param request - 默认使用 giteaRequest，可注入替身用于测试。
+ * @param request - 默认使用 repoRequest，可注入替身用于测试。
  * @returns 插件条目数组，每项含 name/version/description/path/isBundle/spec。
  */
-export async function buildCatalog(config, request = giteaRequest) {
+export async function buildCatalog(config, request = repoRequest) {
 	const { owner, repo, branch = "main", catalogDir = DEFAULT_CATALOG_DIR } = config;
         const repository = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
         const catalogPath = catalogDir.split("/").map(encodeURIComponent).join("/");
@@ -129,19 +191,10 @@ export async function buildCatalog(config, request = giteaRequest) {
                 const apiPath = `${catalogPath}/${encodeURIComponent(item.name)}`;
 		let manifest;
 		try {
-                        const raw = await request(config, `${repository}/raw/${apiPath}/package.json?ref=${ref}`, { text: true }).then((body) => JSON.parse(body));
-                        if (raw === null || typeof raw !== "object" || Array.isArray(raw)) throw new RepoError("plugin-repo/catalog", "package.json 必须是对象");
-			manifest = raw;
-		} catch (error) {
-			// 某些 Gitea 部署不开放 raw 端点：回退到 contents 的 base64。
-			try {
-                                const file = await request(config, `${repository}/contents/${apiPath}/package.json?ref=${ref}`);
-				manifest = JSON.parse(Buffer.from(file.content ?? "", file.encoding ?? "base64").toString("utf8"));
-                                if (manifest === null || typeof manifest !== "object" || Array.isArray(manifest)) throw new RepoError("plugin-repo/catalog", "package.json 必须是对象");
-			} catch {
-				entries.push({ name: item.name, path: pluginPath, spec: specFor(config, pluginPath), problem: "no-package-json" });
-				continue;
-			}
+			manifest = await readManifest(config, request, repository, apiPath, ref);
+		} catch {
+			entries.push({ name: item.name, path: pluginPath, spec: specFor(config, pluginPath), problem: "no-package-json" });
+			continue;
 		}
 		entries.push({
 			name: typeof manifest.name === "string" ? manifest.name : item.name,
@@ -157,8 +210,8 @@ export async function buildCatalog(config, request = giteaRequest) {
 
 /**
  * 把分支 spec 钉到精确 commit：pnpm 对分支引用的解析可能滞后于刚刚推送的
- * head（Gitea git 端点缓存），导致安装/更新解析到旧 commit、看似「回退」。
- * Gitea API 与推送即时同步，因此安装前用 API 的 commit id 替换分支名。
+ * head（托管端 git 端点缓存），导致安装/更新解析到旧 commit、看似「回退」。
+ * 仓库 API 与推送即时同步，因此安装前用 API 的 commit id 替换分支名。
  * @param spec - 安装 spec（`https://...git#<分支>&path:...` 或已钉死 sha）。
  * @param headCommit - 40 位十六进制 commit id。
  * @returns 钉死 commit 的 spec；非本仓库 spec 原样返回。
@@ -188,11 +241,11 @@ export function packageNameFromSpec(spec) {
 	return basename(dir);
 }
 
-/** 通过 Gitea API 读取仓库分支当前 head commit（与推送即时同步）。 */
-export async function resolveBranchHead(config, request = giteaRequest) {
+/** 通过仓库 API 读取分支当前 head commit（与推送即时同步）；兼容 GitHub `sha` 与 Gitea `id`。 */
+export async function resolveBranchHead(config, request = repoRequest) {
 	const { owner, repo, branch = "main" } = config;
         const payload = await request(config, `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches/${encodeURIComponent(branch)}`);
-	const commit = payload?.commit?.id;
+	const commit = payload?.commit?.sha ?? payload?.commit?.id;
 	if (typeof commit !== "string" || commit === "") throw new RepoError("plugin-repo/branch-head", `无法读取分支 ${branch} 的 head commit`);
 	return commit;
 }
@@ -419,7 +472,7 @@ export class PluginRepoService extends Service {
 		return { gitHost, owner, repo, branch, catalogDir, gitUrl: this.gitUrl() };
 	}
 
-	/** 仓库插件目录（实时请求 Gitea API）。 */
+	/** 仓库插件目录（实时请求仓库 API）。 */
 	async catalog() {
 		const entries = await buildCatalog(this.config);
 		return {

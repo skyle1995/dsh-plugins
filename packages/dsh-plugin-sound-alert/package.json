@@ -48,7 +48,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://hub.ifunx.com/skyle1995/dsh-plugins.git",
+    "url": "https://github.com/skyle1995/dsh-plugins.git",
     "directory": "packages/dsh-plugin-sound-alert"
   }
 }

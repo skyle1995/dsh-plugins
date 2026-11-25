@@ -79,7 +79,7 @@ export const PLACEHOLDER_VALUES = new Set(
 );
 
 /** 在线预设目录默认地址（dsh-plugins 仓库内的 presets.json，公开 raw）。 */
-export const DEFAULT_PRESET_URL = "https://hub.ifunx.com/skyle1995/dsh-plugins/raw/branch/main/packages/dsh-plugin-mcp/presets.json";
+export const DEFAULT_PRESET_URL = "https://raw.githubusercontent.com/skyle1995/dsh-plugins/main/packages/dsh-plugin-mcp/presets.json";
 
 /** 预设缓存文件名（与状态文件同级，拉取成功后落盘、断网时兜底）。 */
 export const PRESET_CACHE_FILENAME = "presets-cache.json";

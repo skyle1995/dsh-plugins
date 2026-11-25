@@ -1,7 +1,7 @@
 # dsh-plugins
 
 DSH（DeepSeek Harness）第三方插件仓库（monorepo），托管于
-[hub.ifunx.com/skyle1995/dsh-plugins](https://hub.ifunx.com/skyle1995/dsh-plugins)（公开）。
+[github.com/skyle1995/dsh-plugins](https://github.com/skyle1995/dsh-plugins)（公开）。
 
 每个插件是一个独立的 npm 包，放在 `packages/<插件名>/`。得益于 pnpm 11 的
 `#<分支>&path:<子目录>` git spec 语法，仓库里任何一个插件都可以**直接安装**，
@@ -9,14 +9,14 @@ DSH（DeepSeek Harness）第三方插件仓库（monorepo），托管于
 
 ```bash
 dsh plugin --profile <profile> add \
-  "https://hub.ifunx.com/skyle1995/dsh-plugins.git#main&path:packages/<插件名>"
+  "https://github.com/skyle1995/dsh-plugins.git#main&path:packages/<插件名>"
 ```
 
 例如安装第一个插件（仓库插件）：
 
 ```bash
 dsh plugin --profile web add \
-  "https://hub.ifunx.com/skyle1995/dsh-plugins.git#main&path:packages/dsh-plugin-repo"
+  "https://github.com/skyle1995/dsh-plugins.git#main&path:packages/dsh-plugin-repo"
 ```
 
 ## 插件列表
@@ -34,7 +34,7 @@ dsh plugin --profile web add \
 `dsh plugin add` 和 Web 插件页的「添加插件」都能直接粘贴上面的 git spec，但
 monorepo 形态下有几件事裸 pnpm 做不了：
 
-- **目录**：仓库里现在/以后有哪些插件、版本、是否组合包，需要查询 Gitea API；
+- **目录**：仓库里现在/以后有哪些插件、版本、是否组合包，需要查询仓库 API（GitHub REST，兼容 Gitea/Forgejo）；
 - **统一入口**：包名 → spec 的换算（`packages/<name>`、`#main&path:` 规则）不该
   让每个用户手写；
 - **一键安装**：把「解析 + 安装」转发给 profile 的 `pluginManager`，复用 DSH

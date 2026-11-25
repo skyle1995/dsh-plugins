@@ -18,26 +18,28 @@ pnpm 安装，而 pnpm 11 支持 `git+https://host/owner/repo.git#<分支>&path:
 直接从 git 仓库**子目录**安装。因此 monorepo 里的每个插件（`packages/<name>`）
 天然都有可安装的 spec；本插件继续提供插件仓库宿主服务供程序调用：
 
-- **目录查询** `ctx.pluginRepo.catalog()` —— 通过 Gitea API 列出仓库内全部插件
+- **目录查询** `ctx.pluginRepo.catalog()` —— 通过仓库 API（GitHub REST，兼容 Gitea/Forgejo）列出仓库内全部插件
   及版本、描述、是否组合包（`dsh.bundle.patch`）；
 - **spec 生成** `ctx.pluginRepo.specFor(name)` —— 拼出可直接安装的 git spec；
 - **一键安装** `ctx.pluginRepo.install(name, options)` —— 解析后转发给 profile
   的 `pluginManager.installBundle`，复用其 DSH 版本兼容预检、失败回滚、
   构建脚本批准等全部流程；
 - `0.4.2` 起不再注册设置中的「插件仓库 / 插件中心」分区；技能能力、
-  技能商店、规则提示词和会话菜单仍按原有入口提供。
+  技能商店、规则提示词和会话菜单仍按原有入口提供；
+- `0.4.3` 起默认仓库改为 GitHub（`gitHost` 默认 `https://github.com`，
+  API 走 `api.github.com`），技能商店与目录读取同时兼容 Gitea / Forgejo。
 
 ## 配置
 
 | 字段 | 默认值 | 含义 |
 |---|---:|---|
-| `gitHost` | `https://hub.ifunx.com` | Gitea 主机根地址 |
+| `gitHost` | `https://github.com` | 代码托管主机根地址（GitHub / Gitea / Forgejo） |
 | `owner` | `skyle1995` | 仓库所有者 |
 | `repo` | `dsh-plugins` | 仓库名 |
 | `branch` | `main` | 用于安装的分支 |
 | `catalogDir` | `packages` | monorepo 内插件目录 |
 | `skillsCatalogDir` | `skills` | 仓库技能根目录，自动扫描子目录并读取 `SKILL.md` |
-| `token` | `""`（secret） | Gitea Access Token；公开仓库可留空 |
+| `token` | `""`（secret） | 仓库 Access Token（GitHub / Gitea 通用）；公开仓库可留空，但 GitHub 匿名接口限流 60 次/小时，建议填写 |
 | `requestTimeoutMs` | `15000` | 单次 API 请求超时 |
 | `skillsDir` | `""`（自动） | 技能能力子服务的技能根目录；留空用 `$DSH_HOME/skills` |
 | `sessionsDir` | `""`（自动） | 会话删除子服务的会话根目录；留空用 `$DSH_HOME/sessions` |
@@ -59,7 +61,7 @@ pnpm 安装，而 pnpm 11 支持 `git+https://host/owner/repo.git#<分支>&path:
 
 ```bash
 dsh plugin --profile web add \
-  "https://hub.ifunx.com/skyle1995/dsh-plugins.git#main&path:packages/dsh-plugin-repo"
+  "https://github.com/skyle1995/dsh-plugins.git#main&path:packages/dsh-plugin-repo"
 ```
 
 开发调试时也可以用本地路径：
@@ -98,7 +100,7 @@ const { spec, result } = await ctx.pluginRepo.install("dsh-plugin-repo", { enabl
   安装、编辑、删除、导入共用写队列；取消或失败时清理暂存并尝试恢复旧技能。
 - 商店回归：在根目录运行 `node --test demo-test/skill-store.test.mjs`。
 
-- `0.3.4` 起 Gitea API 路径和分支参数编码，目录 `404` 正确返回空数组；
+- `0.3.4` 起仓库 API 路径和分支参数编码，目录 `404` 正确返回空数组；
   仓库、技能和会话管理 JSON 请求限制为 1MB，超限返回 `413`。
 - 技能编辑必须引用当前技能列表中的实际文件，新建或改名不覆盖其它技能；
   编辑保留 frontmatter 中的模型/用户开关及额外字段，保留原 CRLF 换行风格。
@@ -108,8 +110,8 @@ const { spec, result } = await ctx.pluginRepo.install("dsh-plugin-repo", { enabl
   会话清理不会把带分隔符的原始 id 拼入标题缓存路径。
 - 新增离线回归在仓库根运行 `node --test demo-test/other-plugins.test.mjs`，
   本轮在 Windows 执行，macOS/Linux 真机仍需验证。
-- 仓库公开时无需 token；私有仓库需在配置中提供带读取权限的 token。
-- 目录读取使用 Gitea API（`contents` 与 `raw` 端点，raw 失败时回退 base64）。
+- 仓库公开时无需 token；私有仓库需在配置中提供带读取权限的 token。GitHub 匿名接口限流 60 次/小时/IP，`dsh-plugin-repo` 默认读取 GitHub 公开仓库，建议在配置的 `token` 里填一个只读 personal access token 以避免限流。
+- 目录读取使用仓库 API（GitHub 走 `contents`；Gitea/Forgejo 走 `contents` 与 `raw`，raw 失败时回退 base64）。
 - 分支名含 `#` 或 `&` 的仓库无法生成正确 spec（pnpm fragment 语法限制）。
 - 宿主半区**无构建步骤**（纯 ESM + 类型声明），避免触发 pnpm 的构建脚本
   批准流程；浏览器半区是**预构建产物** `lib/client.js`（已提交），修改

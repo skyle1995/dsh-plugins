@@ -1,5 +1,7 @@
 # CHANGELOG
 
+[2026-11-26] [迁移] 仓库整体迁移到 GitHub（`github.com/skyle1995/dsh-plugins`，公开），116 个提交的完整历史连同描述一并迁移，Gitea 远端关联已移除；为避免迁移触发任何 CI，GitHub Actions 在首次推送前即已关闭。dsh-plugin-repo 升至 0.4.3：默认 `gitHost` 改为 `https://github.com`，目录与分支 head 读取改走 GitHub REST（`commit.sha`），技能商店 API 前缀同步切换，并保留 Gitea / Forgejo 兼容；dsh-plugin-mcp 升至 0.7.4：预设在线目录改为 `raw.githubusercontent.com`；全部安装 spec、`repository` 字段与文档链接同步指向 GitHub。
+
 [2026-11-14] [移除] dsh-plugin-repo 升至 0.4.2：移除设置中的插件仓库 / 插件中心入口，插件管理统一使用 DSH 内置功能；保留技能管理、技能商店、规则提示词及会话菜单，同步客户端构建与说明。
 
 [2026-11-13] [移除] 下线 dsh-plugin-subscriptions：删除插件包与其代理配置回归，根 demo-test 浏览器页改为从工作区根 devDependencies 解析 React（新增 react/react-dom 开发依赖），README 的插件清单与构建约定同步更新，锁文件与工作区依赖设置随之收敛；`~/.dsh/plugins/subscriptions` 的用户数据未由本仓库管理，需自行清理。

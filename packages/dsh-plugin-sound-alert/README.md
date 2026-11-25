@@ -15,7 +15,7 @@ DSH 手动交互提示音插件：**Agent 停下来需要你动手时响一声**
 
 ```bash
 dsh plugin --profile <profile> add \
-  "https://hub.ifunx.com/skyle1995/dsh-plugins.git#main&path:packages/dsh-plugin-sound-alert"
+  "https://github.com/skyle1995/dsh-plugins.git#main&path:packages/dsh-plugin-sound-alert"
 ```
 
 安装后刷新页面（⌘/Ctrl+R），设置 → **提示音**。

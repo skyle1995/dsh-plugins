@@ -34,11 +34,11 @@
 
 ### 从本仓库安装
 
-除上游 npm 通道外，也可直接从本仓库（Gitea）安装：
+除上游 npm 通道外，也可直接从本仓库（GitHub）安装：
 
 ```bash
 dsh plugin --profile <profile> add \
-  "https://hub.ifunx.com/skyle1995/dsh-plugins.git#main&path:packages/dsh-connect-workbuddy"
+  "https://github.com/skyle1995/dsh-plugins.git#main&path:packages/dsh-connect-workbuddy"
 ```
 
 ### 来源与归属

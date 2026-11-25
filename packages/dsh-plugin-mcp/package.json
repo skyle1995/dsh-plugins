@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-mcp",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "description": "DSH MCP 服务器管理器：设置面板里可视化增删改 / 启停 MCP 服务器（基于内置 @deepseek-ai/dsh-mcp-client）",
   "type": "module",
   "main": "lib/index.js",
@@ -56,7 +56,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://hub.ifunx.com/skyle1995/dsh-plugins.git",
+    "url": "https://github.com/skyle1995/dsh-plugins.git",
     "directory": "packages/dsh-plugin-mcp"
   }
 }

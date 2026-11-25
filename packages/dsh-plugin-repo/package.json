@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-repo",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "DSH 基础插件：技能能力与技能商店（自动读取 SKILL.md 描述、安装/更新）、规则提示词，以及会话右键菜单的删除会话",
   "type": "module",
   "main": "lib/index.js",
@@ -62,7 +62,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://hub.ifunx.com/skyle1995/dsh-plugins.git",
+    "url": "https://github.com/skyle1995/dsh-plugins.git",
     "directory": "packages/dsh-plugin-repo"
   }
 }

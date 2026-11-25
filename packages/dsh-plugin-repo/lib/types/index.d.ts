@@ -4,7 +4,7 @@
 import type { Context, Service } from "@deepseek-ai/cordis";
 
 export interface PluginRepoConfig {
-	/** Gitea 主机根地址，默认 https://hub.ifunx.com */
+	/** 代码托管主机根地址，默认 https://github.com（也兼容 Gitea / Forgejo） */
 	gitHost: string;
 	/** 仓库所有者 */
 	owner: string;
@@ -16,7 +16,7 @@ export interface PluginRepoConfig {
 	catalogDir: string;
         /** 仓库技能根目录，默认 skills；自动读取子目录 SKILL.md，无需 JSON 索引。 */
         skillsCatalogDir: string;
-	/** Gitea Access Token（公开仓库可留空） */
+	/** 仓库 Access Token（公开仓库可留空；GitHub 与 Gitea 通用） */
 	token: string;
 	/** API 请求超时毫秒数，默认 15000 */
 	requestTimeoutMs: number;
@@ -63,8 +63,16 @@ export class RepoError extends Error {
 
 export function gitUrlOf(config: PluginRepoConfig): string;
 export function specFor(config: PluginRepoConfig, pluginPath: string): string;
-export function giteaRequest<T = unknown>(config: PluginRepoConfig, path: string, options?: { text?: boolean }): Promise<T>;
-export function buildCatalog(config: PluginRepoConfig, request?: typeof giteaRequest): Promise<CatalogEntry[]>;
+/** 判断 gitHost 属于哪种仓库 API 风格：`"github"`（api.github.com）或 `"gitea"`（<host>/api/v1）。 */
+export function apiFlavorOf(config: PluginRepoConfig): "github" | "gitea";
+/** 拼出 REST API 前缀（GitHub 为 https://api.github.com，Gitea 系为 <host>/api/v1）。 */
+export function apiBaseOf(config: PluginRepoConfig): string;
+/** 单次仓库 API 请求；返回 JSON 或文本，失败抛 RepoError。 */
+export function repoRequest<T = unknown>(config: PluginRepoConfig, path: string, options?: { text?: boolean }): Promise<T>;
+/** 旧名兼容：等价 repoRequest。 */
+export const giteaRequest: typeof repoRequest;
+export function buildCatalog(config: PluginRepoConfig, request?: typeof repoRequest): Promise<CatalogEntry[]>;
+export function resolveBranchHead(config: PluginRepoConfig, request?: typeof repoRequest): Promise<string>;
 
 export class PluginRepoService extends Service {
 	constructor(ctx: Context, config: PluginRepoConfig);

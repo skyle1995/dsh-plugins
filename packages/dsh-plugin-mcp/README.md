@@ -13,7 +13,7 @@ DSH 运行时（0.2.0-rc.2）内置 [`@deepseek-ai/dsh-mcp-client`](https://gith
 
 ```bash
 dsh plugin --profile <profile> add \
-  "https://hub.ifunx.com/skyle1995/dsh-plugins.git#main&path:packages/dsh-plugin-mcp"
+  "https://github.com/skyle1995/dsh-plugins.git#main&path:packages/dsh-plugin-mcp"
 ```
 
 安装后重启 profile（或热重载插件），打开设置面板即可看到「MCP 服务器」分区。
