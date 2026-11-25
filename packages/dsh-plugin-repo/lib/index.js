@@ -20,6 +20,7 @@ import { basename } from "node:path";
 import { SessionArchiveService } from "./session-archive.js";
 import { SkillManagerService } from "./skills.js";
 import { readJsonBody } from "./request.js";
+import { isRateLimited, rateLimitMessage } from "./github-rate-limit.js";
 
 /** 本插件默认对接的代码托管主机（GitHub）。 */
 export const DEFAULT_GIT_HOST = "https://github.com";
@@ -29,6 +30,13 @@ export const DEFAULT_CATALOG_DIR = "packages";
 
 /** 一次仓库 API 请求的超时（毫秒）。 */
 export const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
+
+/**
+ * 目录结果缓存有效期（毫秒）。
+ * 一次冷加载是 1 次目录列表 + 每个插件 1 次 manifest，而公开 GitHub 匿名限额
+ * 只有 60 次/小时/IP；面板反复打开不该重复计数，因此短时间内复用上次结果。
+ */
+export const DEFAULT_CATALOG_TTL_MS = 60000;
 
 /** 浏览器半区读取仓库目录的 HTTP 路由（注册在 web profile 的 webServer 上）。 */
 export const CATALOG_ROUTE = "/api/dsh-plugin-repo/catalog";
@@ -126,7 +134,13 @@ export async function repoRequest(config, path, { text = false } = {}) {
 		if (error.name === "TimeoutError") throw new RepoError("plugin-repo/timeout", `仓库 API 超时（${url}）`);
 		throw new RepoError("plugin-repo/network", `仓库 API 不可达（${url}）：${error.message}`, { cause: error });
 	}
-	if (!response.ok) throw new RepoError("plugin-repo/http", `仓库 API ${response.status}：GET ${url}`, { status: response.status });
+	if (!response.ok) {
+		// 限额耗尽也是 403，但处置完全不同：必须让用户看到「填 token」而不是干等。
+		if (isRateLimited(response)) {
+			throw new RepoError("plugin-repo/rate-limited", rateLimitMessage(response), { status: response.status });
+		}
+		throw new RepoError("plugin-repo/http", `仓库 API ${response.status}：GET ${url}`, { status: response.status });
+	}
 	return text ? await response.text() : await response.json();
 }
 
@@ -277,6 +291,8 @@ export class PluginRepoService extends Service {
 	constructor(ctx, config) {
 		super(ctx, "pluginRepo");
 		this.config = config;
+		/** 最近的目录结果及取得时刻；见 {@link DEFAULT_CATALOG_TTL_MS}。 */
+		this.catalogCache = null;
 		ctx.logger.info(`dsh-plugin-repo 已激活：${gitUrlOf(config)}（分支 ${config.branch}，目录 ${config.catalogDir}/）`);
 		// 基础能力子服务：技能能力（含规则提示词）与会话归档。作为子插件挂载，
 		// 各自持有独立的依赖注入面（会话归档需要 workspaceRegistry，缺失时仅
@@ -472,13 +488,20 @@ export class PluginRepoService extends Service {
 		return { gitHost, owner, repo, branch, catalogDir, gitUrl: this.gitUrl() };
 	}
 
-	/** 仓库插件目录（实时请求仓库 API）。 */
-	async catalog() {
-		const entries = await buildCatalog(this.config);
-		return {
+	/**
+	 * 仓库插件目录。命中缓存时不发请求：公开 GitHub 匿名限额只有 60 次/小时，
+	 * 面板反复打开很容易打光，而限额耗尽后所有查询会连续失败。
+	 * @param options - `refresh: true` 跳过缓存强制拉取。
+	 */
+	async catalog({ refresh = false } = {}) {
+		const cached = this.catalogCache;
+		if (!refresh && cached !== null && Date.now() - cached.at < DEFAULT_CATALOG_TTL_MS) return cached.value;
+		const value = {
 			source: this.describe(),
-			entries,
+			entries: await buildCatalog(this.config),
 		};
+		this.catalogCache = { at: Date.now(), value };
+		return value;
 	}
 
 	/**

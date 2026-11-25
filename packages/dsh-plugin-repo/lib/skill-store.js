@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import { lstat, mkdir, mkdtemp, open, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { entryPath, SkillStoreError, validSkillId } from "./skill-archive.js";
+import { isRateLimited, rateLimitMessage } from "./github-rate-limit.js";
 import { readSkillMetadata } from "./skill-metadata.js";
 
 export { SkillStoreError } from "./skill-archive.js";
@@ -46,8 +47,12 @@ function verifyBlob(data, sha) {
 /** 有界读取 HTTP 响应；参数为 Response 和大小上限，返回 Buffer，完成或失败后释放 reader。 */
 async function responseBytes(response, limit) {
         if (!response.ok) {
+                const limited = isRateLimited(response);
                 await response.body?.cancel().catch(() => {});
-                throw new SkillStoreError("http", `技能仓库返回 HTTP ${response.status}`);
+                // 限额耗尽虽是 403，但处置是「填 token」而不是「看 HTTP 状态码」。
+                throw limited
+                        ? new SkillStoreError("rate-limited", rateLimitMessage(response))
+                        : new SkillStoreError("http", `技能仓库返回 HTTP ${response.status}`);
         }
         if (response.body === null) throw new SkillStoreError("network", "技能仓库响应为空");
         const reader = response.body.getReader();

@@ -127,5 +127,60 @@ if (!rejected) throw new Error("未知目标未按预期报错");
 	console.log("flavor checks ok");
 }
 
+// 6) 限流：403 + x-ratelimit-remaining:0 必须自解释为「填 token」，普通 403 不误判
+{
+	const { repoRequest, DEFAULT_CATALOG_TTL_MS } = await import("../lib/index.js");
+	const ok = (label, condition) => { if (!condition) throw new Error(`rate-limit check failed: ${label}`); };
+	const realFetch = globalThis.fetch;
+	const config = { gitHost: "https://github.com", owner: "o", repo: "r" };
+	try {
+		globalThis.fetch = async () => new Response(JSON.stringify({ message: "API rate limit exceeded" }), {
+			status: 403,
+			headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": "1893456000" }, // 2030-01-01T00:00:00Z
+		});
+		let limited;
+		try { await repoRequest(config, "/repos/o/r/contents"); } catch (error) { limited = error; }
+		ok("限额耗尽映射为 rate-limited", limited?.code === "plugin-repo/rate-limited");
+		ok("提示给出 token 出路", /令牌|token/i.test(limited?.message ?? ""));
+		ok("提示给出恢复时刻", /恢复/.test(limited?.message ?? ""));
+		globalThis.fetch = async () => new Response("{}", { status: 403, headers: { "x-ratelimit-remaining": "42" } });
+		let plain;
+		try { await repoRequest(config, "/repos/o/r/contents"); } catch (error) { plain = error; }
+		ok("普通 403 仍按 http 报错", plain?.code === "plugin-repo/http");
+	} finally {
+		globalThis.fetch = realFetch;
+	}
+	ok("目录缓存 TTL 为正数", DEFAULT_CATALOG_TTL_MS > 0);
+	console.log("rate-limit checks ok");
+}
+
+// 7) 目录缓存：重复打开面板不再重复计数（离线，桩 fetch）
+{
+	const ok = (label, condition) => { if (!condition) throw new Error(`cache check failed: ${label}`); };
+	const realFetch = globalThis.fetch;
+	let calls = 0;
+	globalThis.fetch = async (url) => {
+		calls += 1;
+		const path = String(url);
+		if (path.includes("/contents/packages?")) return new Response(JSON.stringify([{ name: "x", type: "dir" }]), { status: 200 });
+		return new Response(JSON.stringify({ encoding: "base64", content: Buffer.from(JSON.stringify({ name: "x", version: "1.0.0" })).toString("base64") }), { status: 200 });
+	};
+	try {
+		repo.catalogCache = null;
+		const first = await repo.catalog();
+		const afterCold = calls;
+		const second = await repo.catalog();
+		ok("冷加载发出请求", afterCold > 0);
+		ok("命中缓存零请求", calls === afterCold);
+		ok("两次返回同一结果", second === first);
+		const refreshed = await repo.catalog({ refresh: true });
+		ok("refresh 绕过缓存", calls > afterCold && refreshed !== first);
+	} finally {
+		globalThis.fetch = realFetch;
+		repo.catalogCache = null;
+	}
+	console.log("cache checks ok");
+}
+
 console.log("SMOKE OK");
 await root.fiber.dispose();

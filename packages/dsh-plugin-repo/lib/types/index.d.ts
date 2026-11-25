@@ -57,12 +57,14 @@ export interface CatalogEntry {
 
 export class RepoError extends Error {
 	code: string;
-        /** Gitea HTTP 状态；参数来自错误构造选项，非 HTTP 错误可缺省。 */
+        /** 仓库 API 的 HTTP 状态；参数来自错误构造选项，非 HTTP 错误可缺省。 */
         status?: number;
 }
 
 export function gitUrlOf(config: PluginRepoConfig): string;
 export function specFor(config: PluginRepoConfig, pluginPath: string): string;
+/** 目录结果缓存有效期；毫秒，默认 60000。 */
+export const DEFAULT_CATALOG_TTL_MS: number;
 /** 判断 gitHost 属于哪种仓库 API 风格：`"github"`（api.github.com）或 `"gitea"`（<host>/api/v1）。 */
 export function apiFlavorOf(config: PluginRepoConfig): "github" | "gitea";
 /** 拼出 REST API 前缀（GitHub 为 https://api.github.com，Gitea 系为 <host>/api/v1）。 */
@@ -80,7 +82,8 @@ export class PluginRepoService extends Service {
 	gitUrl(): string;
 	specFor(pluginPath: string): string;
 	describe(): RepoSource;
-	catalog(): Promise<{ source: RepoSource; entries: CatalogEntry[] }>;
+	/** 仓库插件目录；默认命中 60 秒缓存，`refresh: true` 强制拉取。 */
+	catalog(options?: { refresh?: boolean }): Promise<{ source: RepoSource; entries: CatalogEntry[] }>;
 	resolve(specOrName: string): Promise<{ entry: CatalogEntry | null; spec: string }>;
 	install(specOrName: string, options?: object): Promise<{ source: CatalogEntry | null; spec: string; result: unknown }>;
 }

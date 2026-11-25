@@ -27,7 +27,9 @@ pnpm 安装，而 pnpm 11 支持 `git+https://host/owner/repo.git#<分支>&path:
 - `0.4.2` 起不再注册设置中的「插件仓库 / 插件中心」分区；技能能力、
   技能商店、规则提示词和会话菜单仍按原有入口提供；
 - `0.4.3` 起默认仓库改为 GitHub（`gitHost` 默认 `https://github.com`，
-  API 走 `api.github.com`），技能商店与目录读取同时兼容 Gitea / Forgejo。
+  API 走 `api.github.com`），技能商店与目录读取同时兼容 Gitea / Forgejo；
+- `0.4.4` 起适配公开 GitHub 的匿名限额：限额用尽时给出「填 token + 何时恢复」
+  的可操作提示，目录结果缓存 60 秒（`catalog({ refresh: true })` 强制刷新）。
 
 ## 配置
 
@@ -39,7 +41,7 @@ pnpm 安装，而 pnpm 11 支持 `git+https://host/owner/repo.git#<分支>&path:
 | `branch` | `main` | 用于安装的分支 |
 | `catalogDir` | `packages` | monorepo 内插件目录 |
 | `skillsCatalogDir` | `skills` | 仓库技能根目录，自动扫描子目录并读取 `SKILL.md` |
-| `token` | `""`（secret） | 仓库 Access Token（GitHub / Gitea 通用）；公开仓库可留空，但 GitHub 匿名接口限流 60 次/小时，建议填写 |
+| `token` | `""`（secret） | 仓库 Access Token（GitHub / Gitea 通用）；公开仓库可留空，但 GitHub 匿名接口限流 60 次/小时，用尽后目录与技能商店都会失败并提示填写，建议填写（限额 5000 次/小时） |
 | `requestTimeoutMs` | `15000` | 单次 API 请求超时 |
 | `skillsDir` | `""`（自动） | 技能能力子服务的技能根目录；留空用 `$DSH_HOME/skills` |
 | `sessionsDir` | `""`（自动） | 会话删除子服务的会话根目录；留空用 `$DSH_HOME/sessions` |
@@ -110,7 +112,7 @@ const { spec, result } = await ctx.pluginRepo.install("dsh-plugin-repo", { enabl
   会话清理不会把带分隔符的原始 id 拼入标题缓存路径。
 - 新增离线回归在仓库根运行 `node --test demo-test/other-plugins.test.mjs`，
   本轮在 Windows 执行，macOS/Linux 真机仍需验证。
-- 仓库公开时无需 token；私有仓库需在配置中提供带读取权限的 token。GitHub 匿名接口限流 60 次/小时/IP，`dsh-plugin-repo` 默认读取 GitHub 公开仓库，建议在配置的 `token` 里填一个只读 personal access token 以避免限流。
+- 仓库公开时无需 token；私有仓库需在配置中提供带读取权限的 token。GitHub 匿名接口限流 60 次/小时/IP，`dsh-plugin-repo` 默认读取 GitHub 公开仓库，建议在配置的 `token` 里填一个只读 personal access token 以避免限流。限额用尽时错误会直接提示填写 token 与预计恢复时刻（`plugin-repo/rate-limited` / `skill-store/rate-limited`）；目录结果缓存 60 秒（`catalog({ refresh: true })` 强制刷新），面板反复打开不再重复计数。
 - 目录读取使用仓库 API（GitHub 走 `contents`；Gitea/Forgejo 走 `contents` 与 `raw`，raw 失败时回退 base64）。
 - 分支名含 `#` 或 `&` 的仓库无法生成正确 spec（pnpm fragment 语法限制）。
 - 宿主半区**无构建步骤**（纯 ESM + 类型声明），避免触发 pnpm 的构建脚本

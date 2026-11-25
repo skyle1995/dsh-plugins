@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-repo",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "DSH 基础插件：技能能力与技能商店（自动读取 SKILL.md 描述、安装/更新）、规则提示词，以及会话右键菜单的删除会话",
   "type": "module",
   "main": "lib/index.js",
@@ -21,6 +21,7 @@
     "lib/skills.js",
     "lib/session-archive.js",
     "lib/request.js",
+    "lib/github-rate-limit.js",
     "lib/skill-store.js",
     "lib/skill-metadata.js",
     "lib/skill-archive.js",
