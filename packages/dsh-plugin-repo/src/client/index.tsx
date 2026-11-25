@@ -2,7 +2,7 @@
  * dsh-plugin-repo 浏览器半区入口：注册两个设置分区 + 会话菜单项。
  *
  * - 技能能力（110）：本地 skills 管理（列表/新建/编辑/删除/导入/开关）
- * - 规则提示词（130）：全局 system-prompt persona 查看 / 编辑
+ * - 规则提示词（130）：全局 system-prompt persona 查看 / 编辑（保存即时生效）
  * - 会话菜单项：会话右键菜单底部的「删除会话」（官方 workspaceRegistry）
  */
 import { register as registerSkills } from "./skills.tsx";

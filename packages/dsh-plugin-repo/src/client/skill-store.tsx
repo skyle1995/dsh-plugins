@@ -77,7 +77,7 @@ export function SkillStoreSection({ t, api, format, onInstalled }) {
                 h("p", { className: "dsk-subtitle" }, t("storeDescription")),
                 h("div", { className: "dsk-store-toolbar" },
                         h("input", { className: "dsk-input", type: "search", value: query, placeholder: t("storeSearch"), "aria-label": t("storeSearch"), onChange: (event) => setQuery(event.target.value) }),
-                        h("button", { className: "dsk-btn", disabled: busy !== null || status === "loading", onClick: () => { setNotice(null); void load(true); } }, t("refresh"))),
+                        h("button", { type: "button", className: "dsk-btn", disabled: busy !== null || status === "loading", onClick: () => { setNotice(null); void load(true); } }, t("refresh"))),
                 notice === null ? null : h("p", { className: `dsk-notice ${notice.kind === "error" ? "dsk-notice-err" : "dsk-notice-ok"}`, role: "status" }, notice.text),
                 warnings.length === 0 ? null : h("p", { className: "dsk-subtitle", role: "status" }, format(t("storeWarnings"), { names: warnings.map((item) => item.id).join(", ") })),
                 status === "loading" ? h("p", { className: "dsk-subtitle", role: "status" }, t("storeLoading")) : null,
@@ -93,7 +93,7 @@ export function SkillStoreSection({ t, api, format, onInstalled }) {
                                 h("p", { className: "dsk-meta" }, `${t("storeVersion")}：${entry.version}`),
                                 h("p", { className: "dsk-meta" }, `${t("storeLicense")}：${entry.license ?? t("storeLicenseUnknown")}`)),
                         h("div", { className: "dsk-actions" },
-                                h("button", {
+                                h("button", { type: "button",
                                         className: "dsk-btn dsk-btn-primary",
                                         disabled: busy !== null || status !== "ok" || entry.managed && !entry.updateAvailable && !entry.modified,
                                         onClick: () => void install(entry),

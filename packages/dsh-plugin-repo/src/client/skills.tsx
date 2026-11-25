@@ -74,10 +74,12 @@ const zh = {
 	detailWhenToUse: "适用场景",
 	noWhenToUse: "（未填写）",
 	promptTitle: "规则（提示词）",
-	promptDescription: "全局系统提示词（persona）。保存后由 dsh 热加载，无需重启；留空使用默认。",
+	promptDescription: "全局系统提示词（persona）。保存后立即生效，无需重启，也不会触发 dsh 重载或刷新界面；留空使用默认。",
 	promptReload: "重新加载",
 	promptSave: "保存提示词",
-	promptSaved: "提示词已保存（热加载生效）。",
+	promptSaved: "提示词已保存并生效。",
+	promptUnchanged: "提示词没有变化。",
+	promptDiscardConfirm: "当前有未保存的修改，重新加载会丢弃这些修改。继续吗？",
 	promptSaveFailed: "保存失败：{message}",
 	promptLoading: "正在加载提示词…",
 };
@@ -144,10 +146,12 @@ const en = {
 	detailWhenToUse: "When to use",
 	noWhenToUse: "(not set)",
 	promptTitle: "Rules (Prompt)",
-	promptDescription: "Global system prompt (persona). Saved changes hot-apply without restart; leave empty for the default.",
+	promptDescription: "Global system prompt (persona). Saving applies immediately without a restart, reloading dsh, or refreshing this page; leave empty for the default.",
 	promptReload: "Reload",
 	promptSave: "Save prompt",
-	promptSaved: "Prompt saved (hot-applied).",
+	promptSaved: "Prompt saved and applied.",
+	promptUnchanged: "No changes to save.",
+	promptDiscardConfirm: "You have unsaved edits. Reloading discards them. Continue?",
 	promptSaveFailed: "Save failed: {message}",
 	promptLoading: "Loading prompt…",
 };
@@ -353,8 +357,8 @@ function SkillsSection({ t }) {
 				h("span", { className: "dsk-label" }, t("skillBody")),
 				h("textarea", { className: "dsk-input dsk-textarea", value: form.body, onChange: (event) => setForm({ ...form, body: event.target.value }) })),
                        h("div", { className: "dsk-actions" },
-				h("button", { className: "dsk-btn dsk-btn-primary", disabled: busy, onClick: () => void submit() }, t("save")),
-				h("button", { className: "dsk-btn", disabled: busy, onClick: () => setEditing(null) }, t("cancel"))));
+				h("button", { type: "button", className: "dsk-btn dsk-btn-primary", disabled: busy, onClick: () => void submit() }, t("save")),
+				h("button", { type: "button", className: "dsk-btn", disabled: busy, onClick: () => setEditing(null) }, t("cancel"))));
 	}
 
 	function renderDetail() {
@@ -369,7 +373,7 @@ function SkillsSection({ t }) {
 				h("div", { className: "dsk-name" },
 					h("span", null, skill.name),
 					h("div", { className: "dsk-badges" }, badges)),
-				h("button", { className: "dsk-btn", onClick: () => setEditing(null) }, t("back"))),
+				h("button", { type: "button", className: "dsk-btn", onClick: () => setEditing(null) }, t("back"))),
 			skill.description ? h("p", { className: "dsk-desc", style: { display: "block", WebkitLineClamp: "unset" } }, skill.description) : null,
 			skill.whenToUse ? h("p", { className: "dsk-desc", style: { display: "block", WebkitLineClamp: "unset" } }, `${t("detailWhenToUse")}：${skill.whenToUse}`) : h("p", { className: "dsk-subtitle" }, `${t("detailWhenToUse")}：${t("noWhenToUse")}`),
 			h("p", { className: "dsk-meta" }, `${t("detailFile")}：${skill.file}`),
@@ -391,10 +395,10 @@ function SkillsSection({ t }) {
 					h("div", { className: "dsk-badges" }, badges)),
 				skill.description ? h("p", { className: "dsk-desc" }, skill.description) : null),
 			h("div", { className: "dsk-actions" },
-				h("button", { className: "dsk-btn", disabled: busy, onClick: () => openView(skill) }, t("view")),
-				h("button", { className: "dsk-btn", disabled: busy, onClick: () => openEdit(skill) }, t("edit")),
-				h("button", { className: "dsk-btn", disabled: busy, onClick: () => void toggleModel(skill) }, skill.modelDisabled ? t("enableModel") : t("disableModel")),
-				h("button", { className: "dsk-btn dsk-btn-danger", disabled: busy, onClick: () => void remove(skill) }, t("delete"))));
+				h("button", { type: "button", className: "dsk-btn", disabled: busy, onClick: () => openView(skill) }, t("view")),
+				h("button", { type: "button", className: "dsk-btn", disabled: busy, onClick: () => openEdit(skill) }, t("edit")),
+				h("button", { type: "button", className: "dsk-btn", disabled: busy, onClick: () => void toggleModel(skill) }, skill.modelDisabled ? t("enableModel") : t("disableModel")),
+				h("button", { type: "button", className: "dsk-btn dsk-btn-danger", disabled: busy, onClick: () => void remove(skill) }, t("delete"))));
 	}
 
 	const body = status === "loading"
@@ -413,13 +417,13 @@ function SkillsSection({ t }) {
 					h("h1", { className: "dsk-title" }, t("title")),
 					h("p", { className: "dsk-subtitle" }, t("description"))),
                                h("div", { className: "dsk-actions", style: { display: tab === "installed" ? undefined : "none" } },
-					h("button", { className: "dsk-btn", onClick: () => void refresh() }, t("refresh")),
-					h("button", { className: "dsk-btn", onClick: () => fileRef.current?.click() }, t("import")),
-					h("button", { className: "dsk-btn dsk-btn-primary", onClick: openCreate }, t("create"))),
+					h("button", { type: "button", className: "dsk-btn", onClick: () => void refresh() }, t("refresh")),
+					h("button", { type: "button", className: "dsk-btn", onClick: () => fileRef.current?.click() }, t("import")),
+					h("button", { type: "button", className: "dsk-btn dsk-btn-primary", onClick: openCreate }, t("create"))),
 				h("input", { ref: fileRef, type: "file", accept: ".md,.zip,.tar.gz,.tgz", style: { display: "none" }, onChange: (event) => void handleImport(event) })),
                         h("div", { className: "dsk-tabs", role: "group", "aria-label": t("skillViews") },
-                                h("button", { className: `dsk-btn ${tab === "installed" ? "dsk-btn-primary" : ""}`, "aria-pressed": tab === "installed", disabled: busy, onClick: () => { setTab("installed"); void refresh(); } }, t("installedTab")),
-                                h("button", { className: `dsk-btn ${tab === "store" ? "dsk-btn-primary" : ""}`, "aria-pressed": tab === "store", disabled: busy, onClick: () => setTab("store") }, t("storeTab"))),
+                                h("button", { type: "button", className: `dsk-btn ${tab === "installed" ? "dsk-btn-primary" : ""}`, "aria-pressed": tab === "installed", disabled: busy, onClick: () => { setTab("installed"); void refresh(); } }, t("installedTab")),
+                                h("button", { type: "button", className: `dsk-btn ${tab === "store" ? "dsk-btn-primary" : ""}`, "aria-pressed": tab === "store", disabled: busy, onClick: () => setTab("store") }, t("storeTab"))),
                         tab === "store"
                                 ? h(SkillStoreSection, { t, api, format, onInstalled: () => void refresh() })
                                 : h(Fragment, null,
@@ -432,15 +436,25 @@ function SkillsSection({ t }) {
 /** 设置分区组件：全局规则（提示词）的查看与编辑。 */
 function PromptSection({ t }) {
 	const [persona, setPersona] = useState("");
+	/** 服务端当前生效的文本，用于判断是否有未保存修改。 */
+	const [loaded, setLoaded] = useState("");
 	const [status, setStatus] = useState("loading");
 	const [notice, setNotice] = useState(null);
 	const [busy, setBusy] = useState(false);
 
-	async function load() {
-		setStatus("loading");
+	/**
+	 * 读取提示词。
+	 * @param options.quiet - 重新加载时保持编辑器挂载（只禁用按钮），
+	 *   避免 textarea 卸载/重建造成的闪烁与焦点丢失。
+	 */
+	async function load(options = {}) {
+		const quiet = options.quiet === true;
+		if (!quiet) setStatus("loading");
 		try {
 			const payload = await api("/prompt");
-			setPersona(payload.persona ?? "");
+			const text = payload.persona ?? "";
+			setPersona(text);
+			setLoaded(text);
 			setStatus("ok");
 		} catch (error) {
 			setStatus("error");
@@ -452,12 +466,31 @@ function PromptSection({ t }) {
 		void load();
 	}, []);
 
-	async function save() {
+	/** 重新加载：有未保存修改时先确认，避免一次点击丢掉编辑内容。 */
+	async function reload() {
+		if (busy) return;
+		if (persona !== loaded && !window.confirm(t("promptDiscardConfirm"))) return;
 		setBusy(true);
 		setNotice(null);
 		try {
-			await api("/prompt", { method: "POST", body: JSON.stringify({ persona }) });
-			setNotice({ kind: "ok", text: t("promptSaved") });
+			await load({ quiet: true });
+		} finally {
+			setBusy(false);
+		}
+	}
+
+	async function save() {
+		if (busy) return;
+		setBusy(true);
+		setNotice(null);
+		try {
+			const payload = await api("/prompt", { method: "POST", body: JSON.stringify({ persona }) });
+			// 服务端会规范化文本；以返回值为准，避免与服务端不一致。
+			const text = payload.persona ?? persona;
+			setPersona(text);
+			setLoaded(text);
+			setStatus("ok");
+			setNotice({ kind: "ok", text: payload.changed === false ? t("promptUnchanged") : t("promptSaved") });
 		} catch (error) {
 			setNotice({ kind: "error", text: format(t("promptSaveFailed"), { message: error.message }) });
 		} finally {
@@ -467,7 +500,7 @@ function PromptSection({ t }) {
 
 	const body = status === "loading"
 		? h("p", { className: "dsk-subtitle" }, t("promptLoading"))
-		: h("textarea", { className: "dsk-input dsk-textarea", style: { minHeight: 380 }, value: persona, onChange: (event) => setPersona(event.target.value), placeholder: "You are a coding agent..." });
+		: h("textarea", { className: "dsk-input dsk-textarea", style: { minHeight: 380 }, value: persona, onChange: (event) => setPersona(event.target.value), placeholder: "You are a coding agent...", spellCheck: false });
 
 	return h(Fragment, null,
 		h("style", null, css),
@@ -477,8 +510,8 @@ function PromptSection({ t }) {
 					h("h1", { className: "dsk-title" }, t("promptTitle")),
 					h("p", { className: "dsk-subtitle" }, t("promptDescription"))),
 				h("div", { className: "dsk-actions" },
-					h("button", { className: "dsk-btn", onClick: () => void load() }, t("promptReload")),
-					h("button", { className: "dsk-btn dsk-btn-primary", disabled: busy || status !== "ok", onClick: () => void save() }, t("promptSave")))),
+					h("button", { type: "button", className: "dsk-btn", disabled: busy, onClick: () => void reload() }, t("promptReload")),
+					h("button", { type: "button", className: "dsk-btn dsk-btn-primary", disabled: busy || status !== "ok", onClick: () => void save() }, t("promptSave")))),
 			notice !== null ? h("p", { className: `dsk-notice ${notice.kind === "error" ? "dsk-notice-err" : "dsk-notice-ok"}` }, notice.text) : null,
 			body));
 }

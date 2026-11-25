@@ -8,9 +8,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import {
-	buildFrontmatter, buildPromptBlock, deleteSkill, extractPersona, findSkill, importSkills,
-	listSkills, parseFrontmatter, sanitizeSkillName, saveSkill, setFrontmatterField,
-	setPromptInPatch, setSkillModelEnabled,
+	applyPersonaToAssembly, buildFrontmatter, buildPromptBlock, deleteSkill, extractPersona, findSkill, importSkills,
+	listSkills, normalizePersona, parseFrontmatter, PersonaStore, personaPath, sanitizeSkillName, saveSkill,
+	setFrontmatterField, setPromptInPatch, setSkillModelEnabled,
 } from "../lib/skills.js";
 
 const execFileAsync = promisify(execFile);
@@ -117,7 +117,7 @@ try {
 	const patchWithExtras = [
 		"- id: system-prompt",
 		"  config:",
-		"    persona: |-",
+		"    personaPrefix: |-",
 		"      # 规则A",
 		"      ",
 		"      * 第一条",
@@ -127,15 +127,78 @@ try {
 		"    x: 1",
 		"",
 	].join("\n");
-	check("提取 persona", extractPersona(patchWithExtras) === "# 规则A\n\n* 第一条");
+	check("提取 personaPrefix", extractPersona(patchWithExtras) === "# 规则A\n\n* 第一条");
 	const replaced = setPromptInPatch(patchWithExtras, "# 新规则\n\n* 新条目");
 	check("替换后提取一致", extractPersona(replaced) === "# 新规则\n\n* 新条目");
+	check("替换不写回旧字段 persona", !/^\s+persona:/m.test(replaced));
 	check("其它条目保留", replaced.includes("- id: other-entry") && replaced.includes("x: 1"));
 	check("system-prompt 仍唯一", (replaced.match(/- id: system-prompt/g) ?? []).length === 1);
 	const appended = setPromptInPatch("- id: other-entry\n  config:\n    x: 1\n", "我的规则");
 	check("无块时追加", extractPersona(appended) === "我的规则" && appended.includes("- id: other-entry") && appended.indexOf("- id: other-entry") < appended.indexOf("- id: system-prompt"));
-	check("空块生成", buildPromptBlock("").trimEnd() === "- id: system-prompt\n  config:\n    persona: |-");
+	check("空块生成", buildPromptBlock("").trimEnd() === "- id: system-prompt\n  config:\n    personaPrefix: |-");
 	check("空内容替换为空", extractPersona(setPromptInPatch(patchWithExtras, "")) === "");
+
+	// 13b) 旧版误写字段 persona 的兼容读取与规范化
+	const legacyPatch = [
+		"- id: system-prompt",
+		"  config:",
+		"    persona: |-",
+		"      旧规则",
+		"",
+	].join("\n");
+	check("兼容旧字段 persona", extractPersona(legacyPatch) === "旧规则");
+	const mixedPatch = [
+		"- id: system-prompt",
+		"  config:",
+		"    persona: |-",
+		"      旧规则",
+		"    personaPrefix: |-",
+		"      新规则",
+		"",
+	].join("\n");
+	check("personaPrefix 优先于旧字段", extractPersona(mixedPatch) === "新规则");
+	check("规范化换行与尾随空行", normalizePersona("a\r\nb  \n\n\n") === "a\nb");
+
+	// 13c) 插件自有存储：首次读取从 home patch 迁移，保存不写 patch
+	{
+		const home = join(dir, "home-persona");
+		await mkdir(home, { recursive: true });
+		const patchFile = join(home, "cordis.patch.yml");
+		await writeFile(patchFile, legacyPatch, "utf8");
+		const store = new PersonaStore(home);
+		check("迁移旧 patch 的 persona", store.text === "旧规则");
+		const first = await store.save("  新规则  \n\n");
+		check("保存到插件自有文件", first.changed === true && first.file === personaPath(home));
+		check("保存不影响 patch", extractPersona(await readFile(patchFile, "utf8")) === "旧规则");
+		check("规范化后落盘", (await readFile(first.file, "utf8")) === "  新规则\n" && store.text === "  新规则");
+		check("内容不变时不重复写入", (await store.save("  新规则  \n\n")).changed === false);
+	}
+
+	// 13d) 运行时注入：空规则不注入、独立分区追加、preset persona 共存、就地更新
+	{
+		const assembly = () => ({
+			sections: [
+				{ name: "harness:identity", text: "identity" },
+				{ name: "deployment:persona-prefix", text: "preset 自己的 persona" },
+				{ name: "tool:read", text: "read" },
+			],
+			contexts: [],
+			variables: {},
+		});
+		const empty = assembly();
+		check("空规则不注入", applyPersonaToAssembly(empty, "  ") === empty && empty.sections.length === 3);
+		const filled = assembly();
+		applyPersonaToAssembly(filled, "# 规则");
+		check("规则段跟在部署 persona 之后", filled.sections[2].name === "plugin-repo:persona-rules"
+			&& filled.sections[2].text === "# 规则" && filled.sections[2].interpolate === false
+			&& filled.sections[1].text === "preset 自己的 persona");
+		applyPersonaToAssembly(filled, "# 规则 B");
+		check("重复注入就地更新", filled.sections.filter((entry) => entry.name === "plugin-repo:persona-rules").length === 1
+			&& filled.sections[2].text === "# 规则 B");
+		const noPersona = { sections: [{ name: "harness:identity", text: "identity" }, { name: "tool:read", text: "read" }], contexts: [], variables: {} };
+		applyPersonaToAssembly(noPersona, "# 规则");
+		check("没有部署 persona 时插在 identity 之后", noPersona.sections[1].name === "plugin-repo:persona-rules" && noPersona.sections[2].name === "tool:read");
+	}
 
 	// 14) 工具函数
 	check("名称净化", sanitizeSkillName("A b/c") === "A-b-c");

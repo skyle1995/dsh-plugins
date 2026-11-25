@@ -16,7 +16,9 @@
  */
 import { Service } from "@deepseek-ai/cordis";
 import Schema from "@deepseek-ai/schemastery";
-import { basename } from "node:path";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, join } from "node:path";
 import { SessionArchiveService } from "./session-archive.js";
 import { SkillManagerService } from "./skills.js";
 import { readJsonBody } from "./request.js";
@@ -268,6 +270,20 @@ export async function resolveBranchHead(config, request = repoRequest) {
  * dsh-plugin-repo 的 Cordis 服务：目录查询、spec 生成与一键安装。
  * 服务键 `pluginRepo`，通过 `ctx.pluginRepo` 使用。
  */
+/**
+ * 读取 dshc 控制器的 hub.json 令牌；插件未显式配置 token 时作为统一来源。
+ * 参数无，返回去空白后的令牌；文件缺失或格式错误时返回空串。
+ */
+export function controllerToken() {
+	const home = process.env.DSH_HOME || join(homedir(), ".dsh");
+	try {
+		const data = JSON.parse(readFileSync(join(home, "dsh-controller", "hub.json"), "utf8"));
+		return typeof data?.token === "string" ? data.token.trim() : "";
+	} catch {
+		return "";
+	}
+}
+
 export class PluginRepoService extends Service {
 	static inject = ["pluginManager"];
 
@@ -290,16 +306,18 @@ export class PluginRepoService extends Service {
 
 	constructor(ctx, config) {
 		super(ctx, "pluginRepo");
-		this.config = config;
+		// 显式配置优先；留空时统一读 dshc 的 hub.json，避免两处维护同一个 PAT。
+		const token = String(config.token ?? "").trim() || controllerToken();
+		this.config = { ...config, token };
 		/** 最近的目录结果及取得时刻；见 {@link DEFAULT_CATALOG_TTL_MS}。 */
 		this.catalogCache = null;
-		ctx.logger.info(`dsh-plugin-repo 已激活：${gitUrlOf(config)}（分支 ${config.branch}，目录 ${config.catalogDir}/）`);
+		ctx.logger.info(`dsh-plugin-repo 已激活：${gitUrlOf(config)}（分支 ${config.branch}，目录 ${config.catalogDir}/，token ${token ? "已配置" : "匿名"}）`);
 		// 基础能力子服务：技能能力（含规则提示词）与会话归档。作为子插件挂载，
 		// 各自持有独立的依赖注入面（会话归档需要 workspaceRegistry，缺失时仅
 		// 该子服务保持未激活，不影响主服务与技能能力）。
                 ctx.plugin(SkillManagerService, { skillsDir: config.skillsDir ?? "", storeConfig: {
                         gitHost: config.gitHost, owner: config.owner, repo: config.repo, branch: config.branch,
-                        token: config.token, requestTimeoutMs: config.requestTimeoutMs,
+                        token, requestTimeoutMs: config.requestTimeoutMs,
                         skillsCatalogDir: config.skillsCatalogDir ?? "skills",
                 } });
 		ctx.plugin(SessionArchiveService, { sessionsDir: config.sessionsDir ?? "" });

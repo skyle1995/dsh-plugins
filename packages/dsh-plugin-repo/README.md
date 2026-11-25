@@ -7,7 +7,7 @@
 | 分区 / 入口 | 能力 |
 |---|---|
 | **技能能力** | 本地 skills 管理，以及技能商店：自动读取描述、搜索、安装、更新 |
-| **规则（提示词）** | 全局 system-prompt persona 查看 / 编辑（热加载生效） |
+| **规则（提示词）** | 全局 system-prompt persona 查看 / 编辑；保存立即生效，不重载插件、不刷新界面 |
 | **会话菜单 → 删除会话** | 会话右键菜单底部（归档项之后）永久删除会话：空闲会话立即从 live 存储摘除；成功后局部更新列表，不刷新页面，保留其它会话草稿；被删除会话仍在当前视图时转到同工作区的新会话；正在运行的会话拒绝删除；文件与 workspace 记账一并清理 |
 
 宿主半区为主服务（`ctx.pluginRepo`）挂载两个子服务（`ctx.skillManager`、
@@ -29,7 +29,14 @@ pnpm 安装，而 pnpm 11 支持 `git+https://host/owner/repo.git#<分支>&path:
 - `0.4.3` 起默认仓库改为 GitHub（`gitHost` 默认 `https://github.com`，
   API 走 `api.github.com`），技能商店与目录读取同时兼容 Gitea / Forgejo；
 - `0.4.4` 起适配公开 GitHub 的匿名限额：限额用尽时给出「填 token + 何时恢复」
-  的可操作提示，目录结果缓存 60 秒（`catalog({ refresh: true })` 强制刷新）。
+  的可操作提示，目录结果缓存 60 秒（`catalog({ refresh: true })` 强制刷新）；
+- `0.4.5` 修复「规则（提示词）」保存导致 dsh 异常刷新：旧实现把 persona 写进
+  `$DSH_HOME/cordis.patch.yml` 的 `- id: system-prompt` 块，而 dsh 的真实字段是
+  `personaPrefix`（`persona` 是未知字段）。提示词因此从不生效，未知字段却参与
+  loader 的配置 diff，每次保存都会重启 `system-prompt` 插件并让前端异常刷新。
+  现在 persona 存在插件自有文件 `$DSH_HOME/dsh-plugin-repo/persona.md`，通过
+  `system-prompt/assemble` 作为独立分区 `plugin-repo:persona-rules` 注入：保存立即
+  生效，不写 patch、不触发 dsh-hmr；旧 patch 里的 persona 会在首次读取时迁移。
 
 ## 配置
 
@@ -41,7 +48,7 @@ pnpm 安装，而 pnpm 11 支持 `git+https://host/owner/repo.git#<分支>&path:
 | `branch` | `main` | 用于安装的分支 |
 | `catalogDir` | `packages` | monorepo 内插件目录 |
 | `skillsCatalogDir` | `skills` | 仓库技能根目录，自动扫描子目录并读取 `SKILL.md` |
-| `token` | `""`（secret） | 仓库 Access Token（GitHub / Gitea 通用）；公开仓库可留空，但 GitHub 匿名接口限流 60 次/小时，用尽后目录与技能商店都会失败并提示填写，建议填写（限额 5000 次/小时） |
+| `token` | `""`（secret） | 仓库 Access Token（GitHub / Gitea 通用）；公开仓库可留空，但 GitHub 匿名接口限流 60 次/小时，用尽后目录与技能商店都会失败。请在 **DSH 设置 → 插件 → dsh-plugin-repo** 填写（限额 5000 次/小时）；留空时自动读取 dshc 的 `~/.dsh/dsh-controller/hub.json` |
 | `requestTimeoutMs` | `15000` | 单次 API 请求超时 |
 | `skillsDir` | `""`（自动） | 技能能力子服务的技能根目录；留空用 `$DSH_HOME/skills` |
 | `sessionsDir` | `""`（自动） | 会话删除子服务的会话根目录；留空用 `$DSH_HOME/sessions` |
@@ -106,13 +113,22 @@ const { spec, result } = await ctx.pluginRepo.install("dsh-plugin-repo", { enabl
   仓库、技能和会话管理 JSON 请求限制为 1MB，超限返回 `413`。
 - 技能编辑必须引用当前技能列表中的实际文件，新建或改名不覆盖其它技能；
   编辑保留 frontmatter 中的模型/用户开关及额外字段，保留原 CRLF 换行风格。
-  保存、模型开关、单文件导入和规则保存使用同目录临时文件替换，保留模式权限；
-  压缩包中的目录技能导入仍按既有覆盖语义处理，不承诺整个导入具有事务性。
+  技能保存、模型开关、单文件导入和规则保存都使用同目录临时文件替换，
+  保留模式权限；压缩包中的目录技能导入仍按既有覆盖语义处理，不承诺整个
+  导入具有事务性。
+- **规则（提示词）** 存在 `$DSH_HOME/dsh-plugin-repo/persona.md`，由插件在
+  `system-prompt/assemble` 时作为独立分区 `plugin-repo:persona-rules` 注入
+  system prompt，因此保存立即生效、不写 `cordis.patch.yml`、不触发 dsh-hmr，
+  界面不会异常刷新。规则段追加在部署 persona 之后，与 agent preset 自带的
+  persona（例如 `unrestricted` 预设的 `dsh-persona`）共存而不是覆盖它；
+  文本按字面注入，规则里的 `{{` 不会让组装失败。旧版本写在
+  `$DSH_HOME/cordis.patch.yml` 的 `persona` / `personaPrefix` 会在首次读取时
+  迁移到上述文件（只读旧 patch，不改写它）。
 - Windows 技能名称额外拒绝设备保留名，不将其限制强加给 macOS/Linux；
   会话清理不会把带分隔符的原始 id 拼入标题缓存路径。
 - 新增离线回归在仓库根运行 `node --test demo-test/other-plugins.test.mjs`，
   本轮在 Windows 执行，macOS/Linux 真机仍需验证。
-- 仓库公开时无需 token；私有仓库需在配置中提供带读取权限的 token。GitHub 匿名接口限流 60 次/小时/IP，`dsh-plugin-repo` 默认读取 GitHub 公开仓库，建议在配置的 `token` 里填一个只读 personal access token 以避免限流。限额用尽时错误会直接提示填写 token 与预计恢复时刻（`plugin-repo/rate-limited` / `skill-store/rate-limited`）；目录结果缓存 60 秒（`catalog({ refresh: true })` 强制刷新），面板反复打开不再重复计数。
+- 仓库公开时无需 token；私有仓库需在配置中提供带读取权限的 token。GitHub 匿名接口限流 60 次/小时/IP，`dsh-plugin-repo` 默认读取 GitHub 公开仓库，建议在 **DSH 设置 → 插件 → dsh-plugin-repo** 的 `token` 里填一个只读 personal access token 以避免限流；`token` 留空时自动读取 dshc 的 `~/.dsh/dsh-controller/hub.json`。限额用尽时错误会直接提示填写 token 与预计恢复时刻（`plugin-repo/rate-limited` / `skill-store/rate-limited`）；目录结果缓存 60 秒（`catalog({ refresh: true })` 强制刷新），面板反复打开不再重复计数。
 - 目录读取使用仓库 API（GitHub 走 `contents`；Gitea/Forgejo 走 `contents` 与 `raw`，raw 失败时回退 base64）。
 - 分支名含 `#` 或 `&` 的仓库无法生成正确 spec（pnpm fragment 语法限制）。
 - 宿主半区**无构建步骤**（纯 ESM + 类型声明），避免触发 pnpm 的构建脚本

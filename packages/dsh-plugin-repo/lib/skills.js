@@ -11,9 +11,11 @@
  *   （改写 disable-model-invocation 字段，其余 frontmatter 保留）、
  *   导入（.md 单文件与 .zip/.tar.gz/.tgz 压缩包，解包扫描目录 bundle 与
  *   平铺技能，跳过 README 等非技能文件，重名覆盖）；
- * - 规则（提示词）：读取/编辑 home 级 patch（$DSH_HOME/cordis.patch.yml）
- *   里的 `- id: system-prompt` persona 块——手术式替换，保留文件内其它
- *   条目；保存后由 dsh-hmr 热加载，无需重启。
+ * - 规则（提示词）：持久化在插件自有文件
+ *   $DSH_HOME/dsh-plugin-repo/persona.md，并通过 system-prompt/assemble
+ *   运行时注入 deployment:persona-prefix 分区。不写 cordis.patch.yml，
+ *   因此保存后立即生效，也不会触发 dsh-hmr 重载插件/刷新界面。
+ *   旧版本写在 home patch 里的 persona 会在首次读取时迁移过来。
  *
  * filesystem 提供方（dsh-skill-filesystem）会监视这些根目录，因此本插件
  * 的改动无需重启即可进入下一次会话目录。
@@ -26,7 +28,7 @@
 import { Service } from "@deepseek-ai/cordis";
 import Schema from "@deepseek-ai/schemastery";
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { cp, lstat, mkdir, mkdtemp, open, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
@@ -418,22 +420,42 @@ export async function importSkills(dir, input) {
 	}
 }
 
-/** home 级 patch 文件名（位于 $DSH_HOME 下）。 */
+/** home 级 patch 文件名（位于 $DSH_HOME 下），旧版 persona 的迁移来源。 */
 export const HOME_PATCH_FILENAME = "cordis.patch.yml";
 
+/** 规则（提示词）数据目录名（位于 $DSH_HOME 下）。 */
+export const PERSONA_DIRNAME = "dsh-plugin-repo";
+
+/** 规则（提示词）文件名。 */
+export const PERSONA_FILENAME = "persona.md";
+
+/** 规则（提示词）落盘路径：<dshHome>/dsh-plugin-repo/persona.md。 */
+export function personaPath(home = resolveDshHome()) {
+	return join(home, PERSONA_DIRNAME, PERSONA_FILENAME);
+}
+
 /**
- * 从 patch 文本中提取 system-prompt 块的 persona（支持行内标量与 | / |- 块标量）。
- * 找不到时返回空字符串。
+ * 规范化 persona 文本：统一换行、去掉行尾空白与末尾空行。
+ * 仅用于比较与落盘，不改变用户可见的语义。
  */
-export function extractPersona(content) {
-	const lines = String(content).split(/\r?\n/);
-	const start = lines.findIndex((line) => /^- id: system-prompt\s*$/.test(line));
-	if (start < 0) return "";
+export function normalizePersona(text) {
+	return String(text ?? "")
+		.replace(/\r\n?/g, "\n")
+		.replace(/[ \t]+$/gm, "")
+		.replace(/\n+$/, "");
+}
+
+/**
+ * 从 patch 文本的 system-prompt 块里读取一个 persona 字段
+ * （支持行内标量与 | / |- 块标量）；字段不存在返回 null。
+ */
+function readPersonaField(lines, start, field) {
 	for (let i = start + 1; i < lines.length; i++) {
 		const line = lines[i];
 		if (/^- id:/.test(line) || /^\S/.test(line)) break;
-		const block = /^    persona:\s*\|(-?)\s*$/.exec(line);
-		const inline = block === null ? /^    persona:\s*(.+)$/.exec(line) : null;
+		const pattern = new RegExp(`^    ${field}:\\s*(\\|(-?)?)\\s*$`);
+		const block = pattern.exec(line);
+		const inline = block === null ? new RegExp(`^    ${field}:\\s*(.+)$`).exec(line) : null;
 		if (inline) return unquote(inline[1]);
 		if (!block) continue;
 		const value = [];
@@ -450,20 +472,39 @@ export function extractPersona(content) {
 		while (value.length > 0 && value.at(-1) === "") value.pop();
 		return value.join("\n");
 	}
-	return "";
+	return null;
 }
 
 /**
- * 生成 system-prompt 条目块（persona 用 | 块标量，内容统一缩进 6 空格）。
+ * 从 patch 文本中提取 system-prompt 块的 persona。
+ *
+ * dsh 的真实配置字段是 `personaPrefix`；旧版本本插件误写过 `persona`
+ * （dsh 忽略该未知字段，配置却参与 loader 的 diff，于是每次保存都会重启
+ * system-prompt 插件并让前端异常刷新）。两个字段都读，优先取正确字段，
+ * 用于把旧配置迁移到插件自有存储。找不到时返回空字符串。
+ */
+export function extractPersona(content) {
+	const lines = String(content).split(/\r?\n/);
+	const start = lines.findIndex((line) => /^- id: system-prompt\s*$/.test(line));
+	if (start < 0) return "";
+	const modern = readPersonaField(lines, start, "personaPrefix");
+	if (modern !== null) return modern;
+	return readPersonaField(lines, start, "persona") ?? "";
+}
+
+/**
+ * 生成 system-prompt 条目块（personaPrefix 用 | 块标量，内容统一缩进 6 空格）。
+ * 仅供迁移/测试使用：插件保存不再写 home patch。
  */
 export function buildPromptBlock(persona) {
 	const lines = String(persona ?? "").split(/\r?\n/);
-	return ["- id: system-prompt", "  config:", "    persona: |-", ...lines.map((line) => (line === "" ? "" : `      ${line}`)), ""].join("\n");
+	return ["- id: system-prompt", "  config:", "    personaPrefix: |-", ...lines.map((line) => (line === "" ? "" : `      ${line}`)), ""].join("\n");
 }
 
 /**
  * 手术式替换：存在 system-prompt 条目则只替换该条目（到下一个顶层
  * `- id:` 或文件末尾为止），保留文件内其它条目；不存在则追加到文件末尾。
+ * 仅供迁移/测试使用：插件保存不再写 home patch。
  */
 export function setPromptInPatch(content, persona) {
 	const lines = String(content ?? "").split(/\r?\n/);
@@ -481,9 +522,109 @@ export function setPromptInPatch(content, persona) {
 	return [before, buildPromptBlock(persona).trimEnd(), after].filter((part) => part !== "").join("\n") + "\n";
 }
 
-/** home 级 patch 的绝对路径。 */
+/** home 级 patch 的绝对路径（旧版 persona 的迁移来源）。 */
 export function promptPatchPath(home = resolveDshHome()) {
 	return join(home, HOME_PATCH_FILENAME);
+}
+
+/** dsh 部署级 persona 前缀分区名，规则段挂在它后面。 */
+const PERSONA_PREFIX_SECTION = "deployment:persona-prefix";
+
+/** 本插件注入的规则段分区名（不与 dsh 的分区重名，避免被 scoped persona 覆盖）。 */
+export const PERSONA_RULES_SECTION = "plugin-repo:persona-rules";
+
+/**
+ * 把 persona 注入一次 system prompt 组装结果。
+ *
+ * 规则作为独立分区追加，而不是改写 `deployment:persona-prefix`：agent preset
+ * 会用 `dsh-persona` 注册同名 scoped 分区来 shadow 部署 persona，改写那个
+ * 分区会让全局规则在 preset 下失效。独立分区与 preset 的 persona 共存。
+ *
+ * - persona 为空：原样返回。
+ * - 已有规则段：就地更新文本。
+ * - 否则插到部署 persona 之后（没有时落到 harness identity 之后）。
+ * - 文本按字面注入（interpolate: false），规则里的 `{{` 不会让组装失败。
+ * @param assembly - 可变的 PromptPresentation。
+ * @param persona - 当前生效的规则文本。
+ * @returns 同一个 assembly，便于瀑布链继续。
+ */
+export function applyPersonaToAssembly(assembly, persona) {
+	const text = String(persona ?? "");
+	if (text.trim() === "") return assembly;
+	const existing = assembly.sections.find((entry) => entry.name === PERSONA_RULES_SECTION);
+	if (existing !== undefined) {
+		existing.text = text;
+		existing.interpolate = false;
+		return assembly;
+	}
+	const personaIndex = assembly.sections.findIndex((entry) => entry.name === PERSONA_PREFIX_SECTION);
+	const identityIndex = assembly.sections.findIndex((entry) => entry.name === "harness:identity");
+	const index = personaIndex >= 0 ? personaIndex + 1 : identityIndex >= 0 ? identityIndex + 1 : 0;
+	assembly.sections.splice(index, 0, {
+		name: PERSONA_RULES_SECTION,
+		text,
+		interpolate: false,
+	});
+	return assembly;
+}
+
+/**
+ * 规则（提示词）存储：插件自有文件 + 内存缓存。
+ *
+ * 首次读取时若文件不存在，则从 home patch 的 system-prompt 块迁移旧
+ * persona（只读 patch、不写 patch，避免触发 dsh-hmr 重载）。
+ */
+export class PersonaStore {
+	constructor(home = resolveDshHome()) {
+		this.home = home;
+		this.file = personaPath(home);
+		this.value = this.#load();
+	}
+
+	/** 同步读取插件文件；缺失时返回迁移值（不落盘）。 */
+	#load() {
+		try {
+			if (existsSync(this.file)) return normalizePersona(readFileSync(this.file, "utf8"));
+		} catch {
+			// 读取失败按空处理，下一次保存会重建文件。
+		}
+		return this.#migrate();
+	}
+
+	/** 从 home patch 读取旧 persona；不存在返回空串。 */
+	#migrate() {
+		const patch = promptPatchPath(this.home);
+		try {
+			if (!existsSync(patch)) return "";
+			return normalizePersona(extractPersona(readFileSync(patch, "utf8")));
+		} catch {
+			return "";
+		}
+	}
+
+	/** 当前生效文本（注入 system prompt 用）。 */
+	get text() {
+		return this.value;
+	}
+
+	/**
+	 * 保存文本并更新缓存；内容未变化时不落盘。
+	 * @returns `{ file, persona, changed }`
+	 */
+	async save(text) {
+		const next = normalizePersona(text);
+		if (next === this.value) return { file: this.file, persona: next, changed: false };
+		await writeSkillAtomic(this.file, next === "" ? "" : `${next}\n`);
+		this.value = next;
+		return { file: this.file, persona: next, changed: true };
+	}
+
+	/** 首次读取到迁移值时把文本落到插件文件，后续启动不再依赖 patch。 */
+	async persistMigrated() {
+		if (this.value === "" || existsSync(this.file)) return false;
+		await writeSkillAtomic(this.file, `${this.value}\n`);
+		return true;
+	}
 }
 
 /**
@@ -502,8 +643,14 @@ export class SkillManagerService extends Service {
 		this.skillsDir = resolveSkillsDir(config);
                 this.store = config.storeConfig ? new SkillStore(config.storeConfig, this.skillsDir) : null;
                 this.mutation = Promise.resolve();
+                this.persona = new PersonaStore();
                 ctx.effect(() => () => this.store?.dispose(), "plugin-skills: skill store");
 		ctx.logger.info(`dsh-plugin-skills 已激活：技能目录 ${this.skillsDir}`);
+		// 旧版 persona 从 home patch 迁移到插件文件；只写插件文件，
+		// 不触碰 cordis.patch.yml，避免 dsh-hmr 重载 system-prompt。
+		// 与保存共用写队列，避免启动迁移与首次保存并发写同一文件。
+		void this.mutate(() => this.persona.persistMigrated()).catch((error) => ctx.logger.warn(error));
+		this.#installPersonaSection(ctx);
 		ctx.inject(["webServer"], (webCtx) => {
 			webCtx.effect(() => {
 				const disposers = [
@@ -568,19 +715,40 @@ export class SkillManagerService extends Service {
 		return Buffer.concat(chunks);
 	}
 
-	/** 读取 home 级 patch 里的 system-prompt persona。 */
-	async getPrompt() {
-		const file = promptPatchPath();
-		if (!existsSync(file)) return "";
-		return extractPersona(await readFile(file, "utf8"));
+	/**
+	 * 注册 system-prompt/assemble 监听：把当前规则作为独立分区
+	 * （plugin-repo:persona-rules）注入 system prompt。保存后无需重启或
+	 * 重载插件即可生效，也不会触发 dsh-hmr。
+	 *
+	 * 用独立分区而不是改写 deployment:persona-prefix：agent preset 会用
+	 * scoped 同名分区 shadow 掉部署 persona，改写那个分区会让全局规则在
+	 * preset 下失效（本机默认 preset 就是这种情况）。
+	 * @param ctx - 服务上下文，监听器随插件生命周期释放。
+	 */
+	#installPersonaSection(ctx) {
+		ctx.effect(() => ctx.on("system-prompt/assemble", async (_assembly, _context, next) => {
+			const assembly = await next();
+			return applyPersonaToAssembly(assembly, this.persona.text);
+		}), "plugin-skills: persona section");
 	}
 
-	/** 保存 persona（手术式替换，保留其它条目；home patch 由 dsh-hmr 热加载）。 */
+	/** 读取当前生效的 persona（内存缓存，已包含旧 patch 迁移值）。 */
+	async getPrompt() {
+		return this.persona.text;
+	}
+
+	/**
+	 * 保存 persona 到插件自有文件并立即生效；内容未变化时不落盘，
+	 * 避免一次无意义的写盘。不写 cordis.patch.yml，因此不会触发
+	 * dsh-hmr 重载插件，界面也不会异常刷新。
+	 * @returns `{ file, persona, changed }`
+	 */
 	async savePrompt(persona) {
-		const file = promptPatchPath();
-		const existing = existsSync(file) ? await readFile(file, "utf8") : "";
-                await writeSkillAtomic(file, setPromptInPatch(existing, persona));
-		return file;
+		return this.mutate(async () => {
+			const result = await this.persona.save(persona);
+			if (result.changed) this.ctx.emit("system-prompt/change");
+			return result;
+		});
 	}
 
         /** 排队写入技能目录；参数为异步操作，返回操作结果，与商店安装共用写队列。 */
@@ -643,7 +811,12 @@ export class SkillManagerService extends Service {
 			}
 			if (operation === "prompt") {
 				if (req.method === "GET" || req.method === "HEAD") {
-					json(200, { ok: true, path: promptPatchPath(), persona: await this.getPrompt() });
+					json(200, {
+						ok: true,
+						path: this.persona.file,
+						persona: await this.getPrompt(),
+						legacyPatch: promptPatchPath(),
+					});
 					return;
 				}
 				if (req.method !== "POST") {
@@ -659,8 +832,8 @@ export class SkillManagerService extends Service {
 					return;
 				}
 				const persona = typeof promptBody.persona === "string" ? promptBody.persona : "";
-				await this.savePrompt(persona);
-				json(200, { ok: true, path: promptPatchPath(), persona });
+				const saved = await this.savePrompt(persona);
+				json(200, { ok: true, path: saved.file, persona: saved.persona, changed: saved.changed });
 				return;
 			}
 			if (req.method !== "POST") {

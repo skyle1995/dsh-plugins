@@ -238,15 +238,15 @@ function RepoSection({ t }) {
 		const entryBusy = busy[entry.name];
 		const actions = [];
 		if (entryBusy !== undefined) {
-			actions.push(h("button", { key: "busy", className: "dpr-btn", disabled: true }, t("entryBusy")));
-			if (entryBusy === "install") actions.push(h("button", { key: "cancel", className: "dpr-btn", onClick: () => void cancel(entry.name) }, t("entryCancel")));
+			actions.push(h("button", { type: "button", key: "busy", className: "dpr-btn", disabled: true }, t("entryBusy")));
+			if (entryBusy === "install") actions.push(h("button", { type: "button", key: "cancel", className: "dpr-btn", onClick: () => void cancel(entry.name) }, t("entryCancel")));
 		} else if (entry.installed) {
 			const hasUpdate = entry.installedVersion !== null && entry.installedVersion !== undefined && entry.version !== null && entry.version !== undefined && entry.installedVersion !== entry.version;
-			actions.push(h("button", { key: hasUpdate ? "update" : "reinstall", className: hasUpdate ? "dpr-btn dpr-btn-primary" : "dpr-btn", onClick: () => void install(entry) }, hasUpdate ? t("entryUpdate") : t("entryReinstall")));
-			if (!entry.self) actions.push(h("button", { key: "toggle", className: "dpr-btn", onClick: () => void toggleEnabled(entry) }, entry.enabled ? t("entryDisable") : t("entryEnable")));
-			if (entry.removable !== false) actions.push(h("button", { key: "remove", className: "dpr-btn dpr-btn-danger", onClick: () => void remove(entry) }, t("entryRemove")));
+			actions.push(h("button", { type: "button", key: hasUpdate ? "update" : "reinstall", className: hasUpdate ? "dpr-btn dpr-btn-primary" : "dpr-btn", onClick: () => void install(entry) }, hasUpdate ? t("entryUpdate") : t("entryReinstall")));
+			if (!entry.self) actions.push(h("button", { type: "button", key: "toggle", className: "dpr-btn", onClick: () => void toggleEnabled(entry) }, entry.enabled ? t("entryDisable") : t("entryEnable")));
+			if (entry.removable !== false) actions.push(h("button", { type: "button", key: "remove", className: "dpr-btn dpr-btn-danger", onClick: () => void remove(entry) }, t("entryRemove")));
 		} else {
-			actions.push(h("button", { key: "install", className: "dpr-btn dpr-btn-primary", onClick: () => void install(entry) }, t("entryInstall")));
+			actions.push(h("button", { type: "button", key: "install", className: "dpr-btn dpr-btn-primary", onClick: () => void install(entry) }, t("entryInstall")));
 		}
 		const badges = [];
 		const hasUpdate = entry.installedVersion !== null && entry.installedVersion !== undefined && entry.version !== null && entry.version !== undefined && entry.installedVersion !== entry.version;
@@ -283,14 +283,14 @@ function RepoSection({ t }) {
 					h("p", { className: "dpr-subtitle" }, t("description")),
 					catalog.source ? h("p", { className: "dpr-source" }, `${t("source")}：${catalog.source.gitUrl}（${catalog.source.branch}）`) : null),
 				h("div", { className: "dpr-toolbar" },
-					h("button", { className: "dpr-btn", onClick: () => void refresh() }, t("refresh")))),
+					h("button", { type: "button", className: "dpr-btn", onClick: () => void refresh() }, t("refresh")))),
 			h("div", { className: "dpr-toolbar" },
 				h("input", { className: "dpr-search", placeholder: t("search"), value: query, onChange: (event) => setQuery(event.target.value) })),
 			renderNotice(),
 			reloadPrompt ? h("div", { className: "dpr-notice dpr-notice-ok dpr-reload" },
 				h("span", null, t("reloadHint")),
-				h("button", { className: "dpr-btn dpr-btn-primary", onClick: () => globalThis.location.reload() }, t("reloadNow")),
-				h("button", { className: "dpr-btn", onClick: () => setReloadPrompt(false) }, t("reloadDismiss"))) : null,
+				h("button", { type: "button", className: "dpr-btn dpr-btn-primary", onClick: () => globalThis.location.reload() }, t("reloadNow")),
+				h("button", { type: "button", className: "dpr-btn", onClick: () => setReloadPrompt(false) }, t("reloadDismiss"))) : null,
 			body));
 }
 

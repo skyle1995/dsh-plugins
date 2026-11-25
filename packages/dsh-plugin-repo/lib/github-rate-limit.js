@@ -29,5 +29,5 @@ export function rateLimitResetText(response) {
 
 /** 生成面向用户的一句话提示；参数为 Response，返回中文说明。 */
 export function rateLimitMessage(response) {
-	return `GitHub 接口匿名限额已用尽（60 次/小时）${rateLimitResetText(response)}：请在本插件配置里填写 token（GitHub Personal Access Token，限额 5000 次/小时）`;
+	return `GitHub 接口匿名限额已用尽（60 次/小时）${rateLimitResetText(response)}：请在 DSH 设置 → 插件 → dsh-plugin-repo 中填写 token（GitHub Personal Access Token，限额 5000 次/小时）`;
 }

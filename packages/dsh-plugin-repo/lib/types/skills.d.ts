@@ -51,6 +51,43 @@ export function extractPersona(content: string): string;
 export function buildPromptBlock(persona: string): string;
 export function setPromptInPatch(content: string, persona: string): string;
 export function promptPatchPath(home?: string): string;
+/** 规则（提示词）数据目录名（位于 $DSH_HOME 下）。 */
+export const PERSONA_DIRNAME: string;
+/** 规则（提示词）文件名。 */
+export const PERSONA_FILENAME: string;
+/** 规则（提示词）落盘路径：<dshHome>/dsh-plugin-repo/persona.md。 */
+export function personaPath(home?: string): string;
+/** 规范化 persona 文本：统一换行、去掉行尾空白与末尾空行。 */
+export function normalizePersona(text: unknown): string;
+/**
+ * 把规则注入一次 system prompt 组装结果：作为独立分区
+ * `plugin-repo:persona-rules` 追加在部署 persona 之后，与 agent preset 的
+ * 自有 persona 共存，而不是覆盖它。
+ */
+export function applyPersonaToAssembly(assembly: AssemblyLike, persona: string): AssemblyLike;
+
+/** 本插件注入的规则段分区名（不与 dsh 分区重名，避免被 scoped persona 覆盖）。 */
+export const PERSONA_RULES_SECTION: string;
+
+/** 组装结果的最小结构（PromptPresentation 的可注入子集）。 */
+export interface AssemblyLike {
+	sections: Array<{ name: string; text: string; interpolate?: boolean }>;
+	contexts: Array<{ name: string; text: string; interpolate?: boolean }>;
+	variables: Record<string, string | undefined>;
+}
+
+/** 规则（提示词）存储：插件自有文件 + 内存缓存。 */
+export class PersonaStore {
+	constructor(home?: string);
+	readonly home: string;
+	readonly file: string;
+	/** 当前生效文本（注入 system prompt 用）。 */
+	readonly text: string;
+	/** 保存文本并更新缓存；内容未变化时不落盘。 */
+	save(text: string): Promise<{ file: string; persona: string; changed: boolean }>;
+	/** 首次读取到迁移值时把文本落到插件文件。 */
+	persistMigrated(): Promise<boolean>;
+}
 
 export class SkillManagerService extends Service {
 	constructor(ctx: Context, config: SkillManagerConfig);
@@ -58,6 +95,12 @@ export class SkillManagerService extends Service {
 	skillsDir: string;
         store: SkillStore | null;
         mutation: Promise<unknown>;
+        /** 规则（提示词）存储。 */
+        persona: PersonaStore;
+        /** 读取当前生效的 persona。 */
+        getPrompt(): Promise<string>;
+        /** 保存 persona（不写 cordis.patch.yml，立即生效）。 */
+        savePrompt(persona: string): Promise<{ file: string; persona: string; changed: boolean }>;
         /** 参数为技能写入操作，返回其结果，与商店安装共用写队列。 */
         mutate<T>(operation: () => Promise<T>): Promise<T>;
 }

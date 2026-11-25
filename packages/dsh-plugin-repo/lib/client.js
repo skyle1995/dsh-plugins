@@ -111,7 +111,7 @@ function SkillStoreSection({ t, api: api2, format: format3, onInstalled }) {
       "div",
       { className: "dsk-store-toolbar" },
       (0, import_react.createElement)("input", { className: "dsk-input", type: "search", value: query, placeholder: t("storeSearch"), "aria-label": t("storeSearch"), onChange: (event) => setQuery(event.target.value) }),
-      (0, import_react.createElement)("button", { className: "dsk-btn", disabled: busy !== null || status === "loading", onClick: () => {
+      (0, import_react.createElement)("button", { type: "button", className: "dsk-btn", disabled: busy !== null || status === "loading", onClick: () => {
         setNotice(null);
         void load(true);
       } }, t("refresh"))
@@ -142,6 +142,7 @@ function SkillStoreSection({ t, api: api2, format: format3, onInstalled }) {
         "div",
         { className: "dsk-actions" },
         (0, import_react.createElement)("button", {
+          type: "button",
           className: "dsk-btn dsk-btn-primary",
           disabled: busy !== null || status !== "ok" || entry.managed && !entry.updateAvailable && !entry.modified,
           onClick: () => void install(entry)
@@ -216,10 +217,12 @@ var zh = {
   detailWhenToUse: "\u9002\u7528\u573A\u666F",
   noWhenToUse: "\uFF08\u672A\u586B\u5199\uFF09",
   promptTitle: "\u89C4\u5219\uFF08\u63D0\u793A\u8BCD\uFF09",
-  promptDescription: "\u5168\u5C40\u7CFB\u7EDF\u63D0\u793A\u8BCD\uFF08persona\uFF09\u3002\u4FDD\u5B58\u540E\u7531 dsh \u70ED\u52A0\u8F7D\uFF0C\u65E0\u9700\u91CD\u542F\uFF1B\u7559\u7A7A\u4F7F\u7528\u9ED8\u8BA4\u3002",
+  promptDescription: "\u5168\u5C40\u7CFB\u7EDF\u63D0\u793A\u8BCD\uFF08persona\uFF09\u3002\u4FDD\u5B58\u540E\u7ACB\u5373\u751F\u6548\uFF0C\u65E0\u9700\u91CD\u542F\uFF0C\u4E5F\u4E0D\u4F1A\u89E6\u53D1 dsh \u91CD\u8F7D\u6216\u5237\u65B0\u754C\u9762\uFF1B\u7559\u7A7A\u4F7F\u7528\u9ED8\u8BA4\u3002",
   promptReload: "\u91CD\u65B0\u52A0\u8F7D",
   promptSave: "\u4FDD\u5B58\u63D0\u793A\u8BCD",
-  promptSaved: "\u63D0\u793A\u8BCD\u5DF2\u4FDD\u5B58\uFF08\u70ED\u52A0\u8F7D\u751F\u6548\uFF09\u3002",
+  promptSaved: "\u63D0\u793A\u8BCD\u5DF2\u4FDD\u5B58\u5E76\u751F\u6548\u3002",
+  promptUnchanged: "\u63D0\u793A\u8BCD\u6CA1\u6709\u53D8\u5316\u3002",
+  promptDiscardConfirm: "\u5F53\u524D\u6709\u672A\u4FDD\u5B58\u7684\u4FEE\u6539\uFF0C\u91CD\u65B0\u52A0\u8F7D\u4F1A\u4E22\u5F03\u8FD9\u4E9B\u4FEE\u6539\u3002\u7EE7\u7EED\u5417\uFF1F",
   promptSaveFailed: "\u4FDD\u5B58\u5931\u8D25\uFF1A{message}",
   promptLoading: "\u6B63\u5728\u52A0\u8F7D\u63D0\u793A\u8BCD\u2026"
 };
@@ -285,10 +288,12 @@ var en = {
   detailWhenToUse: "When to use",
   noWhenToUse: "(not set)",
   promptTitle: "Rules (Prompt)",
-  promptDescription: "Global system prompt (persona). Saved changes hot-apply without restart; leave empty for the default.",
+  promptDescription: "Global system prompt (persona). Saving applies immediately without a restart, reloading dsh, or refreshing this page; leave empty for the default.",
   promptReload: "Reload",
   promptSave: "Save prompt",
-  promptSaved: "Prompt saved (hot-applied).",
+  promptSaved: "Prompt saved and applied.",
+  promptUnchanged: "No changes to save.",
+  promptDiscardConfirm: "You have unsaved edits. Reloading discards them. Continue?",
   promptSaveFailed: "Save failed: {message}",
   promptLoading: "Loading prompt\u2026"
 };
@@ -489,8 +494,8 @@ function SkillsSection({ t }) {
       (0, import_react2.createElement)(
         "div",
         { className: "dsk-actions" },
-        (0, import_react2.createElement)("button", { className: "dsk-btn dsk-btn-primary", disabled: busy, onClick: () => void submit() }, t("save")),
-        (0, import_react2.createElement)("button", { className: "dsk-btn", disabled: busy, onClick: () => setEditing(null) }, t("cancel"))
+        (0, import_react2.createElement)("button", { type: "button", className: "dsk-btn dsk-btn-primary", disabled: busy, onClick: () => void submit() }, t("save")),
+        (0, import_react2.createElement)("button", { type: "button", className: "dsk-btn", disabled: busy, onClick: () => setEditing(null) }, t("cancel"))
       )
     );
   }
@@ -513,7 +518,7 @@ function SkillsSection({ t }) {
           (0, import_react2.createElement)("span", null, skill.name),
           (0, import_react2.createElement)("div", { className: "dsk-badges" }, badges)
         ),
-        (0, import_react2.createElement)("button", { className: "dsk-btn", onClick: () => setEditing(null) }, t("back"))
+        (0, import_react2.createElement)("button", { type: "button", className: "dsk-btn", onClick: () => setEditing(null) }, t("back"))
       ),
       skill.description ? (0, import_react2.createElement)("p", { className: "dsk-desc", style: { display: "block", WebkitLineClamp: "unset" } }, skill.description) : null,
       skill.whenToUse ? (0, import_react2.createElement)("p", { className: "dsk-desc", style: { display: "block", WebkitLineClamp: "unset" } }, `${t("detailWhenToUse")}\uFF1A${skill.whenToUse}`) : (0, import_react2.createElement)("p", { className: "dsk-subtitle" }, `${t("detailWhenToUse")}\uFF1A${t("noWhenToUse")}`),
@@ -549,10 +554,10 @@ function SkillsSection({ t }) {
       (0, import_react2.createElement)(
         "div",
         { className: "dsk-actions" },
-        (0, import_react2.createElement)("button", { className: "dsk-btn", disabled: busy, onClick: () => openView(skill) }, t("view")),
-        (0, import_react2.createElement)("button", { className: "dsk-btn", disabled: busy, onClick: () => openEdit(skill) }, t("edit")),
-        (0, import_react2.createElement)("button", { className: "dsk-btn", disabled: busy, onClick: () => void toggleModel(skill) }, skill.modelDisabled ? t("enableModel") : t("disableModel")),
-        (0, import_react2.createElement)("button", { className: "dsk-btn dsk-btn-danger", disabled: busy, onClick: () => void remove(skill) }, t("delete"))
+        (0, import_react2.createElement)("button", { type: "button", className: "dsk-btn", disabled: busy, onClick: () => openView(skill) }, t("view")),
+        (0, import_react2.createElement)("button", { type: "button", className: "dsk-btn", disabled: busy, onClick: () => openEdit(skill) }, t("edit")),
+        (0, import_react2.createElement)("button", { type: "button", className: "dsk-btn", disabled: busy, onClick: () => void toggleModel(skill) }, skill.modelDisabled ? t("enableModel") : t("disableModel")),
+        (0, import_react2.createElement)("button", { type: "button", className: "dsk-btn dsk-btn-danger", disabled: busy, onClick: () => void remove(skill) }, t("delete"))
       )
     );
   }
@@ -576,20 +581,20 @@ function SkillsSection({ t }) {
         (0, import_react2.createElement)(
           "div",
           { className: "dsk-actions", style: { display: tab === "installed" ? void 0 : "none" } },
-          (0, import_react2.createElement)("button", { className: "dsk-btn", onClick: () => void refresh() }, t("refresh")),
-          (0, import_react2.createElement)("button", { className: "dsk-btn", onClick: () => fileRef.current?.click() }, t("import")),
-          (0, import_react2.createElement)("button", { className: "dsk-btn dsk-btn-primary", onClick: openCreate }, t("create"))
+          (0, import_react2.createElement)("button", { type: "button", className: "dsk-btn", onClick: () => void refresh() }, t("refresh")),
+          (0, import_react2.createElement)("button", { type: "button", className: "dsk-btn", onClick: () => fileRef.current?.click() }, t("import")),
+          (0, import_react2.createElement)("button", { type: "button", className: "dsk-btn dsk-btn-primary", onClick: openCreate }, t("create"))
         ),
         (0, import_react2.createElement)("input", { ref: fileRef, type: "file", accept: ".md,.zip,.tar.gz,.tgz", style: { display: "none" }, onChange: (event) => void handleImport(event) })
       ),
       (0, import_react2.createElement)(
         "div",
         { className: "dsk-tabs", role: "group", "aria-label": t("skillViews") },
-        (0, import_react2.createElement)("button", { className: `dsk-btn ${tab === "installed" ? "dsk-btn-primary" : ""}`, "aria-pressed": tab === "installed", disabled: busy, onClick: () => {
+        (0, import_react2.createElement)("button", { type: "button", className: `dsk-btn ${tab === "installed" ? "dsk-btn-primary" : ""}`, "aria-pressed": tab === "installed", disabled: busy, onClick: () => {
           setTab("installed");
           void refresh();
         } }, t("installedTab")),
-        (0, import_react2.createElement)("button", { className: `dsk-btn ${tab === "store" ? "dsk-btn-primary" : ""}`, "aria-pressed": tab === "store", disabled: busy, onClick: () => setTab("store") }, t("storeTab"))
+        (0, import_react2.createElement)("button", { type: "button", className: `dsk-btn ${tab === "store" ? "dsk-btn-primary" : ""}`, "aria-pressed": tab === "store", disabled: busy, onClick: () => setTab("store") }, t("storeTab"))
       ),
       tab === "store" ? (0, import_react2.createElement)(SkillStoreSection, { t, api, format, onInstalled: () => void refresh() }) : (0, import_react2.createElement)(
         import_react2.Fragment,
@@ -604,14 +609,18 @@ function SkillsSection({ t }) {
 }
 function PromptSection({ t }) {
   const [persona, setPersona] = (0, import_react2.useState)("");
+  const [loaded, setLoaded] = (0, import_react2.useState)("");
   const [status, setStatus] = (0, import_react2.useState)("loading");
   const [notice, setNotice] = (0, import_react2.useState)(null);
   const [busy, setBusy] = (0, import_react2.useState)(false);
-  async function load() {
-    setStatus("loading");
+  async function load(options = {}) {
+    const quiet = options.quiet === true;
+    if (!quiet) setStatus("loading");
     try {
       const payload = await api("/prompt");
-      setPersona(payload.persona ?? "");
+      const text = payload.persona ?? "";
+      setPersona(text);
+      setLoaded(text);
       setStatus("ok");
     } catch (error) {
       setStatus("error");
@@ -621,19 +630,35 @@ function PromptSection({ t }) {
   (0, import_react2.useEffect)(() => {
     void load();
   }, []);
-  async function save() {
+  async function reload() {
+    if (busy) return;
+    if (persona !== loaded && !window.confirm(t("promptDiscardConfirm"))) return;
     setBusy(true);
     setNotice(null);
     try {
-      await api("/prompt", { method: "POST", body: JSON.stringify({ persona }) });
-      setNotice({ kind: "ok", text: t("promptSaved") });
+      await load({ quiet: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function save() {
+    if (busy) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      const payload = await api("/prompt", { method: "POST", body: JSON.stringify({ persona }) });
+      const text = payload.persona ?? persona;
+      setPersona(text);
+      setLoaded(text);
+      setStatus("ok");
+      setNotice({ kind: "ok", text: payload.changed === false ? t("promptUnchanged") : t("promptSaved") });
     } catch (error) {
       setNotice({ kind: "error", text: format(t("promptSaveFailed"), { message: error.message }) });
     } finally {
       setBusy(false);
     }
   }
-  const body = status === "loading" ? (0, import_react2.createElement)("p", { className: "dsk-subtitle" }, t("promptLoading")) : (0, import_react2.createElement)("textarea", { className: "dsk-input dsk-textarea", style: { minHeight: 380 }, value: persona, onChange: (event) => setPersona(event.target.value), placeholder: "You are a coding agent..." });
+  const body = status === "loading" ? (0, import_react2.createElement)("p", { className: "dsk-subtitle" }, t("promptLoading")) : (0, import_react2.createElement)("textarea", { className: "dsk-input dsk-textarea", style: { minHeight: 380 }, value: persona, onChange: (event) => setPersona(event.target.value), placeholder: "You are a coding agent...", spellCheck: false });
   return (0, import_react2.createElement)(
     import_react2.Fragment,
     null,
@@ -653,8 +678,8 @@ function PromptSection({ t }) {
         (0, import_react2.createElement)(
           "div",
           { className: "dsk-actions" },
-          (0, import_react2.createElement)("button", { className: "dsk-btn", onClick: () => void load() }, t("promptReload")),
-          (0, import_react2.createElement)("button", { className: "dsk-btn dsk-btn-primary", disabled: busy || status !== "ok", onClick: () => void save() }, t("promptSave"))
+          (0, import_react2.createElement)("button", { type: "button", className: "dsk-btn", disabled: busy, onClick: () => void reload() }, t("promptReload")),
+          (0, import_react2.createElement)("button", { type: "button", className: "dsk-btn dsk-btn-primary", disabled: busy || status !== "ok", onClick: () => void save() }, t("promptSave"))
         )
       ),
       notice !== null ? (0, import_react2.createElement)("p", { className: `dsk-notice ${notice.kind === "error" ? "dsk-notice-err" : "dsk-notice-ok"}` }, notice.text) : null,
