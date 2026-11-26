@@ -37,6 +37,9 @@ pnpm 安装，而 pnpm 11 支持 `git+https://host/owner/repo.git#<分支>&path:
   现在 persona 存在插件自有文件 `$DSH_HOME/dsh-plugin-repo/persona.md`，通过
   `system-prompt/assemble` 作为独立分区 `plugin-repo:persona-rules` 注入：保存立即
   生效，不写 patch、不触发 dsh-hmr；旧 patch 里的 persona 会在首次读取时迁移。
+- `0.4.6` 统一令牌来源：`token` 留空时自动读取 dshc 的
+  `~/.dsh/dsh-controller/hub.json`；限流提示改为指向「DSH 设置 → 插件 →
+  dsh-plugin-repo」，不再笼统写「本插件配置」。
 
 ## 配置
 
